@@ -1,0 +1,16 @@
+[application]
+default_platform = "desktop"
+
+[bundle]
+identifier = "com.smiti1642.oxdm"
+publisher = "smiti1642"
+
+[web.app]
+title = "OxDM"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

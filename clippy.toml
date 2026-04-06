@@ -1,0 +1,5 @@
+await-holding-invalid-types = [
+  { path = "generational_box::GenerationalRef", reason = "Reads should not be held over an await point." },
+  { path = "generational_box::GenerationalRefMut", reason = "Writes should not be held over an await point." },
+  { path = "dioxus_signals::WriteLock", reason = "WriteLock should not be held over an await point." },
+]
