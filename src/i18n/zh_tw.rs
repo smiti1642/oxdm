@@ -82,6 +82,13 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_delete_confirm" => "\u{78BA}\u{5B9A}\u{522A}\u{9664}\u{88DD}\u{7F6E}\u{300C}{name}\u{300D}\u{FF1F}",
         "ctx_add_manual" => "\u{52A0}\u{5165}\u{624B}\u{52D5}\u{6E05}\u{55AE}",
         "ctx_added_manual" => "\u{88DD}\u{7F6E}\u{5DF2}\u{52A0}\u{5165}\u{624B}\u{52D5}\u{6E05}\u{55AE}\u{3002}",
+        "ctx_edit" => "\u{7DE8}\u{8F2F}",
+
+        // ── Edit Device ─────────────────────────────────────────────────────
+        "edit_device_title" => "\u{7DE8}\u{8F2F}\u{88DD}\u{7F6E}",
+        "edit_device_cred_hint" => "\u{7559}\u{7A7A}\u{5247}\u{4F7F}\u{7528}\u{5168}\u{57DF}\u{6191}\u{8B49}",
+        "edit_device_cred_fallback" => "\u{7559}\u{7A7A}\u{6B04}\u{4F4D}\u{5C07}\u{4F7F}\u{7528}\u{5168}\u{57DF}\u{6191}\u{8B49}\u{3002}",
+        "edit_device_saved" => "\u{88DD}\u{7F6E}\u{5DF2}\u{66F4}\u{65B0}\u{3002}",
         "add_device_name" => "\u{986F}\u{793A}\u{540D}\u{7A31}",
         "add_device_name_hint" => "\u{9078}\u{586B}",
         "add_device_custom_creds" => "\u{81EA}\u{8A02}\u{6191}\u{8B49}",

@@ -146,7 +146,7 @@ pub struct ConfirmDialog {
 
 // ── Credentials ─────────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
@@ -167,8 +167,6 @@ pub struct DeviceEntry {
     /// Whether this device was manually added (can have its own credentials)
     pub manual: bool,
     /// Per-device credentials override (only for manually added devices).
-    /// Used by api layer when connecting to this device.
-    #[allow(dead_code)]
     pub credentials: Option<Credentials>,
 }
 
@@ -207,7 +205,6 @@ impl Ctx {
     }
 
     /// Get the effective credentials for a device (device override > global).
-    #[allow(dead_code)]
     pub fn credentials_for(&self, device: &DeviceEntry) -> Credentials {
         device
             .credentials

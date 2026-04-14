@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::components::Icon;
 use crate::i18n;
-use crate::state::{Ctx, SettingsTab, View};
+use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
 use dioxus::prelude::*;
 
@@ -11,7 +11,7 @@ pub fn MainContent() -> Element {
     let view = *ctx.view.read();
     let locale = *ctx.locale.read();
 
-    // Derive addr as a reactive memo so tab components re-fetch on device switch
+    // Derive addr and effective credentials as reactive memos
     let addr = use_memo(move || {
         let devices = ctx.devices.read();
         let selected = *ctx.selected.read();
@@ -21,11 +21,20 @@ pub fn MainContent() -> Element {
             .unwrap_or_default()
     });
 
+    let creds = use_memo(move || {
+        let devices = ctx.devices.read();
+        let selected = *ctx.selected.read();
+        selected
+            .and_then(|i| devices.get(i))
+            .map(|d| ctx.credentials_for(d))
+            .unwrap_or_else(|| ctx.global_credentials.read().clone())
+    });
+
     rsx! {
         main { class: "main-content",
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
-                View::DeviceSettings  => rsx! { DeviceSettingsView { addr } },
+                View::DeviceSettings  => rsx! { DeviceSettingsView { addr, creds } },
                 View::LiveVideo       => rsx! { PlaceholderView { title: i18n::t(locale, "nav_live_video"),  icon: "video" } },
                 View::ImagingSettings => rsx! { PlaceholderView { title: i18n::t(locale, "nav_imaging"),     icon: "sliders" } },
                 View::PtzControl      => rsx! { PlaceholderView { title: i18n::t(locale, "nav_ptz"),        icon: "crosshair" } },
@@ -63,7 +72,7 @@ const SETTINGS_TABS: &[(SettingsTab, &str, &str)] = &[
 ];
 
 #[component]
-fn DeviceSettingsView(addr: Memo<String>) -> Element {
+fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let active = *ctx.settings_tab.read();
@@ -84,11 +93,11 @@ fn DeviceSettingsView(addr: Memo<String>) -> Element {
 
             div { class: "tab-content",
                 match active {
-                    SettingsTab::Identification => rsx! { IdentificationTab { addr } },
-                    SettingsTab::Network        => rsx! { NetworkTab { addr } },
-                    SettingsTab::Time           => rsx! { TimeTab { addr } },
-                    SettingsTab::Users          => rsx! { UsersTab { addr } },
-                    SettingsTab::Maintenance    => rsx! { MaintenanceTab { addr } },
+                    SettingsTab::Identification => rsx! { IdentificationTab { addr, creds } },
+                    SettingsTab::Network        => rsx! { NetworkTab { addr, creds } },
+                    SettingsTab::Time           => rsx! { TimeTab { addr, creds } },
+                    SettingsTab::Users          => rsx! { UsersTab { addr, creds } },
+                    SettingsTab::Maintenance    => rsx! { MaintenanceTab { addr, creds } },
                 }
             }
         }

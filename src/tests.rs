@@ -81,6 +81,12 @@ mod i18n_tests {
         "ctx_delete_confirm",
         "ctx_add_manual",
         "ctx_added_manual",
+        "ctx_edit",
+        // Edit Device
+        "edit_device_title",
+        "edit_device_cred_hint",
+        "edit_device_cred_fallback",
+        "edit_device_saved",
         "add_device_ok",
         "cred_saved",
         "scan_found",

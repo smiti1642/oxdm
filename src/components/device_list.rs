@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 use crate::{
     api,
-    components::{AddDeviceDialog, ContextMenu, CtxMenuItem, GlobalCredentialsDialog, Icon},
+    components::{
+        AddDeviceDialog, ContextMenu, CtxMenuItem, EditDeviceDialog, GlobalCredentialsDialog, Icon,
+    },
     i18n,
     state::{ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
 };
@@ -14,6 +16,8 @@ pub fn DeviceList() -> Element {
     let mut filter = use_signal(String::new);
     let mut add_dialog_open = use_signal(|| false);
     let mut creds_open = use_signal(|| false);
+    let edit_dialog_open = use_signal(|| false);
+    let edit_device_idx: Signal<Option<usize>> = use_signal(|| None);
     let mut list_tab = use_signal(|| DeviceListTab::Discovered);
 
     let creds = ctx.global_credentials.read();
@@ -215,6 +219,8 @@ pub fn DeviceList() -> Element {
                         online: dev.online,
                         manual: dev.manual,
                         selected: sel == Some(i),
+                        edit_dialog_open,
+                        edit_device_idx,
                     }
                 }
             }
@@ -249,6 +255,7 @@ pub fn DeviceList() -> Element {
 
         AddDeviceDialog { open: add_dialog_open }
         GlobalCredentialsDialog { open: creds_open }
+        EditDeviceDialog { open: edit_dialog_open, device_index: edit_device_idx }
     }
 }
 
@@ -262,6 +269,8 @@ fn DeviceCard(
     online: bool,
     manual: bool,
     selected: bool,
+    edit_dialog_open: Signal<bool>,
+    edit_device_idx: Signal<Option<usize>>,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
@@ -318,7 +327,15 @@ fn DeviceCard(
                 y: my,
                 on_close: move |_| ctx_menu.set(None),
                 if manual {
-                    // Manual device: Edit (re-open add dialog? for now just copy IP)
+                    CtxMenuItem {
+                        icon: "settings",
+                        label: i18n::t(locale, "ctx_edit"),
+                        on_click: move |_| {
+                            ctx_menu.set(None);
+                            edit_device_idx.clone().set(Some(index));
+                            edit_dialog_open.clone().set(true);
+                        },
+                    }
                     CtxMenuItem {
                         icon: "clipboard-copy",
                         label: i18n::t(locale, "ctx_copy_addr"),

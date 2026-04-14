@@ -1,11 +1,11 @@
 #![allow(non_snake_case)]
 use crate::components::Icon;
-use crate::state::{ConfirmDialog, Ctx, ToastLevel};
+use crate::state::{ConfirmDialog, Credentials, Ctx, ToastLevel};
 use crate::{api, i18n};
 use dioxus::prelude::*;
 
 #[component]
-pub fn MaintenanceTab(addr: ReadSignal<String>) -> Element {
+pub fn MaintenanceTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
@@ -22,7 +22,7 @@ pub fn MaintenanceTab(addr: ReadSignal<String>) -> Element {
                     class: "btn btn-md btn-ghost",
                     onclick: move |_| {
                         let addr = addr.read().clone();
-                        let creds = ctx.global_credentials.peek().clone();
+                        let creds = creds.peek().clone();
                         ctx.dialog.clone().set(Some(ConfirmDialog {
                             title: i18n::t(locale, "maint_reboot").to_string(),
                             message: i18n::t(locale, "maint_reboot_confirm").to_string(),
@@ -61,7 +61,7 @@ pub fn MaintenanceTab(addr: ReadSignal<String>) -> Element {
                     class: "btn btn-md btn-danger",
                     onclick: move |_| {
                         let addr = addr.read().clone();
-                        let creds = ctx.global_credentials.peek().clone();
+                        let creds = creds.peek().clone();
                         ctx.dialog.clone().set(Some(ConfirmDialog {
                             title: i18n::t(locale, "maint_factory_reset").to_string(),
                             message: i18n::t(locale, "maint_factory_reset_confirm").to_string(),

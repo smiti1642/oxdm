@@ -1,15 +1,16 @@
 #![allow(non_snake_case)]
+use crate::state::Credentials;
 use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
 
 #[component]
-pub fn IdentificationTab(addr: ReadSignal<String>) -> Element {
+pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
     let info = use_resource(move || {
         let addr = addr.read().clone();
-        let creds = ctx.global_credentials.read().clone();
+        let creds = creds.read().clone();
         async move {
             let (user, pass) = if creds.username.is_empty() {
                 (None, None)

@@ -85,6 +85,13 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_delete_confirm" => "Delete device \"{name}\"?",
         "ctx_add_manual" => "Add to Manual",
         "ctx_added_manual" => "Device added to Manual list.",
+        "ctx_edit" => "Edit",
+
+        // ── Edit Device ─────────────────────────────────────────────────────
+        "edit_device_title" => "Edit Device",
+        "edit_device_cred_hint" => "Leave empty to use global",
+        "edit_device_cred_fallback" => "Empty fields fall back to the global credentials.",
+        "edit_device_saved" => "Device updated.",
         "add_device_ok" => "Device added.",
         "cred_saved" => "Credentials saved.",
         "scan_found" => "Found {n} device(s).",
