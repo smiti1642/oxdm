@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Ctx, View};
 use dioxus::prelude::*;
@@ -28,22 +29,28 @@ pub fn DevicePanel() -> Element {
         div { class: "device-panel",
 
             div { class: "panel-header",
-                div { class: "panel-device-icon", "\u{1F4F7}" }
+                div { class: "panel-device-icon",
+                    Icon { name: "camera", size: 26 }
+                }
                 div { class: "panel-device-name", "{dev_name}" }
             }
 
             div { class: "panel-section",
                 div { class: "panel-section-title", {i18n::t(locale, "section_general")} }
-                NavLink { view: View::DeviceSettings, icon: "\u{2699}", label: i18n::t(locale, "nav_settings") }
-                NavLink { view: View::Events,         icon: "\u{1F514}", label: i18n::t(locale, "nav_events") }
+                NavLink { view: View::DeviceSettings, icon: "settings",    label: i18n::t(locale, "nav_settings") }
+                NavLink { view: View::Events,         icon: "bell",        label: i18n::t(locale, "nav_events") }
             }
 
             div { class: "panel-section",
                 div { class: "panel-section-title", {i18n::t(locale, "section_nvt")} }
-                div { class: "panel-thumbnail", {i18n::t(locale, "live_preview")} }
-                NavLink { view: View::LiveVideo,       icon: "\u{1F4F9}", label: i18n::t(locale, "nav_live_video") }
-                NavLink { view: View::ImagingSettings, icon: "\u{1F3A8}", label: i18n::t(locale, "nav_imaging") }
-                NavLink { view: View::PtzControl,      icon: "\u{1F3AF}", label: i18n::t(locale, "nav_ptz") }
+                div { class: "panel-thumbnail",
+                    Icon { name: "play", size: 16 }
+                    " "
+                    {i18n::t(locale, "live_preview")}
+                }
+                NavLink { view: View::LiveVideo,       icon: "video",      label: i18n::t(locale, "nav_live_video") }
+                NavLink { view: View::ImagingSettings, icon: "sliders",    label: i18n::t(locale, "nav_imaging") }
+                NavLink { view: View::PtzControl,      icon: "crosshair",  label: i18n::t(locale, "nav_ptz") }
             }
         }
     }
@@ -64,7 +71,9 @@ fn NavLink(view: View, icon: &'static str, label: &'static str) -> Element {
         button {
             class: cls,
             onclick: move |_| view_sig.set(view),
-            span { class: "nav-link-icon", "{icon}" }
+            span { class: "nav-link-icon",
+                Icon { name: icon, size: 16 }
+            }
             "{label}"
         }
     }

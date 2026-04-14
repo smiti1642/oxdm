@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Ctx, SettingsTab, View};
 use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
@@ -22,10 +23,10 @@ pub fn MainContent() -> Element {
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
                 View::DeviceSettings  => rsx! { DeviceSettingsView { addr } },
-                View::LiveVideo       => rsx! { PlaceholderView { title: i18n::t(locale, "nav_live_video"),  addr, icon: "\u{1F4F9}" } },
-                View::ImagingSettings => rsx! { PlaceholderView { title: i18n::t(locale, "nav_imaging"),     addr, icon: "\u{1F3A8}" } },
-                View::PtzControl      => rsx! { PlaceholderView { title: i18n::t(locale, "nav_ptz"),        addr, icon: "\u{1F3AF}" } },
-                View::Events          => rsx! { PlaceholderView { title: i18n::t(locale, "nav_events"),     addr, icon: "\u{1F514}" } },
+                View::LiveVideo       => rsx! { PlaceholderView { title: i18n::t(locale, "nav_live_video"),  icon: "video" } },
+                View::ImagingSettings => rsx! { PlaceholderView { title: i18n::t(locale, "nav_imaging"),     icon: "sliders" } },
+                View::PtzControl      => rsx! { PlaceholderView { title: i18n::t(locale, "nav_ptz"),        icon: "crosshair" } },
+                View::Events          => rsx! { PlaceholderView { title: i18n::t(locale, "nav_events"),     icon: "bell" } },
             }
         }
     }
@@ -38,7 +39,9 @@ fn WelcomeView() -> Element {
 
     rsx! {
         div { class: "welcome",
-            div { class: "welcome-icon", "\u{2B21}" }
+            div { class: "welcome-icon",
+                Icon { name: "hexagon", size: 52 }
+            }
             h1  { class: "welcome-title", {i18n::t(locale, "app_name")} }
             p   { class: "welcome-sub",   {i18n::t(locale, "app_subtitle")} }
             p   { class: "welcome-hint",  {i18n::t(locale, "welcome_hint")} }
@@ -49,15 +52,11 @@ fn WelcomeView() -> Element {
 // ── Device Settings (tabbed view) ───────────────────────────────────────────
 
 const SETTINGS_TABS: &[(SettingsTab, &str, &str)] = &[
-    (
-        SettingsTab::Identification,
-        "\u{2139}",
-        "tab_identification",
-    ),
-    (SettingsTab::Network, "\u{1F310}", "tab_network"),
-    (SettingsTab::Time, "\u{1F550}", "tab_time"),
-    (SettingsTab::Users, "\u{1F464}", "tab_users"),
-    (SettingsTab::Maintenance, "\u{1F527}", "tab_maintenance"),
+    (SettingsTab::Identification, "info", "tab_identification"),
+    (SettingsTab::Network, "globe", "tab_network"),
+    (SettingsTab::Time, "clock", "tab_time"),
+    (SettingsTab::Users, "users", "tab_users"),
+    (SettingsTab::Maintenance, "wrench", "tab_maintenance"),
 ];
 
 #[component]
@@ -74,7 +73,7 @@ fn DeviceSettingsView(addr: String) -> Element {
                     button {
                         class: if active == tab { "tab tab--active" } else { "tab" },
                         onclick: move |_| tab_sig.set(tab),
-                        span { class: "tab-icon", "{icon}" }
+                        span { class: "tab-icon", Icon { name: icon, size: 14 } }
                         {i18n::t(locale, key)}
                     }
                 }
@@ -96,18 +95,15 @@ fn DeviceSettingsView(addr: String) -> Element {
 // ── Generic placeholder for non-settings views ─────────────────────────────
 
 #[component]
-fn PlaceholderView(title: &'static str, addr: String, icon: &'static str) -> Element {
+fn PlaceholderView(title: &'static str, icon: &'static str) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
     rsx! {
         div { class: "placeholder-view",
             div { class: "content-header",
-                span { style: "font-size:20px", "{icon}" }
+                Icon { name: icon, size: 20 }
                 span { class: "content-title", "{title}" }
-            }
-            if !addr.is_empty() {
-                span { class: "placeholder-addr", "{addr}" }
             }
             p { class: "placeholder-hint", {i18n::t(locale, "coming_soon")} }
         }

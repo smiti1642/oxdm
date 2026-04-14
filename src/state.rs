@@ -26,11 +26,12 @@ impl Theme {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Dark => "\u{1F319}",
-            Self::Light => "\u{2600}",
-            Self::Classic => "\u{25A3}",
+            Self::Dark => "moon",
+            Self::Light => "sun",
+            Self::Classic => "monitor",
         }
     }
 }
@@ -104,12 +105,14 @@ impl ToastLevel {
         }
     }
 
-    pub fn icon(self) -> &'static str {
+    /// Icon name for the Icon component.
+    #[allow(dead_code)]
+    pub fn icon_name(self) -> &'static str {
         match self {
-            Self::Success => "\u{2713}",
-            Self::Info => "\u{2139}",
-            Self::Warning => "\u{26A0}",
-            Self::Error => "\u{2717}",
+            Self::Success => "check",
+            Self::Info => "info",
+            Self::Warning => "alert-triangle",
+            Self::Error => "x",
         }
     }
 }

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::{
     api,
-    components::AddDeviceDialog,
+    components::{AddDeviceDialog, Icon},
     i18n,
     state::{Ctx, DeviceEntry, ToastLevel, View},
 };
@@ -21,8 +21,11 @@ pub fn DeviceList() -> Element {
 
     let do_scan = move |_| async move {
         scanning.set(true);
-        selected.set(None);
-        view.set(View::Welcome);
+
+        // Remember current selection to try to preserve it
+        let prev_addr = selected
+            .peek()
+            .and_then(|i| devices.peek().get(i).map(|d| d.addr.clone()));
 
         match api::discover_devices().await {
             Ok(found) => {
@@ -60,9 +63,24 @@ pub fn DeviceList() -> Element {
 
                 let mut all = entries;
                 all.extend(manual);
-                devices.set(all);
 
-                ctx.push_toast(ToastLevel::Success, format!("Found {count} device(s)"));
+                // Try to restore previous selection
+                let new_sel = prev_addr
+                    .as_ref()
+                    .and_then(|addr| all.iter().position(|d| &d.addr == addr));
+
+                devices.set(all);
+                selected.set(new_sel);
+
+                if new_sel.is_none() {
+                    view.set(View::Welcome);
+                }
+
+                let locale = *ctx.locale.read();
+                ctx.push_toast(
+                    ToastLevel::Success,
+                    i18n::t(locale, "scan_found").replace("{n}", &count.to_string()),
+                );
             }
             Err(e) => {
                 ctx.push_toast(ToastLevel::Error, e);
@@ -135,13 +153,15 @@ pub fn DeviceList() -> Element {
                     if is_scanning {
                         {i18n::t(locale, "btn_scanning")}
                     } else {
-                        {i18n::t(locale, "btn_scan")}
+                        span { class: "btn-icon", Icon { name: "refresh-cw", size: 13 } }
+                        {i18n::t(locale, "btn_scan_label")}
                     }
                 }
                 button {
                     class: "btn btn-ghost btn-sm",
                     onclick: move |_| add_dialog_open.set(true),
-                    {i18n::t(locale, "btn_add")}
+                    span { class: "btn-icon", Icon { name: "plus", size: 13 } }
+                    {i18n::t(locale, "btn_add_label")}
                 }
             }
         }
@@ -182,7 +202,8 @@ fn DeviceCard(
             class: card_class,
             onclick: move |_| {
                 sel.set(Some(index));
-                view.set(View::Welcome);
+                // Auto-navigate to Settings when selecting a device
+                view.set(View::DeviceSettings);
             },
             div { class: "device-card-header",
                 span { class: dot_class }

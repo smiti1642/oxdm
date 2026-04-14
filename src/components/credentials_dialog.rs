@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
+use crate::components::Icon;
 use crate::i18n;
-use crate::state::{Credentials, Ctx};
+use crate::state::{Credentials, Ctx, ToastLevel, View};
 use dioxus::prelude::*;
 
 /// Modal for editing the global (default) credentials.
@@ -60,7 +61,11 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
                             button {
                                 class: "btn btn-ghost btn-sm",
                                 onclick: move |_| show_pw.toggle(),
-                                if *show_pw.read() { "\u{25C9}" } else { "\u{25CE}" }
+                                if *show_pw.read() {
+                                    Icon { name: "eye-off", size: 14 }
+                                } else {
+                                    Icon { name: "eye", size: 14 }
+                                }
                             }
                         }
                     }
@@ -78,6 +83,7 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
                                 username: username.peek().clone(),
                                 password: password.peek().clone(),
                             });
+                            ctx.push_toast(ToastLevel::Success, i18n::t(locale, "cred_saved"));
                             open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_save")}
@@ -108,6 +114,8 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
 
     let mut open_sig = open;
     let mut devices = ctx.devices;
+    let mut selected = ctx.selected;
+    let mut view = ctx.view;
 
     rsx! {
         div {
@@ -146,7 +154,12 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                     button {
                         class: "btn btn-ghost btn-sm form-toggle",
                         onclick: move |_| show_creds.toggle(),
-                        if *show_creds.read() { "\u{25BE} " } else { "\u{25B8} " }
+                        if *show_creds.read() {
+                            Icon { name: "chevron-down", size: 12 }
+                        } else {
+                            Icon { name: "chevron-right", size: 12 }
+                        }
+                        " "
                         {i18n::t(locale, "add_device_custom_creds")}
                     }
 
@@ -174,7 +187,11 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     onclick: move |_| show_pw.toggle(),
-                                    if *show_pw.read() { "\u{25C9}" } else { "\u{25CE}" }
+                                    if *show_pw.read() {
+                                        Icon { name: "eye-off", size: 14 }
+                                    } else {
+                                        Icon { name: "eye", size: 14 }
+                                    }
                                 }
                             }
                         }
@@ -207,7 +224,8 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 None
                             };
 
-                            devices.write().push(crate::state::DeviceEntry {
+                            let mut devs = devices.write();
+                            devs.push(crate::state::DeviceEntry {
                                 name: dev_name,
                                 addr: addr_val,
                                 display_addr: display,
@@ -216,7 +234,14 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 manual: true,
                                 credentials: creds,
                             });
+                            let new_idx = devs.len() - 1;
+                            drop(devs);
 
+                            // Auto-select the newly added device
+                            selected.set(Some(new_idx));
+                            view.set(View::DeviceSettings);
+
+                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "add_device_ok"));
                             open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_add_short")}

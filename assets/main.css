@@ -123,6 +123,12 @@ a      { color: var(--blue); text-decoration: none; }
 }
 .icon-btn:hover { background: var(--surface0); color: var(--text); }
 .icon-btn--label { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.icon-btn--warn { color: var(--yellow); }
+.icon-btn--warn:hover { color: var(--yellow); }
+
+/* ── SVG icon base ───────────────────────────────────────────────────────── */
+.icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+.btn-icon { display: inline-flex; align-items: center; margin-right: 4px; }
 
 /* ── Sidebar (left panel) ─────────────────────────────────────────────────── */
 .sidebar {

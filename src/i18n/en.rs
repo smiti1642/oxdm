@@ -2,7 +2,7 @@ pub fn get(key: &str) -> Option<&'static str> {
     Some(match key {
         // ── Topbar ──────────────────────────────────────────────────────────
         "search_placeholder" => "Search devices\u{2026}",
-        "tooltip_settings" => "Settings",
+        "tooltip_credentials" => "Credentials",
         "tooltip_theme" => "Theme",
         "tooltip_language" => "Language",
         "tooltip_help" => "Help",
@@ -12,9 +12,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "filter_placeholder" => "Name or address\u{2026}",
         "no_devices" => "No devices found.\nClick Scan to discover.",
         "no_matches" => "No matches.",
-        "btn_scan" => "\u{27F3}  Scan",
+        "btn_scan_label" => "Scan",
         "btn_scanning" => "Scanning\u{2026}",
-        "btn_add" => "\u{FF0B} Add",
+        "btn_add_label" => "Add",
 
         // ── Device Panel ────────────────────────────────────────────────────
         "select_device" => "\u{2190} Select a device",
@@ -70,9 +70,16 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_name" => "Display name",
         "add_device_name_hint" => "Optional",
         "add_device_custom_creds" => "Custom credentials",
+        "add_device_ok" => "Device added.",
+        "cred_saved" => "Credentials saved.",
+        "scan_found" => "Found {n} device(s).",
 
         // ── Shared ──────────────────────────────────────────────────────────
         "loading" => "Loading\u{2026}",
+        "yes" => "Yes",
+        "no" => "No",
+        "enabled" => "Enabled",
+        "disabled" => "Disabled",
 
         // ── Identification tab ──────────────────────────────────────────────
         "prop_manufacturer" => "Manufacturer",

@@ -84,7 +84,7 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                     PropRow {
                         label: "DHCP",
-                        value: yn(data.hostname_dhcp),
+                        value: yn(locale, data.hostname_dhcp),
                     }
                 }
 
@@ -97,10 +97,10 @@ pub fn NetworkTab(addr: String) -> Element {
                         PropRow { label: "Token",      value: iface.token.clone() }
                         PropRow { label: "MAC",        value: iface.hw_address.clone() }
                         PropRow { label: "MTU",        value: iface.mtu.to_string() }
-                        PropRow { label: "Enabled",    value: yn(iface.enabled) }
+                        PropRow { label: "Enabled",    value: yn(locale, iface.enabled) }
                         PropRow { label: "IPv4",       value: iface.ipv4_address.clone() }
                         PropRow { label: "Prefix",     value: format!("/{}", iface.ipv4_prefix_length) }
-                        PropRow { label: "DHCP",       value: yn(iface.ipv4_from_dhcp) }
+                        PropRow { label: "DHCP",       value: yn(locale, iface.ipv4_from_dhcp) }
                         if iface.ipv6_enabled {
                             PropRow {
                                 label: "IPv6",
@@ -123,7 +123,7 @@ pub fn NetworkTab(addr: String) -> Element {
                 // DNS
                 div { class: "prop-section-header", "DNS" }
                 table { class: "prop-table",
-                    PropRow { label: "DHCP", value: yn(data.dns_from_dhcp) }
+                    PropRow { label: "DHCP", value: yn(locale, data.dns_from_dhcp) }
                     for (i, srv) in data.dns_servers.iter().enumerate() {
                         PropRow { label: format!("Server {}", i + 1), value: srv.clone() }
                     }
@@ -132,7 +132,7 @@ pub fn NetworkTab(addr: String) -> Element {
                 // NTP
                 div { class: "prop-section-header", "NTP" }
                 table { class: "prop-table",
-                    PropRow { label: "DHCP", value: yn(data.ntp_from_dhcp) }
+                    PropRow { label: "DHCP", value: yn(locale, data.ntp_from_dhcp) }
                     for (i, srv) in data.ntp_servers.iter().enumerate() {
                         PropRow { label: format!("Server {}", i + 1), value: srv.clone() }
                     }
@@ -147,7 +147,7 @@ pub fn NetworkTab(addr: String) -> Element {
                                 label: proto.name.clone(),
                                 value: format!(
                                     "{} — port {}",
-                                    if proto.enabled { "Enabled" } else { "Disabled" },
+                                    if proto.enabled { i18n::t(locale, "enabled") } else { i18n::t(locale, "disabled") },
                                     proto.ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "),
                                 ),
                             }
@@ -169,6 +169,11 @@ fn PropRow(label: String, value: String) -> Element {
     }
 }
 
-fn yn(b: bool) -> String {
-    if b { "Yes" } else { "No" }.to_string()
+fn yn(locale: crate::state::Locale, b: bool) -> String {
+    if b {
+        i18n::t(locale, "yes")
+    } else {
+        i18n::t(locale, "no")
+    }
+    .to_string()
 }

@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
-use crate::state::Ctx;
+use crate::components::Icon;
+use crate::state::{Ctx, ToastLevel};
 use dioxus::prelude::*;
 
 const TOAST_DURATION_MS: u64 = 4000;
@@ -19,8 +20,7 @@ pub fn ToastContainer() -> Element {
                 ToastItem {
                     key: "{toast.id}",
                     id: toast.id,
-                    level_class: toast.level.css_class(),
-                    icon: toast.level.icon(),
+                    level: toast.level,
                     message: toast.message.clone(),
                 }
             }
@@ -29,8 +29,15 @@ pub fn ToastContainer() -> Element {
 }
 
 #[component]
-fn ToastItem(id: u32, level_class: &'static str, icon: &'static str, message: String) -> Element {
+fn ToastItem(id: u32, level: ToastLevel, message: String) -> Element {
     let ctx = use_context::<Ctx>();
+
+    let icon_name = match level {
+        ToastLevel::Success => "check",
+        ToastLevel::Info => "info",
+        ToastLevel::Warning => "alert-triangle",
+        ToastLevel::Error => "x",
+    };
 
     // Auto-dismiss after TOAST_DURATION_MS
     use_future(move || {
@@ -42,13 +49,13 @@ fn ToastItem(id: u32, level_class: &'static str, icon: &'static str, message: St
     });
 
     rsx! {
-        div { class: level_class,
-            span { class: "toast-icon", "{icon}" }
+        div { class: level.css_class(),
+            span { class: "toast-icon", Icon { name: icon_name, size: 16 } }
             span { class: "toast-message", "{message}" }
             button {
                 class: "toast-close",
                 onclick: move |_| ctx.dismiss_toast(id),
-                "\u{00D7}"
+                Icon { name: "x", size: 14 }
             }
         }
     }

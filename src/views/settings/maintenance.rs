@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::Icon;
 use crate::state::{ConfirmDialog, Ctx, ToastLevel};
 use crate::{api, i18n};
 use dioxus::prelude::*;
@@ -16,7 +17,7 @@ pub fn MaintenanceTab(addr: String) -> Element {
             // ── Reboot ──────────────────────────────────────────────────────
             div { class: "maintenance-card",
                 div { class: "maintenance-card-header",
-                    span { class: "maintenance-icon", "\u{1F504}" }
+                    span { class: "maintenance-icon", Icon { name: "rotate-cw", size: 18 } }
                     span { class: "maintenance-title", {i18n::t(locale, "maint_reboot")} }
                 }
                 p { class: "maintenance-desc", {i18n::t(locale, "maint_reboot_desc")} }
@@ -55,7 +56,7 @@ pub fn MaintenanceTab(addr: String) -> Element {
             // ── Factory Reset ───────────────────────────────────────────────
             div { class: "maintenance-card maintenance-card--danger",
                 div { class: "maintenance-card-header",
-                    span { class: "maintenance-icon", "\u{26A0}" }
+                    span { class: "maintenance-icon", Icon { name: "alert-triangle", size: 18 } }
                     span { class: "maintenance-title", {i18n::t(locale, "maint_factory_reset")} }
                 }
                 p { class: "maintenance-desc", {i18n::t(locale, "maint_factory_reset_desc")} }
@@ -80,8 +81,10 @@ pub fn MaintenanceTab(addr: String) -> Element {
                                         (Some(creds.username.as_str()), Some(creds.password.as_str()))
                                     };
                                     match api::set_system_factory_default(&addr, u, p, "Hard").await {
-                                        Ok(()) => ctx.push_toast(ToastLevel::Success,
-                                            i18n::t(locale, "maint_factory_reset_ok")),
+                                        Ok(()) => ctx.push_toast(
+                                            ToastLevel::Success,
+                                            i18n::t(locale, "maint_factory_reset_ok"),
+                                        ),
                                         Err(e) => ctx.push_toast(ToastLevel::Error, e),
                                     }
                                 });

@@ -2,7 +2,7 @@ pub fn get(key: &str) -> Option<&'static str> {
     Some(match key {
         // ── Topbar ──────────────────────────────────────────────────────────
         "search_placeholder" => "\u{641C}\u{5C0B}\u{88DD}\u{7F6E}\u{2026}",
-        "tooltip_settings" => "\u{8A2D}\u{5B9A}",
+        "tooltip_credentials" => "\u{6191}\u{8B49}",
         "tooltip_theme" => "\u{4E3B}\u{984C}",
         "tooltip_language" => "\u{8A9E}\u{8A00}",
         "tooltip_help" => "\u{8AAA}\u{660E}",
@@ -12,9 +12,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "filter_placeholder" => "\u{540D}\u{7A31}\u{6216}\u{4F4D}\u{5740}\u{2026}",
         "no_devices" => "\u{672A}\u{627E}\u{5230}\u{88DD}\u{7F6E}\u{3002}\n\u{9EDE}\u{64CA}\u{300C}\u{6383}\u{63CF}\u{300D}\u{4EE5}\u{63A2}\u{7D22}\u{3002}",
         "no_matches" => "\u{7121}\u{7B26}\u{5408}\u{7D50}\u{679C}\u{3002}",
-        "btn_scan" => "\u{27F3}  \u{6383}\u{63CF}",
+        "btn_scan_label" => "\u{6383}\u{63CF}",
         "btn_scanning" => "\u{6383}\u{63CF}\u{4E2D}\u{2026}",
-        "btn_add" => "\u{FF0B} \u{65B0}\u{589E}",
+        "btn_add_label" => "\u{65B0}\u{589E}",
 
         // ── Device Panel ────────────────────────────────────────────────────
         "select_device" => "\u{2190} \u{9078}\u{64C7}\u{88DD}\u{7F6E}",
@@ -70,9 +70,16 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_name" => "\u{986F}\u{793A}\u{540D}\u{7A31}",
         "add_device_name_hint" => "\u{9078}\u{586B}",
         "add_device_custom_creds" => "\u{81EA}\u{8A02}\u{6191}\u{8B49}",
+        "add_device_ok" => "\u{88DD}\u{7F6E}\u{5DF2}\u{65B0}\u{589E}\u{3002}",
+        "cred_saved" => "\u{6191}\u{8B49}\u{5DF2}\u{5132}\u{5B58}\u{3002}",
+        "scan_found" => "\u{627E}\u{5230} {n} \u{53F0}\u{88DD}\u{7F6E}\u{3002}",
 
         // ── Shared ──────────────────────────────────────────────────────────
         "loading" => "\u{8F09}\u{5165}\u{4E2D}\u{2026}",
+        "yes" => "\u{662F}",
+        "no" => "\u{5426}",
+        "enabled" => "\u{5DF2}\u{555F}\u{7528}",
+        "disabled" => "\u{5DF2}\u{505C}\u{7528}",
 
         // ── Identification tab ──────────────────────────────────────────────
         "prop_manufacturer" => "\u{88FD}\u{9020}\u{5546}",
