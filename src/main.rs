@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 
 mod api;
 mod components;
+mod discovery;
 mod i18n;
 mod state;
 #[cfg(test)]

@@ -8,6 +8,7 @@ dioxus = { version = "=0.7.4", features = ["desktop", "router"] }
 oxvif = "0.8.4"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
+if-addrs = "0.13"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 

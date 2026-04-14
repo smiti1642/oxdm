@@ -1,10 +1,9 @@
 use oxvif::{
-    discovery, Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, Hostname,
-    NetworkGateway, NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, SystemDateTime, User,
+    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, Hostname, NetworkGateway,
+    NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, SystemDateTime, User,
 };
-use std::collections::HashSet;
 use std::time::Duration;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument};
 
 pub type ApiError = String;
 
@@ -41,54 +40,13 @@ const PROBE_ROUNDS: usize = 3;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const PROBE_INTERVAL: Duration = Duration::from_millis(800);
 
-/// Run multiple WS-Discovery probes and merge results.
+/// Run WS-Discovery probes on all network interfaces, multiple rounds.
 ///
-/// oxvif's `probe()` sends a single UDP multicast on `0.0.0.0` — unreliable
-/// on multi-NIC setups and busy networks. We mitigate by:
-/// 1. Running multiple rounds with short intervals.
-/// 2. Deduplicating by endpoint UUID across rounds.
+/// Uses our own multi-NIC implementation instead of oxvif's single-interface
+/// `probe()`, ensuring cameras on all subnets are discovered.
 #[instrument(skip_all)]
 pub async fn discover_devices() -> Result<Vec<DiscoveredDevice>, ApiError> {
-    info!(
-        rounds = PROBE_ROUNDS,
-        timeout_ms = PROBE_TIMEOUT.as_millis() as u64,
-        "WS-Discovery multi-round probe starting"
-    );
-
-    let mut seen_endpoints = HashSet::new();
-    let mut all_devices = Vec::new();
-
-    for round in 0..PROBE_ROUNDS {
-        let found = discovery::probe(PROBE_TIMEOUT).await;
-        let mut new_count = 0;
-
-        for dev in found {
-            if seen_endpoints.insert(dev.endpoint.clone()) {
-                new_count += 1;
-                all_devices.push(dev);
-            }
-        }
-
-        debug!(
-            round = round + 1,
-            new = new_count,
-            total = all_devices.len(),
-            "Probe round complete"
-        );
-
-        // Don't sleep after the last round
-        if round + 1 < PROBE_ROUNDS {
-            tokio::time::sleep(PROBE_INTERVAL).await;
-        }
-    }
-
-    if all_devices.is_empty() {
-        warn!("WS-Discovery found 0 devices after {PROBE_ROUNDS} rounds — network may block multicast or no ONVIF devices present");
-    } else {
-        info!(count = all_devices.len(), "WS-Discovery complete");
-    }
-
-    Ok(all_devices)
+    Ok(crate::discovery::probe_all_interfaces(PROBE_ROUNDS, PROBE_TIMEOUT, PROBE_INTERVAL).await)
 }
 
 // ── Device Info ─────────────────────────────────────────────────────────────
