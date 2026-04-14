@@ -135,10 +135,11 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                         input {
                             class: "form-input",
                             r#type: "text",
-                            placeholder: "http://192.168.1.100/onvif/device_service",
+                            placeholder: i18n::t(locale, "add_device_addr_hint"),
                             value: "{addr}",
                             oninput: move |e| addr.set(e.value()),
                         }
+                        p { class: "form-hint", {i18n::t(locale, "add_device_addr_auto")} }
                     }
                     div { class: "form-field",
                         label { class: "form-label", {i18n::t(locale, "add_device_name")} }
@@ -207,7 +208,8 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                         class: "btn btn-md btn-primary",
                         disabled: addr.read().trim().is_empty(),
                         onclick: move |_| {
-                            let addr_val = addr.peek().trim().to_string();
+                            let raw = addr.peek().trim().to_string();
+                            let addr_val = normalize_onvif_addr(&raw);
                             let name_val = name.peek().trim().to_string();
                             let display = extract_ip(&addr_val);
                             let dev_name = if name_val.is_empty() { display.clone() } else { name_val };
@@ -250,6 +252,35 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
             }
         }
     }
+}
+
+/// Normalize user input to a full ONVIF device service URL.
+/// - "192.168.1.10"          → "http://192.168.1.10/onvif/device_service"
+/// - "192.168.1.10:8080"     → "http://192.168.1.10:8080/onvif/device_service"
+/// - "http://192.168.1.10"   → "http://192.168.1.10/onvif/device_service"
+/// - Full URL                → kept as-is
+pub fn normalize_onvif_addr(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // If it already has a path component, keep as-is
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        let after_scheme = trimmed
+            .strip_prefix("http://")
+            .or_else(|| trimmed.strip_prefix("https://"))
+            .unwrap_or(trimmed);
+        // Check if there's a path beyond the host
+        if after_scheme.contains('/') {
+            return trimmed.to_string();
+        }
+        // Has scheme but no path — append default path
+        return format!("{trimmed}/onvif/device_service");
+    }
+
+    // Bare IP or IP:port — prepend http:// and append default path
+    format!("http://{trimmed}/onvif/device_service")
 }
 
 fn extract_ip(addr: &str) -> String {

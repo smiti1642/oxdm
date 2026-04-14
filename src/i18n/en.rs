@@ -69,10 +69,13 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Add Device ──────────────────────────────────────────────────────
         "add_device_title" => "Add Device",
-        "add_device_addr" => "Device address (ONVIF URL)",
+        "add_device_addr" => "IP address or ONVIF URL",
+        "add_device_addr_hint" => "192.168.1.100",
+        "add_device_addr_auto" => "Just enter the IP \u{2014} the ONVIF path is added automatically.",
         "add_device_name" => "Display name",
         "add_device_name_hint" => "Optional",
         "add_device_custom_creds" => "Custom credentials",
+        "scan_none" => "No devices found. Try adding manually or check network settings.",
         "add_device_ok" => "Device added.",
         "cred_saved" => "Credentials saved.",
         "scan_found" => "Found {n} device(s).",

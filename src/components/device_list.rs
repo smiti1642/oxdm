@@ -80,10 +80,14 @@ pub fn DeviceList() -> Element {
                 }
 
                 let locale = *ctx.locale.read();
-                ctx.push_toast(
-                    ToastLevel::Success,
-                    i18n::t(locale, "scan_found").replace("{n}", &count.to_string()),
-                );
+                if count > 0 {
+                    ctx.push_toast(
+                        ToastLevel::Success,
+                        i18n::t(locale, "scan_found").replace("{n}", &count.to_string()),
+                    );
+                } else {
+                    ctx.push_toast(ToastLevel::Warning, i18n::t(locale, "scan_none"));
+                }
             }
             Err(e) => {
                 ctx.push_toast(ToastLevel::Error, e);

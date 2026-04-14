@@ -68,8 +68,11 @@ mod i18n_tests {
         "add_device_title",
         "add_device_addr",
         "add_device_name",
+        "add_device_addr_hint",
+        "add_device_addr_auto",
         "add_device_name_hint",
         "add_device_custom_creds",
+        "scan_none",
         "add_device_ok",
         "cred_saved",
         "scan_found",
@@ -226,6 +229,57 @@ mod state_tests {
 
 #[cfg(test)]
 mod util_tests {
+    use crate::components::credentials_dialog::normalize_onvif_addr;
+
+    #[test]
+    fn normalize_bare_ip() {
+        assert_eq!(
+            normalize_onvif_addr("192.168.1.10"),
+            "http://192.168.1.10/onvif/device_service"
+        );
+    }
+
+    #[test]
+    fn normalize_ip_with_port() {
+        assert_eq!(
+            normalize_onvif_addr("192.168.1.10:8080"),
+            "http://192.168.1.10:8080/onvif/device_service"
+        );
+    }
+
+    #[test]
+    fn normalize_http_no_path() {
+        assert_eq!(
+            normalize_onvif_addr("http://192.168.1.10"),
+            "http://192.168.1.10/onvif/device_service"
+        );
+    }
+
+    #[test]
+    fn normalize_full_url_preserved() {
+        let url = "http://192.168.1.10/onvif/device_service";
+        assert_eq!(normalize_onvif_addr(url), url);
+    }
+
+    #[test]
+    fn normalize_custom_path_preserved() {
+        let url = "http://192.168.1.10/custom/path";
+        assert_eq!(normalize_onvif_addr(url), url);
+    }
+
+    #[test]
+    fn normalize_empty() {
+        assert_eq!(normalize_onvif_addr(""), "");
+    }
+
+    #[test]
+    fn normalize_whitespace() {
+        assert_eq!(
+            normalize_onvif_addr("  192.168.1.10  "),
+            "http://192.168.1.10/onvif/device_service"
+        );
+    }
+
     /// Test the extract_ip helper used in device_list and credentials_dialog.
     fn extract_ip(addr: &str) -> String {
         let stripped = addr

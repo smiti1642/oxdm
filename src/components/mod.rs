@@ -1,4 +1,4 @@
-mod credentials_dialog;
+pub(crate) mod credentials_dialog;
 mod device_list;
 mod device_panel;
 mod dialog;
