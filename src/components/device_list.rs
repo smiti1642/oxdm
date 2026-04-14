@@ -1,14 +1,18 @@
 #![allow(non_snake_case)]
 use crate::{
     api,
-    state::{Ctx, DeviceEntry, View},
+    components::AddDeviceDialog,
+    i18n,
+    state::{Ctx, DeviceEntry, ToastLevel, View},
 };
 use dioxus::prelude::*;
 
 #[component]
 pub fn DeviceList() -> Element {
     let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
     let mut filter = use_signal(String::new);
+    let mut add_dialog_open = use_signal(|| false);
 
     let mut scanning = ctx.scanning;
     let mut selected = ctx.selected;
@@ -20,28 +24,49 @@ pub fn DeviceList() -> Element {
         selected.set(None);
         view.set(View::Welcome);
 
-        if let Ok(found) = api::discover_devices().await {
-            let entries: Vec<DeviceEntry> = found
-                .into_iter()
-                .map(|d| {
-                    let addr = d.xaddrs.first().cloned().unwrap_or_default();
-                    let display_addr = extract_ip(&addr);
-                    let name = d
-                        .scopes
-                        .iter()
-                        .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
-                        .map(str::to_string)
-                        .unwrap_or_else(|| display_addr.clone());
-                    DeviceEntry {
-                        name,
-                        addr,
-                        display_addr,
-                        firmware: String::new(),
-                        online: true,
-                    }
-                })
-                .collect();
-            devices.set(entries);
+        match api::discover_devices().await {
+            Ok(found) => {
+                let count = found.len();
+                let entries: Vec<DeviceEntry> = found
+                    .into_iter()
+                    .map(|d| {
+                        let addr = d.xaddrs.first().cloned().unwrap_or_default();
+                        let display_addr = extract_ip(&addr);
+                        let name = d
+                            .scopes
+                            .iter()
+                            .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
+                            .map(str::to_string)
+                            .unwrap_or_else(|| display_addr.clone());
+                        DeviceEntry {
+                            name,
+                            addr,
+                            display_addr,
+                            firmware: String::new(),
+                            online: true,
+                            manual: false,
+                            credentials: None,
+                        }
+                    })
+                    .collect();
+
+                // Preserve manually added devices
+                let manual: Vec<DeviceEntry> = devices
+                    .peek()
+                    .iter()
+                    .filter(|d| d.manual)
+                    .cloned()
+                    .collect();
+
+                let mut all = entries;
+                all.extend(manual);
+                devices.set(all);
+
+                ctx.push_toast(ToastLevel::Success, format!("Found {count} device(s)"));
+            }
+            Err(e) => {
+                ctx.push_toast(ToastLevel::Error, e);
+            }
         }
 
         scanning.set(false);
@@ -66,13 +91,13 @@ pub fn DeviceList() -> Element {
         aside { class: "sidebar",
 
             div { class: "sidebar-header",
-                span { class: "sidebar-title", "Devices" }
+                span { class: "sidebar-title", {i18n::t(locale, "sidebar_title")} }
             }
 
             div { class: "sidebar-search",
                 input {
                     class: "search-input",
-                    placeholder: "Name or address…",
+                    placeholder: i18n::t(locale, "filter_placeholder"),
                     value: "{filter}",
                     oninput: move |e| filter.set(e.value()),
                 }
@@ -82,9 +107,9 @@ pub fn DeviceList() -> Element {
                 if filtered.is_empty() {
                     div { class: "device-empty",
                         if devs.is_empty() {
-                            "No devices found.\nClick Scan to discover."
+                            {i18n::t(locale, "no_devices")}
                         } else {
-                            "No matches."
+                            {i18n::t(locale, "no_matches")}
                         }
                     }
                 }
@@ -96,6 +121,7 @@ pub fn DeviceList() -> Element {
                         display_addr: dev.display_addr.clone(),
                         firmware: dev.firmware.clone(),
                         online: dev.online,
+                        manual: dev.manual,
                         selected: sel == Some(i),
                     }
                 }
@@ -106,11 +132,21 @@ pub fn DeviceList() -> Element {
                     class: "btn btn-primary btn-sm btn-scan",
                     disabled: is_scanning,
                     onclick: do_scan,
-                    if is_scanning { "Scanning…" } else { "⟳  Scan" }
+                    if is_scanning {
+                        {i18n::t(locale, "btn_scanning")}
+                    } else {
+                        {i18n::t(locale, "btn_scan")}
+                    }
                 }
-                button { class: "btn btn-ghost btn-sm", "＋ Add" }
+                button {
+                    class: "btn btn-ghost btn-sm",
+                    onclick: move |_| add_dialog_open.set(true),
+                    {i18n::t(locale, "btn_add")}
+                }
             }
         }
+
+        AddDeviceDialog { open: add_dialog_open }
     }
 }
 
@@ -121,6 +157,7 @@ fn DeviceCard(
     display_addr: String,
     firmware: String,
     online: bool,
+    manual: bool,
     selected: bool,
 ) -> Element {
     let ctx = use_context::<Ctx>();
@@ -132,7 +169,9 @@ fn DeviceCard(
     } else {
         "device-card"
     };
-    let dot_class = if online {
+    let dot_class = if manual {
+        "status-dot status-dot--manual"
+    } else if online {
         "status-dot status-dot--online"
     } else {
         "status-dot status-dot--offline"

@@ -471,3 +471,181 @@
 ---
 
 *最後更新：2026-04-06，對照 ODM v2.2.250 原始碼分析*
+
+---
+
+## 附錄：OxDM UI 設計決策（對照 ODM）
+
+> 目標：讓 ODM 使用者無痛轉移，同時改善可維護性與使用體驗。
+
+### 保留現有三欄架構，不搬 TreeView
+
+ODM 用單一樹狀元件混合「裝置清單」與「功能導覽」，裝置多時展開節點會撐長清單、難以切換。
+OxDM 拆成 DeviceList（左側裝置清單）+ DevicePanel（選中裝置的功能導覽）+ MainContent（右側內容區），
+資訊完全對應但更清晰，且 Dioxus 不需自建遞迴 TreeView 元件。
+
+### 內容區加入 Tab Bar（裝置設定分組）
+
+ODM 在裝置資訊頁用 tab 切換 Identification / Network / DateTime / Maintenance。
+OxDM 採用相同模式：將 DevicePanel 的 General 區五項（Identification / Network / Time / Users / Maintenance）
+合併為一個「Settings」視圖，內部用 tab 切換。Events 獨立保留（即時日誌，非設定）。
+
+### 不加獨立工具列
+
+ODM 的 Discover / Add / Remove 獨占一整行，功能過少。
+OxDM 的 Scan / Add 按鈕放在 sidebar footer，Topbar 保留搜尋與全域功能（設定、主題、說明），空間利用更好。
+
+### 屬性表格加 zebra striping + 值可複製
+
+ODM 的兩欄 key-value 表格直接採用，額外加上：
+- 交替行底色提高可讀性
+- 值欄可選取複製（ODM 做不好的地方）
+- 分組標題將屬性分群
+
+### 不做可拖曳分隔條
+
+Dioxus 無原生 splitter，自製拖曳邏輯維護成本高。固定寬度 + 合理預設值即可。
+
+### 新增底部狀態列
+
+ODM 底部顯示「Connected to 3 devices」「Scanning...」，成本低但回饋感強。
+OxDM 新增 StatusBar 元件顯示裝置數量、掃描狀態、錯誤訊息。
+
+### 決策摘要
+
+| ODM 模式 | 決定 | 理由 |
+|---------|------|------|
+| TreeView 導覽 | 不搬 | 兩欄設計更清晰，免建遞迴元件 |
+| 內容區 Tab Bar | 採用 | 將相關設定分組，減少導覽項目數 |
+| 獨立工具列 | 不搬 | Topbar + sidebar footer 已足夠 |
+| 屬性表格 | 採用 | 加 zebra striping + 可複製值 |
+| 可拖曳分隔條 | 不搬 | 維護成本高，固定寬度即可 |
+| 底部狀態列 | 新增 | 成本低、回饋感強 |
+
+*更新：2026-04-14*
+
+---
+
+## 附錄：商業級桌面程式基礎建設
+
+> 以下列出 OxDM 作為成熟商業產品所需的基礎建設，依優先順序排列。
+
+### P0 — 沒有就不能用 ✓ 已完成
+
+#### 憑證管理 ✓
+
+與 ODM 相同，掃描發現的裝置統一使用全域帳密。
+手動新增（Manual Add）的裝置可以選填獨立帳密：
+
+- **全域帳密** — 設定頁設定一組，所有掃描到的裝置共用
+- **手動新增裝置** — Add 對話框提供選填帳密欄位，沒填則 fallback 到全域帳密
+- **優先順序**：手動新增時的帳密（若有）> 全域帳密
+- **儲存方式**：目前存在記憶體（TODO: 整合系統 keychain）
+
+實作：`GlobalCredentialsDialog`（齒輪按鈕）+ `AddDeviceDialog`（＋ Add 按鈕）
+`Ctx::credentials_for(device)` 處理優先順序邏輯
+
+#### Toast / 通知系統 ✓
+
+- 四種等級：Success（綠）、Info（藍）、Warning（黃）、Error（紅）
+- 4 秒自動消失 + 可手動關閉
+- 右下角疊加顯示，入場動畫
+- `ctx.push_toast(level, message)` 便捷方法
+
+實作：`ToastContainer` + `ToastItem`（`src/components/toast.rs`）
+
+#### 確認對話框 ✓
+
+- 半透明遮罩，點外面關閉
+- `dangerous: true` 時確認按鈕變紅
+- `ctx.dialog.set(Some(ConfirmDialog { ... }))` 觸發
+
+實作：`ConfirmDialogModal`（`src/components/dialog.rs`）
+
+危險操作必須二次確認，否則視為 bug：
+
+- 恢復出廠設定
+- 刪除使用者
+- 系統重開機
+- 韌體升級
+- 移除裝置
+
+### P1 — 沒有就難用
+
+#### 設定持久化
+
+- 主題、語言、視窗大小/位置 → 存到 `~/.oxdm/config.toml`
+- 啟動時還原上次狀態
+
+#### 裝置持久化
+
+- 已知裝置清單存到本地（`~/.oxdm/devices.toml`）
+- 啟動時載入上次已知裝置，背景重新掃描更新狀態
+- 手動新增的裝置不會因為掃描不到而消失
+
+#### 連線狀態心跳
+
+- 定期偵測每台裝置的連線狀態（每 30 秒一次）
+- 即時更新上線/離線狀態
+- 離線裝置顯示最後已知資訊，不是空白
+
+#### 右鍵選單
+
+ODM 使用者的肌肉記憶：
+
+- 裝置卡片右鍵 → 複製 IP、移除裝置、重新連線
+- 屬性表格右鍵 → 複製值、複製整行
+- Tab 標題右鍵 → 重新整理
+
+### P2 — 沒有就不專業
+
+#### 鍵盤快捷鍵
+
+- `Ctrl/Cmd + F` → 搜尋裝置
+- `F5` → 掃描網路
+- `Esc` → 關閉對話框 / 返回 Welcome
+- `↑ ↓` → 切換裝置
+
+#### 應用日誌
+
+- 記錄到檔案（`~/.oxdm/logs/`）
+- 日誌等級可調（Debug / Info / Warn / Error）
+- ONVIF 原始 SOAP 封包可選開啟記錄（ODM 有此功能，進階排錯用）
+
+#### 關於視窗
+
+- OxDM 版本號
+- oxvif 版本
+- 系統資訊（OS、架構）
+- 授權條款
+- GitHub 連結
+
+### P3 — 成熟產品標配
+
+#### 自動更新
+
+- 啟動時檢查 GitHub Releases 有無新版
+- 顯示更新通知 + 下載連結
+- 可選整合 Tauri updater 做靜默更新
+
+#### 安裝包與簽名
+
+- macOS `.dmg` + notarization
+- Windows `.msi` / `.exe` + code signing
+- Linux `.AppImage` / `.deb`
+- 自訂應用圖標
+- CI/CD 自動建置所有平台（GitHub Actions）
+
+#### 批次操作與分組
+
+- 多選裝置，同時設定時間 / 重開機 / 升級韌體
+- 裝置分組 / 標籤（例如「一樓」「戶外」）
+- 進階篩選（按廠牌、型號、狀態）
+
+#### 效能
+
+- 虛擬捲動（裝置清單 100+ 台時）
+- 背景任務不阻塞 UI
+- 惰性載入（切到 tab 時才拉資料）
+
+*更新：2026-04-14*

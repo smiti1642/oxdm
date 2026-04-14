@@ -3,11 +3,12 @@ use dioxus::prelude::*;
 
 mod api;
 mod components;
+mod i18n;
 mod state;
 mod views;
 
-use components::{DeviceList, DevicePanel, Topbar};
-use state::{Ctx, View};
+use components::{ConfirmDialogModal, DeviceList, DevicePanel, StatusBar, ToastContainer, Topbar};
+use state::{Credentials, Ctx, Locale, SettingsTab, Theme, View};
 use views::MainContent;
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -21,19 +22,31 @@ fn App() -> Element {
         devices: use_signal(Vec::new),
         selected: use_signal(|| None),
         view: use_signal(|| View::Welcome),
+        settings_tab: use_signal(|| SettingsTab::Identification),
         scanning: use_signal(|| false),
+        theme: use_signal(|| Theme::Dark),
+        locale: use_signal(|| Locale::En),
+        toasts: use_signal(Vec::new),
+        next_toast_id: use_signal(|| 0),
+        dialog: use_signal(|| None),
+        global_credentials: use_signal(Credentials::default),
     };
     use_context_provider(|| ctx);
 
+    let theme_class = ctx.theme.read().css_class();
+
     rsx! {
         document::Stylesheet { href: MAIN_CSS }
-        div { class: "shell",
+        div { class: theme_class,
             Topbar {}
             div { class: "shell-body",
                 DeviceList {}
                 DevicePanel {}
                 MainContent {}
             }
+            StatusBar {}
+            ToastContainer {}
+            ConfirmDialogModal {}
         }
     }
 }
