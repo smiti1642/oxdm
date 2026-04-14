@@ -44,11 +44,18 @@ pub fn DeviceList() -> Element {
                             .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
                             .map(str::to_string)
                             .unwrap_or_else(|| display_addr.clone());
+                        let location = d
+                            .scopes
+                            .iter()
+                            .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
+                            .map(urldecode)
+                            .unwrap_or_default();
                         DeviceEntry {
                             name,
                             addr,
                             display_addr,
                             firmware: String::new(),
+                            location,
                             online: true,
                             manual: false,
                             credentials: None,
@@ -85,6 +92,8 @@ pub fn DeviceList() -> Element {
                         ToastLevel::Success,
                         i18n::t(locale, "scan_found").replace("{n}", &count.to_string()),
                     );
+                    // Background: fetch firmware version for each discovered device
+                    fetch_firmware_for_all(ctx, devices);
                 } else {
                     ctx.push_toast(ToastLevel::Warning, i18n::t(locale, "scan_none"));
                 }
@@ -185,6 +194,7 @@ pub fn DeviceList() -> Element {
                         name: dev.name.clone(),
                         display_addr: dev.display_addr.clone(),
                         firmware: dev.firmware.clone(),
+                        location: dev.location.clone(),
                         online: dev.online,
                         manual: dev.manual,
                         selected: sel == Some(i),
@@ -230,6 +240,7 @@ fn DeviceCard(
     name: String,
     display_addr: String,
     firmware: String,
+    location: String,
     online: bool,
     manual: bool,
     selected: bool,
@@ -264,9 +275,40 @@ fn DeviceCard(
             }
             div { class: "device-addr", "{display_addr}" }
             if !firmware.is_empty() {
-                div { class: "device-firmware", "{firmware}" }
+                div { class: "device-firmware", "FW {firmware}" }
+            }
+            if !location.is_empty() {
+                div { class: "device-location", "{location}" }
             }
         }
+    }
+}
+
+/// After scan, fetch firmware version for each discovered device in the background.
+fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
+    let creds = ctx.global_credentials.peek().clone();
+    let addrs: Vec<(usize, String)> = devices
+        .peek()
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| !d.manual && d.firmware.is_empty())
+        .map(|(i, d)| (i, d.addr.clone()))
+        .collect();
+
+    for (idx, addr) in addrs {
+        let creds = creds.clone();
+        spawn(async move {
+            let (u, p) = if creds.username.is_empty() {
+                (None, None)
+            } else {
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
+            };
+            if let Ok(info) = api::get_device_info(&addr, u, p).await {
+                if let Some(d) = devices.write().get_mut(idx) {
+                    d.firmware = info.firmware_version;
+                }
+            }
+        });
     }
 }
 
@@ -281,4 +323,22 @@ pub fn extract_ip(addr: &str) -> String {
         .and_then(|h| h.split(':').next())
         .unwrap_or(addr)
         .to_string()
+}
+
+fn urldecode(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let h: String = chars.by_ref().take(2).collect();
+            if let Ok(b) = u8::from_str_radix(&h, 16) {
+                out.push(b as char);
+            }
+        } else if c == '+' {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }

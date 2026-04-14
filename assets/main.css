@@ -274,6 +274,14 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--overlay1);
   margin-top: 1px;
 }
+.device-location {
+  font-size: 10px;
+  color: var(--overlay0);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .status-dot {
   width: 7px;

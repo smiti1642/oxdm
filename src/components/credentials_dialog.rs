@@ -232,6 +232,7 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 addr: addr_val,
                                 display_addr: display,
                                 firmware: String::new(),
+                                location: String::new(),
                                 online: false,
                                 manual: true,
                                 credentials: creds,

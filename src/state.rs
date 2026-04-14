@@ -162,6 +162,7 @@ pub struct DeviceEntry {
     /// Human-readable IP address for display
     pub display_addr: String,
     pub firmware: String,
+    pub location: String,
     pub online: bool,
     /// Whether this device was manually added (can have its own credentials)
     pub manual: bool,
