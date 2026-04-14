@@ -3,20 +3,18 @@ use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
 
 #[component]
-pub fn TimeTab(addr: String) -> Element {
+pub fn TimeTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let creds = ctx.global_credentials.read().clone();
 
     let info = use_resource(move || {
-        let addr = addr.clone();
-        let u = creds.username.clone();
-        let p = creds.password.clone();
+        let addr = addr.read().clone();
+        let creds = ctx.global_credentials.read().clone();
         async move {
-            let (user, pass) = if u.is_empty() {
+            let (user, pass) = if creds.username.is_empty() {
                 (None, None)
             } else {
-                (Some(u.as_str()), Some(p.as_str()))
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
             };
             api::get_system_date_and_time(&addr, user, pass).await
         }
@@ -34,7 +32,11 @@ pub fn TimeTab(addr: String) -> Element {
                 let utc_str = dt.utc_unix
                     .map(format_unix_timestamp)
                     .unwrap_or_else(|| "N/A".to_string());
-                let dst = if dt.daylight_savings { "Yes" } else { "No" };
+                let dst = if dt.daylight_savings {
+                    i18n::t(locale, "yes")
+                } else {
+                    i18n::t(locale, "no")
+                };
                 rsx! {
                     table { class: "prop-table",
                         PropRow { label: i18n::t(locale, "prop_utc_time"),   value: utc_str }
@@ -62,13 +64,11 @@ fn format_unix_timestamp(ts: i64) -> String {
     let mins = (ts / 60) % 60;
     let hours = (ts / 3600) % 24;
     let days = ts / 86400;
-    // Simple date from epoch days (good enough for display)
     let (y, m, d) = epoch_days_to_ymd(days);
     format!("{y:04}-{m:02}-{d:02} {hours:02}:{mins:02}:{secs:02} UTC")
 }
 
-fn epoch_days_to_ymd(mut days: i64) -> (i64, i64, i64) {
-    // Civil days from 1970-01-01
+pub fn epoch_days_to_ymd(mut days: i64) -> (i64, i64, i64) {
     days += 719_468;
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let doe = days - era * 146_097;

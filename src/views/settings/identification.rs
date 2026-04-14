@@ -3,20 +3,18 @@ use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
 
 #[component]
-pub fn IdentificationTab(addr: String) -> Element {
+pub fn IdentificationTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let creds = ctx.global_credentials.read().clone();
 
     let info = use_resource(move || {
-        let addr = addr.clone();
-        let u = creds.username.clone();
-        let p = creds.password.clone();
+        let addr = addr.read().clone();
+        let creds = ctx.global_credentials.read().clone();
         async move {
-            let (user, pass) = if u.is_empty() {
+            let (user, pass) = if creds.username.is_empty() {
                 (None, None)
             } else {
-                (Some(u.as_str()), Some(p.as_str()))
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
             };
             let info = api::get_device_info(&addr, user, pass).await;
             let scopes = api::get_scopes(&addr, user, pass).await.unwrap_or_default();
@@ -64,8 +62,7 @@ fn PropRow(label: String, value: String) -> Element {
     }
 }
 
-fn scope_key(scope: &str) -> String {
-    // onvif://www.onvif.org/type/video_encoder → "type"
+pub fn scope_key(scope: &str) -> String {
     scope
         .strip_prefix("onvif://www.onvif.org/")
         .and_then(|s| s.split('/').next())
@@ -73,8 +70,7 @@ fn scope_key(scope: &str) -> String {
         .to_string()
 }
 
-fn scope_value(scope: &str) -> String {
-    // onvif://www.onvif.org/type/video_encoder → "video_encoder"
+pub fn scope_value(scope: &str) -> String {
     scope
         .strip_prefix("onvif://www.onvif.org/")
         .and_then(|s| s.split('/').nth(1))

@@ -156,6 +156,47 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--overlay1);
 }
 
+/* Sidebar tab bar (Discovered / Manual) */
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--surface0);
+  flex-shrink: 0;
+}
+.sidebar-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--overlay1);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sidebar-tab:hover { color: var(--text); }
+.sidebar-tab--active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  font-weight: 600;
+}
+.sidebar-tab-badge {
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  background: var(--surface1);
+  color: var(--subtext0);
+  padding: 0 4px;
+}
+.sidebar-tab--active .sidebar-tab-badge {
+  background: var(--blue);
+  color: var(--base);
+}
+
 .sidebar-search {
   padding: 8px 10px;
   border-bottom: 1px solid var(--surface0);
@@ -559,6 +600,15 @@ a      { color: var(--blue); text-decoration: none; }
   user-select: text;
   cursor: text;
   word-break: break-all;
+}
+
+.prop-table-header th {
+  background: var(--surface0);
+  font-weight: 600;
+  color: var(--text);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 2px solid var(--surface1);
 }
 
 .prop-section-header {

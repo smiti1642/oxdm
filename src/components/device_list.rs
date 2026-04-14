@@ -3,7 +3,7 @@ use crate::{
     api,
     components::{AddDeviceDialog, Icon},
     i18n,
-    state::{Ctx, DeviceEntry, ToastLevel, View},
+    state::{Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
 };
 use dioxus::prelude::*;
 
@@ -13,11 +13,14 @@ pub fn DeviceList() -> Element {
     let locale = *ctx.locale.read();
     let mut filter = use_signal(String::new);
     let mut add_dialog_open = use_signal(|| false);
+    let mut list_tab = use_signal(|| DeviceListTab::Discovered);
 
     let mut scanning = ctx.scanning;
     let mut selected = ctx.selected;
     let mut view = ctx.view;
     let mut devices = ctx.devices;
+
+    let active_tab = *list_tab.read();
 
     let do_scan = move |_| async move {
         scanning.set(true);
@@ -99,17 +102,46 @@ pub fn DeviceList() -> Element {
         .iter()
         .enumerate()
         .filter(|(_, d)| {
-            filter_str.is_empty()
-                || d.name.to_lowercase().contains(&filter_str)
-                || d.display_addr.contains(&filter_str)
+            // Filter by active tab
+            let tab_match = match active_tab {
+                DeviceListTab::Discovered => !d.manual,
+                DeviceListTab::Manual => d.manual,
+            };
+            tab_match
+                && (filter_str.is_empty()
+                    || d.name.to_lowercase().contains(&filter_str)
+                    || d.display_addr.contains(&filter_str))
         })
         .collect();
+
+    let discovered_count = devs.iter().filter(|d| !d.manual).count();
+    let manual_count = devs.iter().filter(|d| d.manual).count();
 
     rsx! {
         aside { class: "sidebar",
 
             div { class: "sidebar-header",
                 span { class: "sidebar-title", {i18n::t(locale, "sidebar_title")} }
+            }
+
+            // ── Tab bar ─────────────────────────────────────────────────────
+            div { class: "sidebar-tabs",
+                button {
+                    class: if active_tab == DeviceListTab::Discovered { "sidebar-tab sidebar-tab--active" } else { "sidebar-tab" },
+                    onclick: move |_| list_tab.set(DeviceListTab::Discovered),
+                    {i18n::t(locale, "devtab_discovered")}
+                    if discovered_count > 0 {
+                        span { class: "sidebar-tab-badge", "{discovered_count}" }
+                    }
+                }
+                button {
+                    class: if active_tab == DeviceListTab::Manual { "sidebar-tab sidebar-tab--active" } else { "sidebar-tab" },
+                    onclick: move |_| list_tab.set(DeviceListTab::Manual),
+                    {i18n::t(locale, "devtab_manual")}
+                    if manual_count > 0 {
+                        span { class: "sidebar-tab-badge", "{manual_count}" }
+                    }
+                }
             }
 
             div { class: "sidebar-search",
@@ -124,10 +156,21 @@ pub fn DeviceList() -> Element {
             div { class: "device-list",
                 if filtered.is_empty() {
                     div { class: "device-empty",
-                        if devs.is_empty() {
-                            {i18n::t(locale, "no_devices")}
-                        } else {
-                            {i18n::t(locale, "no_matches")}
+                        match active_tab {
+                            DeviceListTab::Discovered => {
+                                if devs.iter().any(|d| !d.manual) {
+                                    rsx! { {i18n::t(locale, "no_matches")} }
+                                } else {
+                                    rsx! { {i18n::t(locale, "no_devices")} }
+                                }
+                            }
+                            DeviceListTab::Manual => {
+                                if devs.iter().any(|d| d.manual) {
+                                    rsx! { {i18n::t(locale, "no_matches")} }
+                                } else {
+                                    rsx! { {i18n::t(locale, "no_manual_devices")} }
+                                }
+                            }
                         }
                     }
                 }
@@ -145,23 +188,30 @@ pub fn DeviceList() -> Element {
                 }
             }
 
+            // ── Footer: context-dependent buttons ───────────────────────────
             div { class: "sidebar-footer",
-                button {
-                    class: "btn btn-primary btn-sm btn-scan",
-                    disabled: is_scanning,
-                    onclick: do_scan,
-                    if is_scanning {
-                        {i18n::t(locale, "btn_scanning")}
-                    } else {
-                        span { class: "btn-icon", Icon { name: "refresh-cw", size: 13 } }
-                        {i18n::t(locale, "btn_scan_label")}
-                    }
-                }
-                button {
-                    class: "btn btn-ghost btn-sm",
-                    onclick: move |_| add_dialog_open.set(true),
-                    span { class: "btn-icon", Icon { name: "plus", size: 13 } }
-                    {i18n::t(locale, "btn_add_label")}
+                match active_tab {
+                    DeviceListTab::Discovered => rsx! {
+                        button {
+                            class: "btn btn-primary btn-sm btn-scan",
+                            disabled: is_scanning,
+                            onclick: do_scan,
+                            if is_scanning {
+                                {i18n::t(locale, "btn_scanning")}
+                            } else {
+                                span { class: "btn-icon", Icon { name: "refresh-cw", size: 13 } }
+                                {i18n::t(locale, "btn_scan_label")}
+                            }
+                        }
+                    },
+                    DeviceListTab::Manual => rsx! {
+                        button {
+                            class: "btn btn-primary btn-sm btn-scan",
+                            onclick: move |_| add_dialog_open.set(true),
+                            span { class: "btn-icon", Icon { name: "plus", size: 13 } }
+                            {i18n::t(locale, "btn_add_label")}
+                        }
+                    },
                 }
             }
         }
@@ -202,7 +252,6 @@ fn DeviceCard(
             class: card_class,
             onclick: move |_| {
                 sel.set(Some(index));
-                // Auto-navigate to Settings when selecting a device
                 view.set(View::DeviceSettings);
             },
             div { class: "device-card-header",
@@ -217,7 +266,7 @@ fn DeviceCard(
     }
 }
 
-fn extract_ip(addr: &str) -> String {
+pub fn extract_ip(addr: &str) -> String {
     let stripped = addr
         .strip_prefix("http://")
         .or_else(|| addr.strip_prefix("https://"))

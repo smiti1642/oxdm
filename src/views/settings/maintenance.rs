@@ -5,12 +5,9 @@ use crate::{api, i18n};
 use dioxus::prelude::*;
 
 #[component]
-pub fn MaintenanceTab(addr: String) -> Element {
+pub fn MaintenanceTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-
-    let addr_reboot = addr.clone();
-    let addr_reset = addr.clone();
 
     rsx! {
         div { class: "maintenance-actions",
@@ -24,7 +21,7 @@ pub fn MaintenanceTab(addr: String) -> Element {
                 button {
                     class: "btn btn-md btn-ghost",
                     onclick: move |_| {
-                        let addr = addr_reboot.clone();
+                        let addr = addr.read().clone();
                         let creds = ctx.global_credentials.peek().clone();
                         ctx.dialog.clone().set(Some(ConfirmDialog {
                             title: i18n::t(locale, "maint_reboot").to_string(),
@@ -63,7 +60,7 @@ pub fn MaintenanceTab(addr: String) -> Element {
                 button {
                     class: "btn btn-md btn-danger",
                     onclick: move |_| {
-                        let addr = addr_reset.clone();
+                        let addr = addr.read().clone();
                         let creds = ctx.global_credentials.peek().clone();
                         ctx.dialog.clone().set(Some(ConfirmDialog {
                             title: i18n::t(locale, "maint_factory_reset").to_string(),

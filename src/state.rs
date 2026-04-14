@@ -63,6 +63,14 @@ impl Locale {
     }
 }
 
+// ── Device list tab ─────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DeviceListTab {
+    Discovered,
+    Manual,
+}
+
 // ── View ────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq)]

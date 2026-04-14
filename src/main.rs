@@ -5,6 +5,8 @@ mod api;
 mod components;
 mod i18n;
 mod state;
+#[cfg(test)]
+mod tests;
 mod views;
 
 use components::{ConfirmDialogModal, DeviceList, DevicePanel, StatusBar, ToastContainer, Topbar};
@@ -14,6 +16,16 @@ use views::MainContent;
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
 fn main() {
+    // RUST_LOG=oxdm=debug for verbose output; default is info
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "oxdm=info".parse().unwrap()),
+        )
+        .with_target(false)
+        .init();
+
+    tracing::info!("OxDM starting");
     dioxus::launch(App);
 }
 

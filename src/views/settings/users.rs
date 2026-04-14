@@ -3,20 +3,18 @@ use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
 
 #[component]
-pub fn UsersTab(addr: String) -> Element {
+pub fn UsersTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let creds = ctx.global_credentials.read().clone();
 
     let users = use_resource(move || {
-        let addr = addr.clone();
-        let u = creds.username.clone();
-        let p = creds.password.clone();
+        let addr = addr.read().clone();
+        let creds = ctx.global_credentials.read().clone();
         async move {
-            let (user, pass) = if u.is_empty() {
+            let (user, pass) = if creds.username.is_empty() {
                 (None, None)
             } else {
-                (Some(u.as_str()), Some(p.as_str()))
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
             };
             api::get_users(&addr, user, pass).await
         }
@@ -32,9 +30,9 @@ pub fn UsersTab(addr: String) -> Element {
             },
             Some(Ok(user_list)) => rsx! {
                 table { class: "prop-table",
-                    tr {
-                        td { class: "prop-label", {i18n::t(locale, "user_name")} }
-                        td { class: "prop-label", {i18n::t(locale, "user_level")} }
+                    tr { class: "prop-table-header",
+                        th { class: "prop-label", {i18n::t(locale, "user_name")} }
+                        th { class: "prop-label", {i18n::t(locale, "user_level")} }
                     }
                     for user in user_list {
                         tr {

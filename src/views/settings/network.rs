@@ -16,20 +16,18 @@ struct NetworkData {
 }
 
 #[component]
-pub fn NetworkTab(addr: String) -> Element {
+pub fn NetworkTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let creds = ctx.global_credentials.read().clone();
 
     let info = use_resource(move || {
-        let addr = addr.clone();
-        let u = creds.username.clone();
-        let p = creds.password.clone();
+        let addr = addr.read().clone();
+        let creds = ctx.global_credentials.read().clone();
         async move {
-            let (user, pass) = if u.is_empty() {
+            let (user, pass) = if creds.username.is_empty() {
                 (None, None)
             } else {
-                (Some(u.as_str()), Some(p.as_str()))
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
             };
 
             let hostname = api::get_hostname(&addr, user, pass).await.ok();
@@ -75,7 +73,6 @@ pub fn NetworkTab(addr: String) -> Element {
                 div { class: "tab-error", "{e}" }
             },
             Some(Ok(data)) => rsx! {
-                // Hostname
                 div { class: "prop-section-header", {i18n::t(locale, "net_hostname")} }
                 table { class: "prop-table",
                     PropRow {
@@ -88,7 +85,6 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                 }
 
-                // Interfaces
                 for iface in &data.interfaces {
                     div { class: "prop-section-header",
                         {format!("{} ({})", i18n::t(locale, "net_interface"), &iface.name)}
@@ -110,7 +106,6 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                 }
 
-                // Gateway
                 if !data.gateways.is_empty() {
                     div { class: "prop-section-header", {i18n::t(locale, "net_gateway")} }
                     table { class: "prop-table",
@@ -120,7 +115,6 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                 }
 
-                // DNS
                 div { class: "prop-section-header", "DNS" }
                 table { class: "prop-table",
                     PropRow { label: "DHCP", value: yn(locale, data.dns_from_dhcp) }
@@ -129,7 +123,6 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                 }
 
-                // NTP
                 div { class: "prop-section-header", "NTP" }
                 table { class: "prop-table",
                     PropRow { label: "DHCP", value: yn(locale, data.ntp_from_dhcp) }
@@ -138,7 +131,6 @@ pub fn NetworkTab(addr: String) -> Element {
                     }
                 }
 
-                // Protocols
                 if !data.protocols.is_empty() {
                     div { class: "prop-section-header", {i18n::t(locale, "net_protocols")} }
                     table { class: "prop-table",

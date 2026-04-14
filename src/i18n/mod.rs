@@ -1,6 +1,6 @@
-mod en;
-mod ru;
-mod zh_tw;
+pub(crate) mod en;
+pub(crate) mod ru;
+pub(crate) mod zh_tw;
 
 use crate::state::Locale;
 

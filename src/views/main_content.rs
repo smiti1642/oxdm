@@ -10,13 +10,16 @@ pub fn MainContent() -> Element {
     let ctx = use_context::<Ctx>();
     let view = *ctx.view.read();
     let locale = *ctx.locale.read();
-    let devices = ctx.devices.read();
-    let selected = *ctx.selected.read();
 
-    let addr = selected
-        .and_then(|i| devices.get(i))
-        .map(|d| d.addr.clone())
-        .unwrap_or_default();
+    // Derive addr as a reactive memo so tab components re-fetch on device switch
+    let addr = use_memo(move || {
+        let devices = ctx.devices.read();
+        let selected = *ctx.selected.read();
+        selected
+            .and_then(|i| devices.get(i))
+            .map(|d| d.addr.clone())
+            .unwrap_or_default()
+    });
 
     rsx! {
         main { class: "main-content",
@@ -60,7 +63,7 @@ const SETTINGS_TABS: &[(SettingsTab, &str, &str)] = &[
 ];
 
 #[component]
-fn DeviceSettingsView(addr: String) -> Element {
+fn DeviceSettingsView(addr: Memo<String>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let active = *ctx.settings_tab.read();
