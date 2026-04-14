@@ -60,6 +60,7 @@ mod i18n_tests {
         "btn_confirm",
         "btn_add_short",
         // Credentials
+        "not_logged_in",
         "cred_global_title",
         "cred_global_hint",
         "cred_username",

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::{
     api,
-    components::{AddDeviceDialog, Icon},
+    components::{AddDeviceDialog, GlobalCredentialsDialog, Icon},
     i18n,
     state::{Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
 };
@@ -13,7 +13,13 @@ pub fn DeviceList() -> Element {
     let locale = *ctx.locale.read();
     let mut filter = use_signal(String::new);
     let mut add_dialog_open = use_signal(|| false);
+    let mut creds_open = use_signal(|| false);
     let mut list_tab = use_signal(|| DeviceListTab::Discovered);
+
+    let creds = ctx.global_credentials.read();
+    let creds_empty = creds.username.is_empty();
+    let creds_username = creds.username.clone();
+    drop(creds);
 
     let mut scanning = ctx.scanning;
     let mut selected = ctx.selected;
@@ -135,6 +141,17 @@ pub fn DeviceList() -> Element {
 
             div { class: "sidebar-header",
                 span { class: "sidebar-title", {i18n::t(locale, "sidebar_title")} }
+                button {
+                    class: if creds_empty { "cred-indicator cred-indicator--empty" } else { "cred-indicator" },
+                    onclick: move |_| creds_open.set(true),
+                    if creds_empty {
+                        Icon { name: "key", size: 12 }
+                        span { class: "cred-indicator-text", {i18n::t(locale, "not_logged_in")} }
+                    } else {
+                        span { class: "cred-indicator-text", "{creds_username}" }
+                        Icon { name: "key", size: 12 }
+                    }
+                }
             }
 
             // ── Tab bar ─────────────────────────────────────────────────────
@@ -231,6 +248,7 @@ pub fn DeviceList() -> Element {
         }
 
         AddDeviceDialog { open: add_dialog_open }
+        GlobalCredentialsDialog { open: creds_open }
     }
 }
 

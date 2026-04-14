@@ -27,11 +27,11 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
-            onclick: move |_| open_sig.set(false),
+            onmousedown: move |_| open_sig.set(false),
 
             div {
                 class: "dialog",
-                onclick: |e| e.stop_propagation(),
+                onmousedown: |e| e.stop_propagation(),
 
                 div { class: "dialog-header",
                     span { class: "dialog-title", {i18n::t(locale, "cred_global_title")} }

@@ -62,6 +62,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_add_short" => "\u{65B0}\u{589E}",
 
         // ── Credentials ─────────────────────────────────────────────────────
+        "not_logged_in" => "\u{672A}\u{767B}\u{5165}",
         "cred_global_title" => "\u{5168}\u{57DF}\u{6191}\u{8B49}",
         "cred_global_hint" => "\u{6383}\u{63CF}\u{5230}\u{7684}\u{88DD}\u{7F6E}\u{5747}\u{4F7F}\u{7528}\u{6B64}\u{5E33}\u{5BC6}\u{3002}",
         "cred_username" => "\u{5E33}\u{865F}",

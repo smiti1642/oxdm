@@ -12,6 +12,5 @@ pub use device_list::DeviceList;
 pub use device_panel::DevicePanel;
 pub use dialog::ConfirmDialogModal;
 pub use icon::Icon;
-pub use status_bar::StatusBar;
 pub use toast::ToastContainer;
 pub use topbar::Topbar;

@@ -62,6 +62,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_add_short" => "Add",
 
         // ── Credentials ─────────────────────────────────────────────────────
+        "not_logged_in" => "Not Login",
         "cred_global_title" => "Global Credentials",
         "cred_global_hint" => "Default username and password used for all discovered devices.",
         "cred_username" => "Username",

@@ -197,6 +197,25 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--base);
 }
 
+/* Credential indicator in sidebar header */
+.cred-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--overlay1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+  cursor: pointer;
+}
+.cred-indicator:hover { background: var(--surface0); color: var(--text); }
+.cred-indicator--empty {
+  color: var(--red);
+}
+.cred-indicator--empty:hover { color: var(--red); }
+.cred-indicator-text { white-space: nowrap; }
+
 .sidebar-search {
   padding: 8px 10px;
   border-bottom: 1px solid var(--surface0);

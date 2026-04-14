@@ -28,12 +28,11 @@ pub fn ConfirmDialogModal() -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
-            onclick: move |_| dialog_sig.set(None),
+            onmousedown: move |_| dialog_sig.set(None),
 
             div {
                 class: "dialog",
-                // Stop click from closing when clicking inside the dialog
-                onclick: |e| e.stop_propagation(),
+                onmousedown: |e| e.stop_propagation(),
 
                 div { class: "dialog-header",
                     span { class: "dialog-title", "{title}" }
