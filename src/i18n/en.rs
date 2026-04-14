@@ -77,6 +77,14 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_name_hint" => "Optional",
         "add_device_custom_creds" => "Custom credentials",
         "scan_none" => "No devices found. Try adding manually or check network settings.",
+
+        // ── Context Menu ────────────────────────────────────────────────────
+        "ctx_copy_addr" => "Copy address",
+        "ctx_copied" => "Copied to clipboard.",
+        "ctx_delete" => "Delete",
+        "ctx_delete_confirm" => "Delete device \"{name}\"?",
+        "ctx_add_manual" => "Add to Manual",
+        "ctx_added_manual" => "Device added to Manual list.",
         "add_device_ok" => "Device added.",
         "cred_saved" => "Credentials saved.",
         "scan_found" => "Found {n} device(s).",

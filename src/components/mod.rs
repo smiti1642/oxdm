@@ -1,3 +1,4 @@
+mod context_menu;
 pub(crate) mod credentials_dialog;
 mod device_list;
 mod device_panel;
@@ -7,6 +8,7 @@ mod status_bar;
 mod toast;
 mod topbar;
 
+pub use context_menu::{ContextMenu, CtxMenuItem};
 pub use credentials_dialog::{AddDeviceDialog, GlobalCredentialsDialog};
 pub use device_list::DeviceList;
 pub use device_panel::DevicePanel;

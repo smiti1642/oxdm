@@ -74,6 +74,13 @@ mod i18n_tests {
         "add_device_name_hint",
         "add_device_custom_creds",
         "scan_none",
+        // Context menu
+        "ctx_copy_addr",
+        "ctx_copied",
+        "ctx_delete",
+        "ctx_delete_confirm",
+        "ctx_add_manual",
+        "ctx_added_manual",
         "add_device_ok",
         "cred_saved",
         "scan_found",

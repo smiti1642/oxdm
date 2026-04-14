@@ -74,6 +74,14 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_addr_hint" => "192.168.1.100",
         "add_device_addr_auto" => "\u{53EA}\u{9700}\u{8F38}\u{5165} IP\u{FF0C}ONVIF \u{8DEF}\u{5F91}\u{6703}\u{81EA}\u{52D5}\u{88DC}\u{5168}\u{3002}",
         "scan_none" => "\u{672A}\u{627E}\u{5230}\u{88DD}\u{7F6E}\u{3002}\u{8ACB}\u{5617}\u{8A66}\u{624B}\u{52D5}\u{65B0}\u{589E}\u{6216}\u{6AA2}\u{67E5}\u{7DB2}\u{8DEF}\u{8A2D}\u{5B9A}\u{3002}",
+
+        // ── Context Menu ────────────────────────────────────────────────────
+        "ctx_copy_addr" => "\u{8907}\u{88FD}\u{4F4D}\u{5740}",
+        "ctx_copied" => "\u{5DF2}\u{8907}\u{88FD}\u{5230}\u{526A}\u{8CBC}\u{7C3F}\u{3002}",
+        "ctx_delete" => "\u{522A}\u{9664}",
+        "ctx_delete_confirm" => "\u{78BA}\u{5B9A}\u{522A}\u{9664}\u{88DD}\u{7F6E}\u{300C}{name}\u{300D}\u{FF1F}",
+        "ctx_add_manual" => "\u{52A0}\u{5165}\u{624B}\u{52D5}\u{6E05}\u{55AE}",
+        "ctx_added_manual" => "\u{88DD}\u{7F6E}\u{5DF2}\u{52A0}\u{5165}\u{624B}\u{52D5}\u{6E05}\u{55AE}\u{3002}",
         "add_device_name" => "\u{986F}\u{793A}\u{540D}\u{7A31}",
         "add_device_name_hint" => "\u{9078}\u{586B}",
         "add_device_custom_creds" => "\u{81EA}\u{8A02}\u{6191}\u{8B49}",

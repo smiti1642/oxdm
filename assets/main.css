@@ -1007,6 +1007,43 @@ a      { color: var(--blue); text-decoration: none; }
   line-height: 1.5;
 }
 
+/* ── Context Menu ─────────────────────────────────────────────────────────── */
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 160px;
+  background: var(--mantle);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  animation: dialog-in 0.12s ease-out;
+  z-index: 8001;
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.1s;
+}
+.ctx-menu-item:hover { background: var(--surface0); }
+.ctx-menu-item--danger { color: var(--red); }
+.ctx-menu-item--danger:hover { background: rgba(243, 139, 168, 0.1); }
+
+.ctx-menu-item-icon { flex-shrink: 0; opacity: 0.7; }
+
 /* Classic theme: sharper dialog corners */
 .theme-classic .dialog { border-radius: 6px; }
 .theme-classic .toast { border-radius: 4px; }

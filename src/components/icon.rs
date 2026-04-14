@@ -150,6 +150,17 @@ fn icon_paths(name: &str) -> Element {
             path { d: "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" }
             path { d: "m2 2 20 20" }
         },
+        "clipboard-copy" => rsx! {
+            rect { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1" }
+            path { d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" }
+        },
+        "trash-2" => rsx! {
+            path { d: "M3 6h18" }
+            path { d: "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" }
+            path { d: "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" }
+            path { d: "M10 11v6" }
+            path { d: "M14 11v6" }
+        },
         "plus" => rsx! {
             path { d: "M5 12h14" }
             path { d: "M12 5v14" }

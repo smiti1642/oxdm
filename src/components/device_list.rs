@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 use crate::{
     api,
-    components::{AddDeviceDialog, GlobalCredentialsDialog, Icon},
+    components::{AddDeviceDialog, ContextMenu, CtxMenuItem, GlobalCredentialsDialog, Icon},
     i18n,
-    state::{Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
+    state::{ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
 };
 use dioxus::prelude::*;
 
@@ -264,8 +264,12 @@ fn DeviceCard(
     selected: bool,
 ) -> Element {
     let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
     let mut sel = ctx.selected;
     let mut view = ctx.view;
+    let mut devices = ctx.devices;
+
+    let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
 
     let card_class = if selected {
         "device-card device-card--selected"
@@ -280,12 +284,20 @@ fn DeviceCard(
         "status-dot status-dot--offline"
     };
 
+    let card_name = name.clone();
+    let card_addr = display_addr.clone();
+
     rsx! {
         div {
             class: card_class,
             onclick: move |_| {
                 sel.set(Some(index));
                 view.set(View::DeviceSettings);
+            },
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                let coords = e.data().client_coordinates();
+                ctx_menu.set(Some((coords.x, coords.y)));
             },
             div { class: "device-card-header",
                 span { class: dot_class }
@@ -297,6 +309,98 @@ fn DeviceCard(
             }
             if !location.is_empty() {
                 div { class: "device-location", "{location}" }
+            }
+        }
+
+        if let Some((mx, my)) = *ctx_menu.read() {
+            ContextMenu {
+                x: mx,
+                y: my,
+                on_close: move |_| ctx_menu.set(None),
+                if manual {
+                    // Manual device: Edit (re-open add dialog? for now just copy IP)
+                    CtxMenuItem {
+                        icon: "clipboard-copy",
+                        label: i18n::t(locale, "ctx_copy_addr"),
+                        on_click: move |_| {
+                            // Copy address to clipboard via eval
+                            let js = format!("navigator.clipboard.writeText('{}')", card_addr.replace('\'', "\\'"));
+                            document::eval(&js);
+                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ctx_copied"));
+                            ctx_menu.set(None);
+                        },
+                    }
+                    CtxMenuItem {
+                        icon: "trash-2",
+                        label: i18n::t(locale, "ctx_delete"),
+                        danger: true,
+                        on_click: move |_| {
+                            let dev_name = card_name.clone();
+                            ctx_menu.set(None);
+                            ctx.dialog.clone().set(Some(ConfirmDialog {
+                                title: i18n::t(locale, "ctx_delete").to_string(),
+                                message: i18n::t(locale, "ctx_delete_confirm")
+                                    .replace("{name}", &dev_name),
+                                confirm_label: i18n::t(locale, "btn_confirm").to_string(),
+                                cancel_label: i18n::t(locale, "btn_cancel").to_string(),
+                                dangerous: true,
+                                on_confirm: EventHandler::new(move |_| {
+                                    devices.write().remove(index);
+                                    // Fix selection
+                                    let current_sel = *ctx.selected.peek();
+                                    if current_sel == Some(index) {
+                                        ctx.selected.clone().set(None);
+                                        ctx.view.clone().set(View::Welcome);
+                                    } else if let Some(s) = current_sel {
+                                        if s > index {
+                                            ctx.selected.clone().set(Some(s - 1));
+                                        }
+                                    }
+                                }),
+                            }));
+                        },
+                    }
+                } else {
+                    // Discovered device: Add to Manual
+                    CtxMenuItem {
+                        icon: "plus",
+                        label: i18n::t(locale, "ctx_add_manual"),
+                        on_click: move |_| {
+                            ctx_menu.set(None);
+                            // Copy the discovered device as a manual entry with current creds
+                            let snapshot = devices.peek().get(index).cloned();
+                            if let Some(dev) = snapshot {
+                                let creds = ctx.global_credentials.peek().clone();
+                                let cred = if creds.username.is_empty() {
+                                    None
+                                } else {
+                                    Some(creds)
+                                };
+                                devices.write().push(DeviceEntry {
+                                    name: dev.name,
+                                    addr: dev.addr,
+                                    display_addr: dev.display_addr,
+                                    firmware: dev.firmware,
+                                    location: dev.location,
+                                    online: false,
+                                    manual: true,
+                                    credentials: cred,
+                                });
+                            }
+                            ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ctx_added_manual"));
+                        },
+                    }
+                    CtxMenuItem {
+                        icon: "clipboard-copy",
+                        label: i18n::t(locale, "ctx_copy_addr"),
+                        on_click: move |_| {
+                            let js = format!("navigator.clipboard.writeText('{}')", card_addr.replace('\'', "\\'"));
+                            document::eval(&js);
+                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ctx_copied"));
+                            ctx_menu.set(None);
+                        },
+                    }
+                }
             }
         }
     }
