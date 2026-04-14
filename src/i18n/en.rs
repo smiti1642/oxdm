@@ -71,6 +71,42 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_name_hint" => "Optional",
         "add_device_custom_creds" => "Custom credentials",
 
+        // ── Shared ──────────────────────────────────────────────────────────
+        "loading" => "Loading\u{2026}",
+
+        // ── Identification tab ──────────────────────────────────────────────
+        "prop_manufacturer" => "Manufacturer",
+        "prop_model" => "Model",
+        "prop_firmware" => "Firmware",
+        "prop_serial" => "Serial number",
+        "prop_hardware_id" => "Hardware ID",
+        "prop_scopes" => "Scopes",
+
+        // ── Time tab ────────────────────────────────────────────────────────
+        "prop_utc_time" => "UTC time",
+        "prop_timezone" => "Timezone",
+        "prop_dst" => "Daylight savings",
+
+        // ── Network tab ─────────────────────────────────────────────────────
+        "net_hostname" => "Hostname",
+        "net_interface" => "Interface",
+        "net_gateway" => "Gateway",
+        "net_protocols" => "Protocols",
+
+        // ── Users tab ───────────────────────────────────────────────────────
+        "user_name" => "Username",
+        "user_level" => "Level",
+        "user_none" => "No users found.",
+
+        // ── Maintenance tab ─────────────────────────────────────────────────
+        "maint_reboot" => "Reboot",
+        "maint_reboot_desc" => "Restart the device. This may take a few minutes.",
+        "maint_reboot_confirm" => "Are you sure you want to reboot this device?",
+        "maint_factory_reset" => "Factory reset",
+        "maint_factory_reset_desc" => "Restore all settings to factory defaults. This cannot be undone.",
+        "maint_factory_reset_confirm" => "This will erase all settings. Are you sure?",
+        "maint_factory_reset_ok" => "Factory reset initiated.",
+
         _ => return None,
     })
 }

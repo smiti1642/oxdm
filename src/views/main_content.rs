@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 use crate::i18n;
 use crate::state::{Ctx, SettingsTab, View};
+use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
 use dioxus::prelude::*;
 
 #[component]
@@ -81,28 +82,13 @@ fn DeviceSettingsView(addr: String) -> Element {
 
             div { class: "tab-content",
                 match active {
-                    SettingsTab::Identification => rsx! { SettingsPlaceholder { title: i18n::t(locale, "tab_identification"), addr } },
-                    SettingsTab::Network        => rsx! { SettingsPlaceholder { title: i18n::t(locale, "tab_network"),        addr } },
-                    SettingsTab::Time           => rsx! { SettingsPlaceholder { title: i18n::t(locale, "tab_time"),           addr } },
-                    SettingsTab::Users          => rsx! { SettingsPlaceholder { title: i18n::t(locale, "tab_users"),          addr } },
-                    SettingsTab::Maintenance    => rsx! { SettingsPlaceholder { title: i18n::t(locale, "tab_maintenance"),    addr } },
+                    SettingsTab::Identification => rsx! { IdentificationTab { addr } },
+                    SettingsTab::Network        => rsx! { NetworkTab { addr } },
+                    SettingsTab::Time           => rsx! { TimeTab { addr } },
+                    SettingsTab::Users          => rsx! { UsersTab { addr } },
+                    SettingsTab::Maintenance    => rsx! { MaintenanceTab { addr } },
                 }
             }
-        }
-    }
-}
-
-#[component]
-fn SettingsPlaceholder(title: &'static str, addr: String) -> Element {
-    let ctx = use_context::<Ctx>();
-    let locale = *ctx.locale.read();
-
-    rsx! {
-        div { class: "settings-placeholder",
-            if !addr.is_empty() {
-                span { class: "placeholder-addr", "{addr}" }
-            }
-            p { class: "placeholder-hint", {i18n::t(locale, "coming_soon")} }
         }
     }
 }

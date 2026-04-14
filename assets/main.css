@@ -861,7 +861,64 @@ a      { color: var(--blue); text-decoration: none; }
 /* Manual device dot */
 .status-dot--manual { background: var(--blue); box-shadow: 0 0 4px var(--blue); }
 
+/* ── Tab loading / error / empty states ───────────────────────────────────── */
+.tab-loading {
+  padding: 24px;
+  color: var(--overlay1);
+  font-size: 13px;
+}
+.tab-error {
+  padding: 24px;
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.tab-empty {
+  padding: 16px 12px;
+  color: var(--overlay0);
+  font-size: 13px;
+}
+
+/* ── Maintenance cards ───────────────────────────────────────────────────── */
+.maintenance-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.maintenance-card {
+  border: 1px solid var(--surface1);
+  border-radius: 10px;
+  padding: 16px 20px;
+  background: var(--mantle);
+}
+.maintenance-card--danger {
+  border-color: var(--red);
+  border-left: 3px solid var(--red);
+}
+
+.maintenance-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.maintenance-icon { font-size: 18px; }
+.maintenance-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.maintenance-desc {
+  font-size: 12px;
+  color: var(--subtext0);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
 /* Classic theme: sharper dialog corners */
 .theme-classic .dialog { border-radius: 6px; }
 .theme-classic .toast { border-radius: 4px; }
 .theme-classic .form-input { border-radius: 3px; }
+.theme-classic .maintenance-card { border-radius: 4px; }

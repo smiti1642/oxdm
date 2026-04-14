@@ -71,6 +71,42 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_name_hint" => "\u{9078}\u{586B}",
         "add_device_custom_creds" => "\u{81EA}\u{8A02}\u{6191}\u{8B49}",
 
+        // ── Shared ──────────────────────────────────────────────────────────
+        "loading" => "\u{8F09}\u{5165}\u{4E2D}\u{2026}",
+
+        // ── Identification tab ──────────────────────────────────────────────
+        "prop_manufacturer" => "\u{88FD}\u{9020}\u{5546}",
+        "prop_model" => "\u{578B}\u{865F}",
+        "prop_firmware" => "\u{97CC}\u{9AD4}",
+        "prop_serial" => "\u{5E8F}\u{865F}",
+        "prop_hardware_id" => "\u{786C}\u{9AD4} ID",
+        "prop_scopes" => "Scopes",
+
+        // ── Time tab ────────────────────────────────────────────────────────
+        "prop_utc_time" => "UTC \u{6642}\u{9593}",
+        "prop_timezone" => "\u{6642}\u{5340}",
+        "prop_dst" => "\u{65E5}\u{5149}\u{7BC0}\u{7D04}",
+
+        // ── Network tab ─────────────────────────────────────────────────────
+        "net_hostname" => "\u{4E3B}\u{6A5F}\u{540D}\u{7A31}",
+        "net_interface" => "\u{7DB2}\u{8DEF}\u{4ECB}\u{9762}",
+        "net_gateway" => "\u{9810}\u{8A2D}\u{9598}\u{9053}",
+        "net_protocols" => "\u{5354}\u{5B9A}",
+
+        // ── Users tab ───────────────────────────────────────────────────────
+        "user_name" => "\u{5E33}\u{865F}",
+        "user_level" => "\u{6B0A}\u{9650}",
+        "user_none" => "\u{672A}\u{627E}\u{5230}\u{4F7F}\u{7528}\u{8005}\u{3002}",
+
+        // ── Maintenance tab ─────────────────────────────────────────────────
+        "maint_reboot" => "\u{91CD}\u{65B0}\u{958B}\u{6A5F}",
+        "maint_reboot_desc" => "\u{91CD}\u{65B0}\u{555F}\u{52D5}\u{88DD}\u{7F6E}\u{FF0C}\u{53EF}\u{80FD}\u{9700}\u{8981}\u{5E7E}\u{5206}\u{9418}\u{3002}",
+        "maint_reboot_confirm" => "\u{78BA}\u{5B9A}\u{8981}\u{91CD}\u{65B0}\u{958B}\u{6A5F}\u{55CE}\u{FF1F}",
+        "maint_factory_reset" => "\u{6062}\u{5FA9}\u{51FA}\u{5EE0}\u{8A2D}\u{5B9A}",
+        "maint_factory_reset_desc" => "\u{5C07}\u{6240}\u{6709}\u{8A2D}\u{5B9A}\u{6062}\u{5FA9}\u{70BA}\u{51FA}\u{5EE0}\u{9810}\u{8A2D}\u{3002}\u{6B64}\u{64CD}\u{4F5C}\u{7121}\u{6CD5}\u{5FA9}\u{539F}\u{3002}",
+        "maint_factory_reset_confirm" => "\u{9019}\u{5C07}\u{6E05}\u{9664}\u{6240}\u{6709}\u{8A2D}\u{5B9A}\u{3002}\u{78BA}\u{5B9A}\u{55CE}\u{FF1F}",
+        "maint_factory_reset_ok" => "\u{5DF2}\u{555F}\u{52D5}\u{51FA}\u{5EE0}\u{91CD}\u{8A2D}\u{3002}",
+
         _ => return None,
     })
 }
