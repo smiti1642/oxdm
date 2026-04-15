@@ -4,6 +4,7 @@ use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Credentials, Ctx, View};
 use dioxus::prelude::*;
+use tracing::{debug, warn};
 
 #[component]
 pub fn DevicePanel() -> Element {
@@ -108,19 +109,42 @@ fn ProfileThumbnails() -> Element {
             let (u, p) = creds.as_options();
 
             let profiles = api::get_profiles(&addr, u, p).await?;
+            debug!(addr = %addr, count = profiles.len(), "GetProfiles OK");
 
             let mut infos = Vec::new();
             for profile in &profiles {
-                let snap_url = api::get_snapshot_uri(&addr, u, p, &profile.token)
-                    .await
-                    .ok()
-                    .map(|s| s.uri);
-                infos.push(ProfileInfo {
-                    profile_token: profile.token.clone(),
-                    profile_name: profile.name.clone(),
-                    snapshot_url: snap_url,
-                    creds: creds.clone(),
-                });
+                match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
+                    Ok(snap) => {
+                        debug!(
+                            addr = %addr,
+                            profile = %profile.token,
+                            name = %profile.name,
+                            snapshot_url = %snap.uri,
+                            "GetSnapshotUri OK"
+                        );
+                        infos.push(ProfileInfo {
+                            profile_token: profile.token.clone(),
+                            profile_name: profile.name.clone(),
+                            snapshot_url: Some(snap.uri),
+                            creds: creds.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        warn!(
+                            addr = %addr,
+                            profile = %profile.token,
+                            name = %profile.name,
+                            error = %e,
+                            "GetSnapshotUri FAILED — profile shown without thumbnail"
+                        );
+                        infos.push(ProfileInfo {
+                            profile_token: profile.token.clone(),
+                            profile_name: profile.name.clone(),
+                            snapshot_url: None,
+                            creds: creds.clone(),
+                        });
+                    }
+                }
             }
             Ok(infos)
         }

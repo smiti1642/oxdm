@@ -201,27 +201,55 @@ pub async fn fetch_snapshot_data_uri(
     use base64::Engine;
     use diqwest::WithDigestAuth;
 
+    let has_auth = matches!((username, password), (Some(u), Some(_)) if !u.is_empty());
+    debug!(snapshot_url, has_auth, "Fetching snapshot");
+
     let http = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            error!(error = %e, "Failed to build HTTP client");
+            e.to_string()
+        })?;
 
     let resp = match (username, password) {
         (Some(u), Some(p)) if !u.is_empty() => http
             .get(snapshot_url)
             .send_digest_auth((u, p))
             .await
-            .map_err(|e| e.to_string())?,
-        _ => http
-            .get(snapshot_url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?,
+            .map_err(|e| {
+                error!(snapshot_url, error = %e, "Digest auth request failed");
+                e.to_string()
+            })?,
+        _ => http.get(snapshot_url).send().await.map_err(|e| {
+            error!(snapshot_url, error = %e, "HTTP request failed");
+            e.to_string()
+        })?,
     };
 
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+    let status = resp.status();
+    if !status.is_success() {
+        let www_auth = resp
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("(none)")
+            .to_string();
+        let body_preview = resp.text().await.unwrap_or_default();
+        let body_preview = if body_preview.len() > 500 {
+            format!("{}...", &body_preview[..500])
+        } else {
+            body_preview
+        };
+        error!(
+            snapshot_url,
+            status = %status,
+            www_authenticate = %www_auth,
+            body = %body_preview,
+            "Snapshot fetch failed"
+        );
+        return Err(format!("HTTP {status}"));
     }
 
     let content_type = resp
@@ -232,6 +260,13 @@ pub async fn fetch_snapshot_data_uri(
         .to_string();
 
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    debug!(
+        snapshot_url,
+        status = %status,
+        content_type = %content_type,
+        size_bytes = bytes.len(),
+        "Snapshot fetched OK"
+    );
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{content_type};base64,{b64}"))
 }
