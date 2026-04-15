@@ -245,6 +245,9 @@ mod state_tests {
 #[cfg(test)]
 mod util_tests {
     use crate::components::credentials_dialog::normalize_onvif_addr;
+    use crate::util::{extract_ip, urldecode};
+    use crate::views::settings::identification::{scope_key, scope_value};
+    use crate::views::settings::time::epoch_days_to_ymd;
 
     #[test]
     fn normalize_bare_ip() {
@@ -295,20 +298,6 @@ mod util_tests {
         );
     }
 
-    /// Test the extract_ip helper used in device_list and credentials_dialog.
-    fn extract_ip(addr: &str) -> String {
-        let stripped = addr
-            .strip_prefix("http://")
-            .or_else(|| addr.strip_prefix("https://"))
-            .unwrap_or(addr);
-        stripped
-            .split('/')
-            .next()
-            .and_then(|h| h.split(':').next())
-            .unwrap_or(addr)
-            .to_string()
-    }
-
     #[test]
     fn extract_ip_from_http_url() {
         assert_eq!(
@@ -343,23 +332,6 @@ mod util_tests {
         assert_eq!(extract_ip(""), "");
     }
 
-    /// Test scope parsing helpers from identification tab.
-    fn scope_key(scope: &str) -> String {
-        scope
-            .strip_prefix("onvif://www.onvif.org/")
-            .and_then(|s| s.split('/').next())
-            .unwrap_or("scope")
-            .to_string()
-    }
-
-    fn scope_value(scope: &str) -> String {
-        scope
-            .strip_prefix("onvif://www.onvif.org/")
-            .and_then(|s| s.split('/').nth(1))
-            .unwrap_or(scope)
-            .to_string()
-    }
-
     #[test]
     fn scope_parsing_standard() {
         let s = "onvif://www.onvif.org/type/video_encoder";
@@ -381,19 +353,9 @@ mod util_tests {
         assert_eq!(scope_value(s), "some-random-scope");
     }
 
-    /// Test the epoch_days_to_ymd helper from time tab.
-    fn epoch_days_to_ymd(mut days: i64) -> (i64, i64, i64) {
-        days += 719_468;
-        let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
-        let doe = days - era * 146_097;
-        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-        let y = yoe + era * 400;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = doy - (153 * mp + 2) / 5 + 1;
-        let m = if mp < 10 { mp + 3 } else { mp - 9 };
-        let y = if m <= 2 { y + 1 } else { y };
-        (y, m, d)
+    #[test]
+    fn urldecode_multibyte_utf8() {
+        assert_eq!(urldecode("caf%C3%A9"), "café");
     }
 
     #[test]

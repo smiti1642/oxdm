@@ -25,15 +25,6 @@ impl Theme {
             Self::Classic => "shell theme-classic",
         }
     }
-
-    #[allow(dead_code)]
-    pub fn icon(self) -> &'static str {
-        match self {
-            Self::Dark => "moon",
-            Self::Light => "sun",
-            Self::Classic => "monitor",
-        }
-    }
 }
 
 // ── Locale ──────────────────────────────────────────────────────────────────
@@ -122,17 +113,6 @@ impl ToastLevel {
             Self::Error => "toast toast--error",
         }
     }
-
-    /// Icon name for the Icon component.
-    #[allow(dead_code)]
-    pub fn icon_name(self) -> &'static str {
-        match self {
-            Self::Success => "check",
-            Self::Info => "info",
-            Self::Warning => "alert-triangle",
-            Self::Error => "x",
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +140,18 @@ pub struct ConfirmDialog {
 pub struct Credentials {
     pub username: String,
     pub password: String,
+}
+
+impl Credentials {
+    /// Convert to `(Option<&str>, Option<&str>)` for API calls.
+    /// Returns `(None, None)` if username is empty.
+    pub fn as_options(&self) -> (Option<&str>, Option<&str>) {
+        if self.username.is_empty() {
+            (None, None)
+        } else {
+            (Some(&self.username), Some(&self.password))
+        }
+    }
 }
 
 // ── Device entry ────────────────────────────────────────────────────────────

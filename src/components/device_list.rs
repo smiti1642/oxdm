@@ -6,6 +6,7 @@ use crate::{
     },
     i18n,
     state::{ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
+    util,
 };
 use dioxus::prelude::*;
 
@@ -47,7 +48,7 @@ pub fn DeviceList() -> Element {
                     .into_iter()
                     .map(|d| {
                         let addr = d.xaddrs.first().cloned().unwrap_or_default();
-                        let display_addr = extract_ip(&addr);
+                        let display_addr = util::extract_ip(&addr);
                         let name = d
                             .scopes
                             .iter()
@@ -58,7 +59,7 @@ pub fn DeviceList() -> Element {
                             .scopes
                             .iter()
                             .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
-                            .map(urldecode)
+                            .map(util::urldecode)
                             .unwrap_or_default();
                         DeviceEntry {
                             name,
@@ -334,6 +335,22 @@ fn DeviceCard(
                 x: mx,
                 y: my,
                 on_close: move |_| ctx_menu.set(None),
+
+                // ── Shared: Copy address (safe clipboard, no eval) ──────
+                CtxMenuItem {
+                    icon: "clipboard-copy",
+                    label: i18n::t(locale, "ctx_copy_addr"),
+                    on_click: move |_| {
+                        if let Err(e) = util::copy_to_clipboard(&card_addr) {
+                            ctx.push_toast(ToastLevel::Error, e);
+                        } else {
+                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ctx_copied"));
+                        }
+                        ctx_menu.set(None);
+                    },
+                }
+
+                // ── Manual-only actions ─────────────────────────────────
                 if manual {
                     CtxMenuItem {
                         icon: "settings",
@@ -342,17 +359,6 @@ fn DeviceCard(
                             ctx_menu.set(None);
                             edit_device_idx.clone().set(Some(index));
                             edit_dialog_open.clone().set(true);
-                        },
-                    }
-                    CtxMenuItem {
-                        icon: "clipboard-copy",
-                        label: i18n::t(locale, "ctx_copy_addr"),
-                        on_click: move |_| {
-                            // Copy address to clipboard via eval
-                            let js = format!("navigator.clipboard.writeText('{}')", card_addr.replace('\'', "\\'"));
-                            document::eval(&js);
-                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ctx_copied"));
-                            ctx_menu.set(None);
                         },
                     }
                     CtxMenuItem {
@@ -371,7 +377,6 @@ fn DeviceCard(
                                 dangerous: true,
                                 on_confirm: EventHandler::new(move |_| {
                                     devices.write().remove(index);
-                                    // Fix selection
                                     let current_sel = *ctx.selected.peek();
                                     if current_sel == Some(index) {
                                         ctx.selected.clone().set(None);
@@ -385,22 +390,19 @@ fn DeviceCard(
                             }));
                         },
                     }
-                } else {
-                    // Discovered device: Add to Manual
+                }
+
+                // ── Discovered-only actions ─────────────────────────────
+                if !manual {
                     CtxMenuItem {
                         icon: "plus",
                         label: i18n::t(locale, "ctx_add_manual"),
                         on_click: move |_| {
                             ctx_menu.set(None);
-                            // Copy the discovered device as a manual entry with current creds
                             let snapshot = devices.peek().get(index).cloned();
                             if let Some(dev) = snapshot {
                                 let creds = ctx.global_credentials.peek().clone();
-                                let cred = if creds.username.is_empty() {
-                                    None
-                                } else {
-                                    Some(creds)
-                                };
+                                let cred = if creds.username.is_empty() { None } else { Some(creds) };
                                 devices.write().push(DeviceEntry {
                                     name: dev.name,
                                     addr: dev.addr,
@@ -416,16 +418,6 @@ fn DeviceCard(
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ctx_added_manual"));
                         },
                     }
-                    CtxMenuItem {
-                        icon: "clipboard-copy",
-                        label: i18n::t(locale, "ctx_copy_addr"),
-                        on_click: move |_| {
-                            let js = format!("navigator.clipboard.writeText('{}')", card_addr.replace('\'', "\\'"));
-                            document::eval(&js);
-                            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ctx_copied"));
-                            ctx_menu.set(None);
-                        },
-                    }
                 }
             }
         }
@@ -433,36 +425,31 @@ fn DeviceCard(
 }
 
 /// After scan, fetch firmware version and verify auth for each discovered device.
+/// Uses addr-based matching to avoid index invalidation races.
 fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
     let creds = ctx.global_credentials.peek().clone();
-    let addrs: Vec<(usize, String)> = devices
+    let addrs: Vec<String> = devices
         .peek()
         .iter()
-        .enumerate()
-        .filter(|(_, d)| !d.manual)
-        .map(|(i, d)| (i, d.addr.clone()))
+        .filter(|d| !d.manual)
+        .map(|d| d.addr.clone())
         .collect();
 
-    for (idx, addr) in addrs {
+    for addr in addrs {
         let creds = creds.clone();
         spawn(async move {
-            let (u, p) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
-            match api::get_device_info(&addr, u, p).await {
+            let (u, p) = creds.as_options();
+            let status = match api::get_device_info(&addr, u, p).await {
                 Ok(info) => {
-                    if let Some(d) = devices.write().get_mut(idx) {
+                    if let Some(d) = devices.write().iter_mut().find(|d| d.addr == addr) {
                         d.firmware = info.firmware_version;
-                        d.auth_status = crate::state::AuthStatus::Ok;
                     }
+                    crate::state::AuthStatus::Ok
                 }
-                Err(_) => {
-                    if let Some(d) = devices.write().get_mut(idx) {
-                        d.auth_status = crate::state::AuthStatus::Failed;
-                    }
-                }
+                Err(_) => crate::state::AuthStatus::Failed,
+            };
+            if let Some(d) = devices.write().iter_mut().find(|d| d.addr == addr) {
+                d.auth_status = status;
             }
         });
     }
@@ -470,31 +457,19 @@ fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
 
 /// Re-verify auth status for all devices (called when credentials change).
 pub fn reverify_auth(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
-    let dev_list: Vec<(usize, String, bool)> = devices
+    let snapshot: Vec<(String, bool, crate::state::Credentials)> = devices
         .peek()
         .iter()
-        .enumerate()
-        .map(|(i, d)| (i, d.addr.clone(), d.manual))
+        .map(|d| (d.addr.clone(), d.manual, ctx.credentials_for(d)))
         .collect();
 
-    for (idx, addr, is_manual) in dev_list {
-        let creds = {
-            let devs = devices.peek();
-            devs.get(idx)
-                .map(|d| ctx.credentials_for(d))
-                .unwrap_or_else(|| ctx.global_credentials.peek().clone())
-        };
+    for (addr, is_manual, creds) in snapshot {
         spawn(async move {
-            let (u, p) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
+            let (u, p) = creds.as_options();
             let status = match api::get_device_info(&addr, u, p).await {
                 Ok(info) => {
-                    // Also update firmware if we got it
                     if !is_manual {
-                        if let Some(d) = devices.write().get_mut(idx) {
+                        if let Some(d) = devices.write().iter_mut().find(|d| d.addr == addr) {
                             d.firmware = info.firmware_version;
                         }
                     }
@@ -502,40 +477,28 @@ pub fn reverify_auth(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
                 }
                 Err(_) => crate::state::AuthStatus::Failed,
             };
-            if let Some(d) = devices.write().get_mut(idx) {
+            if let Some(d) = devices.write().iter_mut().find(|d| d.addr == addr) {
                 d.auth_status = status;
             }
         });
     }
 }
 
-pub fn extract_ip(addr: &str) -> String {
-    let stripped = addr
-        .strip_prefix("http://")
-        .or_else(|| addr.strip_prefix("https://"))
-        .unwrap_or(addr);
-    stripped
-        .split('/')
-        .next()
-        .and_then(|h| h.split(':').next())
-        .unwrap_or(addr)
-        .to_string()
-}
-
-fn urldecode(s: &str) -> String {
-    let mut out = String::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let h: String = chars.by_ref().take(2).collect();
-            if let Ok(b) = u8::from_str_radix(&h, 16) {
-                out.push(b as char);
-            }
-        } else if c == '+' {
-            out.push(' ');
-        } else {
-            out.push(c);
+/// Re-verify auth for a single device by index.
+pub fn reverify_device(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>, idx: usize) {
+    let Some(dev) = devices.peek().get(idx).cloned() else {
+        return;
+    };
+    let creds = ctx.credentials_for(&dev);
+    let addr = dev.addr.clone();
+    spawn(async move {
+        let (u, p) = creds.as_options();
+        let status = match api::get_device_info(&addr, u, p).await {
+            Ok(_) => crate::state::AuthStatus::Ok,
+            Err(_) => crate::state::AuthStatus::Failed,
+        };
+        if let Some(d) = devices.write().iter_mut().find(|d| d.addr == addr) {
+            d.auth_status = status;
         }
-    }
-    out
+    });
 }

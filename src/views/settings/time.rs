@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::PropRow;
 use crate::state::Credentials;
 use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
@@ -12,12 +13,8 @@ pub fn TimeTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move {
-            let (user, pass) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
-            api::get_system_date_and_time(&addr, user, pass).await
+            let (u, p) = creds.as_options();
+            api::get_system_date_and_time(&addr, u, p).await
         }
     });
 
@@ -40,22 +37,12 @@ pub fn TimeTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                 };
                 rsx! {
                     table { class: "prop-table",
-                        PropRow { label: i18n::t(locale, "prop_utc_time"),   value: utc_str }
-                        PropRow { label: i18n::t(locale, "prop_timezone"),   value: dt.timezone.clone() }
-                        PropRow { label: i18n::t(locale, "prop_dst"),        value: dst.to_string() }
+                        PropRow { label: i18n::t(locale, "prop_utc_time"), value: utc_str }
+                        PropRow { label: i18n::t(locale, "prop_timezone"), value: dt.timezone.clone() }
+                        PropRow { label: i18n::t(locale, "prop_dst"),      value: dst.to_string() }
                     }
                 }
             },
-        }
-    }
-}
-
-#[component]
-fn PropRow(label: &'static str, value: String) -> Element {
-    rsx! {
-        tr {
-            td { class: "prop-label", "{label}" }
-            td { class: "prop-value", "{value}" }
         }
     }
 }

@@ -99,7 +99,7 @@ pub fn load_devices() -> Vec<DeviceEntry> {
                 file.devices
                     .into_iter()
                     .map(|r| {
-                        let display_addr = extract_ip(&r.addr);
+                        let display_addr = crate::util::extract_ip(&r.addr);
                         let creds = if r.username.is_empty() && r.password.is_empty() {
                             None
                         } else {
@@ -226,17 +226,4 @@ fn locale_to_str(l: Locale) -> &'static str {
         Locale::ZhTw => "zh_tw",
         Locale::Ru => "ru",
     }
-}
-
-fn extract_ip(addr: &str) -> String {
-    let stripped = addr
-        .strip_prefix("http://")
-        .or_else(|| addr.strip_prefix("https://"))
-        .unwrap_or(addr);
-    stripped
-        .split('/')
-        .next()
-        .and_then(|h| h.split(':').next())
-        .unwrap_or(addr)
-        .to_string()
 }

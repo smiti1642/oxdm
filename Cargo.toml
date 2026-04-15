@@ -5,11 +5,13 @@ edition = "2021"
 
 [dependencies]
 dioxus = { version = "=0.7.4", features = ["desktop", "router"] }
-oxvif = "0.8.4"
+oxvif = "0.8.6"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
+arboard = "3"
 dirs = "6"
 if-addrs = "0.15"
+percent-encoding = "2"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

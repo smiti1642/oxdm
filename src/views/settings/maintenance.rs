@@ -33,11 +33,7 @@ pub fn MaintenanceTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                                 let addr = addr.clone();
                                 let creds = creds.clone();
                                 spawn(async move {
-                                    let (u, p) = if creds.username.is_empty() {
-                                        (None, None)
-                                    } else {
-                                        (Some(creds.username.as_str()), Some(creds.password.as_str()))
-                                    };
+                                    let (u, p) = creds.as_options();
                                     match api::system_reboot(&addr, u, p).await {
                                         Ok(msg) => ctx.push_toast(ToastLevel::Success, msg),
                                         Err(e) => ctx.push_toast(ToastLevel::Error, e),
@@ -72,11 +68,7 @@ pub fn MaintenanceTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                                 let addr = addr.clone();
                                 let creds = creds.clone();
                                 spawn(async move {
-                                    let (u, p) = if creds.username.is_empty() {
-                                        (None, None)
-                                    } else {
-                                        (Some(creds.username.as_str()), Some(creds.password.as_str()))
-                                    };
+                                    let (u, p) = creds.as_options();
                                     match api::set_system_factory_default(&addr, u, p, "Hard").await {
                                         Ok(()) => ctx.push_toast(
                                             ToastLevel::Success,

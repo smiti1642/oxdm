@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::PropRow;
 use crate::state::Credentials;
 use crate::{api, i18n, state::Ctx};
 use dioxus::prelude::*;
@@ -12,13 +13,9 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move {
-            let (user, pass) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
-            let info = api::get_device_info(&addr, user, pass).await;
-            let scopes = api::get_scopes(&addr, user, pass).await.unwrap_or_default();
+            let (u, p) = creds.as_options();
+            let info = api::get_device_info(&addr, u, p).await;
+            let scopes = api::get_scopes(&addr, u, p).await.unwrap_or_default();
             info.map(|i| (i, scopes))
         }
     });
@@ -39,7 +36,6 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
                     PropRow { label: i18n::t(locale, "prop_serial"),       value: dev.serial_number.clone() }
                     PropRow { label: i18n::t(locale, "prop_hardware_id"),  value: dev.hardware_id.clone() }
                 }
-
                 if !scopes.is_empty() {
                     div { class: "prop-section-header", {i18n::t(locale, "prop_scopes")} }
                     table { class: "prop-table",
@@ -49,16 +45,6 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
                     }
                 }
             },
-        }
-    }
-}
-
-#[component]
-fn PropRow(label: String, value: String) -> Element {
-    rsx! {
-        tr {
-            td { class: "prop-label", "{label}" }
-            td { class: "prop-value", "{value}" }
         }
     }
 }

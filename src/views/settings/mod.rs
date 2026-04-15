@@ -1,7 +1,7 @@
-mod identification;
+pub(crate) mod identification;
 mod maintenance;
 mod network;
-mod time;
+pub(crate) mod time;
 mod users;
 
 pub use identification::IdentificationTab;

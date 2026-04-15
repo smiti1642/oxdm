@@ -12,23 +12,15 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move {
-            let (user, pass) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
-            api::get_users(&addr, user, pass).await
+            let (u, p) = creds.as_options();
+            api::get_users(&addr, u, p).await
         }
     });
 
     rsx! {
         match &*users.read_unchecked() {
-            None => rsx! {
-                div { class: "tab-loading", {i18n::t(locale, "loading")} }
-            },
-            Some(Err(e)) => rsx! {
-                div { class: "tab-error", "{e}" }
-            },
+            None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
+            Some(Err(e)) => rsx! { div { class: "tab-error", "{e}" } },
             Some(Ok(user_list)) => rsx! {
                 table { class: "prop-table",
                     tr { class: "prop-table-header",

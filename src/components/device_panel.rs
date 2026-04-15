@@ -103,11 +103,7 @@ fn StreamThumbnails() -> Element {
             if addr.is_empty() {
                 return Ok::<_, String>(Vec::new());
             }
-            let (u, p) = if creds.username.is_empty() {
-                (None, None)
-            } else {
-                (Some(creds.username.as_str()), Some(creds.password.as_str()))
-            };
+            let (u, p) = creds.as_options();
 
             let profiles = api::get_profiles(&addr, u, p).await?;
 

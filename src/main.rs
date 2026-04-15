@@ -9,6 +9,7 @@ mod persist;
 mod state;
 #[cfg(test)]
 mod tests;
+pub(crate) mod util;
 mod views;
 
 use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, Topbar};
