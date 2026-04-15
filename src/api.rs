@@ -328,12 +328,13 @@ async fn try_digest_auth(
         error!(error = %e, "Failed to compute Digest response");
         e.to_string()
     })?;
-    // digest_auth crate emits `qop=auth` (unquoted per RFC 2617), but some
-    // cameras (e.g. Hikvision) require `qop="auth"` (quoted). Patch the
-    // header to quote the qop value for maximum compatibility.
+    // Patch the header for maximum camera compatibility:
+    // 1. Quote qop value: some cameras (Hikvision) require qop="auth"
+    // 2. Remove spaces after commas: some cameras fail to parse "k=v, k=v"
     let header_val = answer
         .to_header_string()
-        .replace("qop=auth", r#"qop="auth""#);
+        .replace("qop=auth", r#"qop="auth""#)
+        .replace(", ", ",");
     info!(
         uri_path,
         authorization = %header_val,
