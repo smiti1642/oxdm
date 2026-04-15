@@ -282,7 +282,14 @@ async fn try_digest_auth(
     password: &str,
     www_authenticate: &str,
 ) -> Result<reqwest::Response, ApiError> {
-    let context = digest_auth::AuthContext::new(username, password, url);
+    // Digest auth requires the URI path, not the full URL
+    let uri_path = url
+        .find("://")
+        .and_then(|i| url[i + 3..].find('/'))
+        .map(|i| &url[url.find("://").unwrap() + 3 + i..])
+        .unwrap_or("/");
+    debug!(uri_path, "Digest auth URI path");
+    let context = digest_auth::AuthContext::new(username, password, uri_path);
     let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
         error!(error = %e, "Failed to parse WWW-Authenticate header");
         e.to_string()
