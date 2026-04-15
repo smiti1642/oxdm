@@ -4,7 +4,7 @@ use oxvif::{
     StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 pub type ApiError = String;
 
@@ -234,13 +234,13 @@ pub async fn fetch_snapshot_data_uri(
 
         // Try Digest auth if challenge is present
         if www_auth.to_lowercase().contains("digest") {
-            debug!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth");
+            info!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth");
             match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
                 Ok(resp) if resp.status().is_success() => {
                     return snapshot_response_to_data_uri(resp, snapshot_url).await;
                 }
                 Ok(resp) => {
-                    debug!(snapshot_url, status = %resp.status(), "Digest auth rejected");
+                    warn!(snapshot_url, status = %resp.status(), "Digest auth rejected");
                 }
                 Err(e) => {
                     debug!(snapshot_url, error = %e, "Digest auth error");
@@ -314,10 +314,10 @@ async fn try_digest_auth(
         e.to_string()
     })?;
     let header_val = answer.to_header_string();
-    debug!(
+    info!(
         uri_path,
         authorization = %header_val,
-        "Sending Digest auth"
+        "Sending Digest auth request"
     );
     http.get(url)
         .header("Authorization", header_val)
