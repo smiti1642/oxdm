@@ -10,6 +10,7 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
 dirs = "6"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 if-addrs = "0.15"
 percent-encoding = "2"
 toml = "0.8"

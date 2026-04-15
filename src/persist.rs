@@ -1,12 +1,16 @@
-//! Settings and device persistence to `~/.oxdm/`.
+//! Settings and device persistence.
 //!
-//! - `config.toml`: theme, locale, global credentials
-//! - `devices.toml`: manually added devices
+//! - `~/.oxdm/config.toml`: theme, locale (no credentials)
+//! - `~/.oxdm/devices.toml`: manually added devices (per-device creds in keychain)
+//! - System keychain: global credentials + per-device credential overrides
 
 use crate::state::{Credentials, DeviceEntry, Locale, Theme};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+const KEYRING_SERVICE: &str = "com.oxdm";
+const KEYRING_GLOBAL_USER: &str = "global";
 
 // ── On-disk structures ──────────────────────────────────────────────────────
 
@@ -16,6 +20,7 @@ pub struct ConfigFile {
     pub theme: String,
     #[serde(default)]
     pub locale: String,
+    // Legacy fields — read for migration, not written
     #[serde(default)]
     pub username: String,
     #[serde(default)]
@@ -33,9 +38,7 @@ pub struct DeviceRecord {
     pub name: String,
     pub addr: String,
     #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub password: String,
+    pub has_credentials: bool,
 }
 
 // ── Paths ───────────────────────────────────────────────────────────────────
@@ -57,6 +60,38 @@ fn ensure_dir() {
         if !dir.exists() {
             let _ = std::fs::create_dir_all(&dir);
         }
+    }
+}
+
+// ── Keychain helpers ────────────────────────────────────────────────────────
+
+fn keyring_save(key: &str, username: &str, password: &str) {
+    let value = format!("{username}\n{password}");
+    match keyring::Entry::new(KEYRING_SERVICE, key) {
+        Ok(entry) => {
+            if let Err(e) = entry.set_password(&value) {
+                warn!(error = %e, key, "Keychain save failed, credentials not persisted");
+            }
+        }
+        Err(e) => warn!(error = %e, key, "Keychain entry creation failed"),
+    }
+}
+
+fn keyring_load(key: &str) -> Option<(String, String)> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, key).ok()?;
+    let value = entry.get_password().ok()?;
+    let mut lines = value.splitn(2, '\n');
+    let username = lines.next()?.to_string();
+    let password = lines.next().unwrap_or("").to_string();
+    if username.is_empty() {
+        return None;
+    }
+    Some((username, password))
+}
+
+fn keyring_delete(key: &str) {
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, key) {
+        let _ = entry.delete_credential();
     }
 }
 
@@ -84,6 +119,28 @@ pub fn load_config() -> ConfigFile {
     }
 }
 
+/// Load global credentials from keychain, falling back to legacy config.toml.
+pub fn load_global_credentials(cfg: &ConfigFile) -> Credentials {
+    // Try keychain first
+    if let Some((u, p)) = keyring_load(KEYRING_GLOBAL_USER) {
+        debug!("Loaded global credentials from keychain");
+        return Credentials {
+            username: u,
+            password: p,
+        };
+    }
+    // Fallback: migrate from legacy config.toml
+    if !cfg.username.is_empty() {
+        info!("Migrating credentials from config.toml to keychain");
+        keyring_save(KEYRING_GLOBAL_USER, &cfg.username, &cfg.password);
+        return Credentials {
+            username: cfg.username.clone(),
+            password: cfg.password.clone(),
+        };
+    }
+    Credentials::default()
+}
+
 pub fn load_devices() -> Vec<DeviceEntry> {
     let Some(path) = devices_path() else {
         return Vec::new();
@@ -100,13 +157,13 @@ pub fn load_devices() -> Vec<DeviceEntry> {
                     .into_iter()
                     .map(|r| {
                         let display_addr = crate::util::extract_ip(&r.addr);
-                        let creds = if r.username.is_empty() && r.password.is_empty() {
-                            None
-                        } else {
-                            Some(Credentials {
-                                username: r.username,
-                                password: r.password,
+                        let creds = if r.has_credentials {
+                            keyring_load(&r.addr).map(|(u, p)| Credentials {
+                                username: u,
+                                password: p,
                             })
+                        } else {
+                            None
                         };
                         DeviceEntry {
                             name: r.name,
@@ -138,24 +195,35 @@ pub fn load_devices() -> Vec<DeviceEntry> {
 
 pub fn save_config(theme: Theme, locale: Locale, creds: &Credentials) {
     ensure_dir();
-    let Some(path) = config_path() else { return };
 
-    let cfg = ConfigFile {
-        theme: theme_to_str(theme).to_string(),
-        locale: locale_to_str(locale).to_string(),
-        username: creds.username.clone(),
-        password: creds.password.clone(),
-    };
-
-    match toml::to_string_pretty(&cfg) {
-        Ok(content) => {
-            if let Err(e) = std::fs::write(&path, content) {
-                error!(error = %e, "Failed to write config.toml");
-            } else {
-                debug!("Saved config to {}", path.display());
-            }
+    // Save theme/locale to config.toml (no credentials)
+    if let Some(path) = config_path() {
+        #[derive(Serialize)]
+        struct ConfigOut {
+            theme: String,
+            locale: String,
         }
-        Err(e) => error!(error = %e, "Failed to serialize config"),
+        let cfg = ConfigOut {
+            theme: theme_to_str(theme).to_string(),
+            locale: locale_to_str(locale).to_string(),
+        };
+        match toml::to_string_pretty(&cfg) {
+            Ok(content) => {
+                if let Err(e) = std::fs::write(&path, content) {
+                    error!(error = %e, "Failed to write config.toml");
+                } else {
+                    debug!("Saved config to {}", path.display());
+                }
+            }
+            Err(e) => error!(error = %e, "Failed to serialize config"),
+        }
+    }
+
+    // Save credentials to keychain
+    if creds.username.is_empty() {
+        keyring_delete(KEYRING_GLOBAL_USER);
+    } else {
+        keyring_save(KEYRING_GLOBAL_USER, &creds.username, &creds.password);
     }
 }
 
@@ -167,16 +235,17 @@ pub fn save_devices(devices: &[DeviceEntry]) {
         .iter()
         .filter(|d| d.manual)
         .map(|d| {
-            let (u, p) = d
-                .credentials
-                .as_ref()
-                .map(|c| (c.username.clone(), c.password.clone()))
-                .unwrap_or_default();
+            let has_creds = d.credentials.is_some();
+            // Save per-device credentials to keychain
+            if let Some(c) = &d.credentials {
+                keyring_save(&d.addr, &c.username, &c.password);
+            } else {
+                keyring_delete(&d.addr);
+            }
             DeviceRecord {
                 name: d.name.clone(),
                 addr: d.addr.clone(),
-                username: u,
-                password: p,
+                has_credentials: has_creds,
             }
         })
         .collect();

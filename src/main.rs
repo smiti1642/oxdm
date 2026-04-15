@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 
 mod api;
 mod components;
+mod device_ops;
 mod discovery;
 mod i18n;
 mod persist;
@@ -13,7 +14,7 @@ pub(crate) mod util;
 mod views;
 
 use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, Topbar};
-use state::{Credentials, Ctx, SettingsTab, View};
+use state::{Ctx, SettingsTab, View};
 use views::MainContent;
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -60,10 +61,7 @@ fn App() -> Element {
         toasts: use_signal(Vec::new),
         next_toast_id: use_signal(|| 0),
         dialog: use_signal(|| None),
-        global_credentials: use_signal(|| Credentials {
-            username: cfg.username.clone(),
-            password: cfg.password.clone(),
-        }),
+        global_credentials: use_signal(|| persist::load_global_credentials(&cfg)),
         selected_profile: use_signal(|| None),
     };
     use_context_provider(|| ctx);
@@ -79,7 +77,7 @@ fn App() -> Element {
     // Re-verify auth when credentials change
     use_effect(move || {
         let _creds = ctx.global_credentials.read();
-        components::device_list::reverify_auth(ctx, ctx.devices);
+        device_ops::reverify_auth(ctx, ctx.devices);
     });
 
     // Auto-save when manual devices change

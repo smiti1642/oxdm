@@ -181,7 +181,7 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                             selected.set(Some(new_idx));
                             view.set(View::DeviceSettings);
                             ctx.push_toast(ToastLevel::Info, i18n::t(locale, "add_device_ok"));
-                            crate::components::device_list::reverify_device(ctx, devices, new_idx);
+                            crate::device_ops::reverify_device(ctx, devices, new_idx);
                             open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_add_short")}

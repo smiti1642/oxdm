@@ -113,7 +113,7 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                                 };
                             }
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "edit_device_saved"));
-                            crate::components::device_list::reverify_device(ctx, devices, idx);
+                            crate::device_ops::reverify_device(ctx, devices, idx);
                             name.set(String::new());
                             open_sig.set(false);
                         },
