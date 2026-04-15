@@ -2,7 +2,7 @@
 use crate::api;
 use crate::components::Icon;
 use crate::i18n;
-use crate::state::{Ctx, View};
+use crate::state::{Credentials, Ctx, View};
 use dioxus::prelude::*;
 
 #[component]
@@ -82,6 +82,7 @@ struct StreamInfo {
     profile_token: String,
     profile_name: String,
     snapshot_url: String,
+    creds: Credentials,
 }
 
 #[component]
@@ -113,7 +114,8 @@ fn StreamThumbnails() -> Element {
                     infos.push(StreamInfo {
                         profile_token: profile.token.clone(),
                         profile_name: profile.name.clone(),
-                        snapshot_url: inject_credentials(&snap.uri, u, p),
+                        snapshot_url: snap.uri,
+                        creds: creds.clone(),
                     });
                 }
             }
@@ -121,7 +123,7 @@ fn StreamThumbnails() -> Element {
         }
     });
 
-    // Auto-refresh
+    // Auto-refresh tick — drives periodic snapshot re-fetch
     let mut tick = use_signal(|| 0u32);
     use_future(move || async move {
         loop {
@@ -151,6 +153,7 @@ fn StreamThumbnails() -> Element {
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
                             snapshot_url: info.snapshot_url.clone(),
+                            creds: info.creds.clone(),
                             tick: tick_val,
                         }
                     }
@@ -165,12 +168,24 @@ fn StreamCard(
     profile_token: String,
     profile_name: String,
     snapshot_url: String,
+    creds: Credentials,
     tick: u32,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let mut view = ctx.view;
     let mut profile_sig = ctx.selected_profile;
+
+    // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs)
+    let data_uri = use_resource(move || {
+        let url = snapshot_url.clone();
+        let creds = creds.clone();
+        let _tick = tick; // subscribe to tick changes for periodic refresh
+        async move {
+            let (u, p) = creds.as_options();
+            api::fetch_snapshot_data_uri(&url, u, p).await
+        }
+    });
 
     let selected = ctx
         .selected_profile
@@ -195,10 +210,15 @@ fn StreamCard(
             onclick: move |_| {
                 profile_sig.set(Some(profile_token.clone()));
             },
-            img {
-                class: "thumb-img",
-                src: cache_bust(&snapshot_url, tick),
-                alt: "{profile_name}",
+            match &*data_uri.read_unchecked() {
+                Some(Ok(src)) => rsx! {
+                    img { class: "thumb-img", src: "{src}", alt: "{profile_name}" }
+                },
+                _ => rsx! {
+                    div { class: "thumb-img thumb-img--placeholder",
+                        Icon { name: "camera", size: 24 }
+                    }
+                },
             }
             div { class: "thumb-footer",
                 span { class: "thumb-label", "{profile_name}" }
@@ -236,26 +256,5 @@ fn StreamCard(
                 }
             }
         }
-    }
-}
-
-fn cache_bust(url: &str, tick: u32) -> String {
-    let sep = if url.contains('?') { '&' } else { '?' };
-    format!("{url}{sep}_t={tick}")
-}
-
-fn inject_credentials(url: &str, username: Option<&str>, password: Option<&str>) -> String {
-    let (Some(u), Some(p)) = (username, password) else {
-        return url.to_string();
-    };
-    if u.is_empty() {
-        return url.to_string();
-    }
-    if let Some(rest) = url.strip_prefix("http://") {
-        format!("http://{u}:{p}@{rest}")
-    } else if let Some(rest) = url.strip_prefix("https://") {
-        format!("https://{u}:{p}@{rest}")
-    } else {
-        url.to_string()
     }
 }

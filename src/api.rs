@@ -185,6 +185,57 @@ pub async fn get_snapshot_uri(
     )
 }
 
+/// Download a snapshot image and return it as a `data:` URI (base64-encoded).
+///
+/// Real ONVIF cameras typically require HTTP Digest authentication for the
+/// snapshot endpoint. A plain `<img src="http://user:pass@...">` only covers
+/// HTTP Basic auth, so the webview cannot display the image. This function
+/// uses `diqwest` to handle Digest auth transparently and converts the
+/// response bytes to a data URI that the webview can render directly.
+#[instrument(skip(username, password), fields(snapshot_url))]
+pub async fn fetch_snapshot_data_uri(
+    snapshot_url: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String, ApiError> {
+    use base64::Engine;
+    use diqwest::WithDigestAuth;
+
+    let http = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = match (username, password) {
+        (Some(u), Some(p)) if !u.is_empty() => http
+            .get(snapshot_url)
+            .send_digest_auth((u, p))
+            .await
+            .map_err(|e| e.to_string())?,
+        _ => http
+            .get(snapshot_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?,
+    };
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{content_type};base64,{b64}"))
+}
+
 /// Fetch RTSP stream URI for a specific profile.
 #[allow(dead_code)]
 #[instrument(skip(username, password), fields(addr, profile_token))]
