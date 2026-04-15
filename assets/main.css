@@ -1109,6 +1109,66 @@ a      { color: var(--blue); text-decoration: none; }
 
 .ctx-menu-item-icon { flex-shrink: 0; opacity: 0.7; }
 
+/* ── Imaging Settings ────────────────────────────────────────────────────── */
+.imaging-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.imaging-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+.imaging-body::-webkit-scrollbar { width: 6px; }
+.imaging-body::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 3px; }
+
+.imaging-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+}
+.imaging-label {
+  width: 140px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--subtext0);
+}
+.imaging-slider {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.imaging-value {
+  width: 36px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text);
+  font-family: monospace;
+}
+.imaging-select {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.imaging-select:focus { border-color: var(--blue); }
+
+.imaging-footer {
+  padding: 16px 12px;
+  border-top: 1px solid var(--surface0);
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ── Error Boundary ──────────────────────────────────────────────────────── */
 .error-boundary {
   display: flex;

@@ -137,6 +137,23 @@ pub fn get(key: &str) -> Option<&'static str> {
         "maint_factory_reset_confirm" => "\u{9019}\u{5C07}\u{6E05}\u{9664}\u{6240}\u{6709}\u{8A2D}\u{5B9A}\u{3002}\u{78BA}\u{5B9A}\u{55CE}\u{FF1F}",
         "maint_factory_reset_ok" => "\u{5DF2}\u{555F}\u{52D5}\u{51FA}\u{5EE0}\u{91CD}\u{8A2D}\u{3002}",
 
+        // ── Imaging ─────────────────────────────────────────────────────────
+        "img_basic" => "\u{57FA}\u{672C}",
+        "img_brightness" => "\u{4EAE}\u{5EA6}",
+        "img_contrast" => "\u{5C0D}\u{6BD4}",
+        "img_saturation" => "\u{98FD}\u{548C}\u{5EA6}",
+        "img_sharpness" => "\u{92B3}\u{5229}\u{5EA6}",
+        "img_exposure" => "\u{66DD}\u{5149}",
+        "img_white_balance" => "\u{767D}\u{5E73}\u{8861}",
+        "img_backlight" => "\u{80CC}\u{5149}\u{88DC}\u{511F}",
+        "img_wdr" => "\u{5BEC}\u{52D5}\u{614B}",
+        "img_ir_cut" => "\u{7D05}\u{5916}\u{7DDA}\u{6FFE}\u{5149}\u{7247}",
+        "img_focus" => "\u{5C0D}\u{7126}",
+        "img_mode" => "\u{6A21}\u{5F0F}",
+        "img_level" => "\u{7B49}\u{7D1A}",
+        "img_saved" => "\u{5F71}\u{50CF}\u{8A2D}\u{5B9A}\u{5DF2}\u{5132}\u{5B58}\u{3002}",
+        "btn_apply" => "\u{5957}\u{7528}",
+
         _ => return None,
     })
 }

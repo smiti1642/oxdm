@@ -125,6 +125,22 @@ mod i18n_tests {
         "maint_factory_reset_desc",
         "maint_factory_reset_confirm",
         "maint_factory_reset_ok",
+        // Imaging
+        "img_basic",
+        "img_brightness",
+        "img_contrast",
+        "img_saturation",
+        "img_sharpness",
+        "img_exposure",
+        "img_white_balance",
+        "img_backlight",
+        "img_wdr",
+        "img_ir_cut",
+        "img_focus",
+        "img_mode",
+        "img_level",
+        "img_saved",
+        "btn_apply",
     ];
 
     #[test]

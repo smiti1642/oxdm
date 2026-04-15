@@ -137,6 +137,23 @@ pub fn get(key: &str) -> Option<&'static str> {
         "maint_factory_reset_confirm" => "This will erase all settings. Are you sure?",
         "maint_factory_reset_ok" => "Factory reset initiated.",
 
+        // ── Imaging ─────────────────────────────────────────────────────────
+        "img_basic" => "Basic",
+        "img_brightness" => "Brightness",
+        "img_contrast" => "Contrast",
+        "img_saturation" => "Saturation",
+        "img_sharpness" => "Sharpness",
+        "img_exposure" => "Exposure",
+        "img_white_balance" => "White Balance",
+        "img_backlight" => "Backlight Compensation",
+        "img_wdr" => "Wide Dynamic Range",
+        "img_ir_cut" => "IR Cut Filter",
+        "img_focus" => "Focus",
+        "img_mode" => "Mode",
+        "img_level" => "Level",
+        "img_saved" => "Imaging settings saved.",
+        "btn_apply" => "Apply",
+
         _ => return None,
     })
 }

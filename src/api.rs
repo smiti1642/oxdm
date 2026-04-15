@@ -96,6 +96,62 @@ pub async fn get_capabilities(
     )
 }
 
+// ── Imaging ─────────────────────────────────────────────────────────────────
+
+#[instrument(skip(username, password), fields(addr, source_token))]
+pub async fn get_imaging_settings(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    source_token: &str,
+) -> Result<oxvif::ImagingSettings, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    trace_result(
+        "GetImagingSettings",
+        addr,
+        client.get_imaging_settings(&url, source_token).await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, source_token))]
+pub async fn get_imaging_options(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    source_token: &str,
+) -> Result<oxvif::ImagingOptions, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    trace_result(
+        "GetImagingOptions",
+        addr,
+        client.get_imaging_options(&url, source_token).await,
+    )
+}
+
+#[instrument(skip(username, password, settings), fields(addr, source_token))]
+pub async fn set_imaging_settings(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    source_token: &str,
+    settings: &oxvif::ImagingSettings,
+) -> Result<(), ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    trace_result(
+        "SetImagingSettings",
+        addr,
+        client
+            .set_imaging_settings(&url, source_token, settings)
+            .await,
+    )
+}
+
 // ── Media ───────────────────────────────────────────────────────────────────
 
 /// Fetch all media profiles. Requires the media service URL from GetCapabilities.
