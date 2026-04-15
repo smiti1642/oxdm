@@ -791,42 +791,73 @@ a      { color: var(--blue); text-decoration: none; }
 /* Theme: Classic (ODM — Windows-native look)                                 */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 .theme-classic {
-  --base:     #f0f0f0;
+  --base:     #ece9d8;
   --mantle:   #ffffff;
-  --crust:    #e0e0e0;
-  --surface0: #d4d4d4;
-  --surface1: #c0c0c0;
-  --surface2: #a8a8a8;
-  --overlay0: #8a8a8a;
-  --overlay1: #6e6e6e;
-  --overlay2: #585858;
-  --subtext0: #505050;
-  --subtext1: #383838;
-  --text:     #1a1a1a;
-  --lavender: #5c6bc0;
-  --blue:     #0078d4;
-  --sapphire: #0063b1;
-  --sky:      #0099cc;
-  --teal:     #008080;
-  --green:    #107c10;
-  --yellow:   #c19c00;
-  --peach:    #d83b01;
-  --red:      #c42b1c;
-  --mauve:    #744da9;
-  --pink:     #c239b3;
+  --crust:    #d6d2c2;
+  --surface0: #e8e4d4;
+  --surface1: #aca899;
+  --surface2: #9e9a8b;
+  --overlay0: #7a7768;
+  --overlay1: #5a5850;
+  --overlay2: #4a4840;
+  --subtext0: #444240;
+  --subtext1: #333130;
+  --text:     #000000;
+  --lavender: #3160a8;
+  --blue:     #0a246a;
+  --sapphire: #003399;
+  --sky:      #0066cc;
+  --teal:     #006060;
+  --green:    #008000;
+  --yellow:   #c8a600;
+  --peach:    #cc4400;
+  --red:      #cc0000;
+  --mauve:    #6633aa;
+  --pink:     #aa3399;
 }
 
-/* Classic: sharper corners, thinner borders for Windows feel */
+/* Classic: square corners, Windows-native borders */
 .theme-classic .device-card,
 .theme-classic .btn,
 .theme-classic .search-input,
 .theme-classic .topbar-search,
-.theme-classic .tab {
-  border-radius: 3px;
+.theme-classic .tab,
+.theme-classic .dialog,
+.theme-classic .toast,
+.theme-classic .form-input,
+.theme-classic .maintenance-card,
+.theme-classic .ctx-menu,
+.theme-classic .ctx-menu-item,
+.theme-classic .thumb-card,
+.theme-classic .nav-link,
+.theme-classic .sidebar-tab-badge,
+.theme-classic .cred-indicator,
+.theme-classic .icon-btn,
+.theme-classic .imaging-select {
+  border-radius: 0;
 }
 .theme-classic .device-card { border: 1px solid var(--surface1); }
-.theme-classic .panel-device-icon { border-radius: 6px; }
-.theme-classic .panel-thumbnail { border-radius: 4px; }
+.theme-classic .panel-device-icon { border-radius: 0; }
+.theme-classic .topbar { border-bottom: 2px solid var(--surface1); }
+.theme-classic .sidebar { border-right: 2px solid var(--surface1); }
+.theme-classic .device-panel { border-right: 2px solid var(--surface1); }
+.theme-classic .prop-table td { border-bottom: 1px solid var(--surface1); }
+.theme-classic .btn-primary {
+  background: var(--blue);
+  border: 1px outset var(--surface1);
+}
+.theme-classic .btn-ghost {
+  border: 1px outset var(--surface1);
+  background: var(--surface0);
+}
+.theme-classic .tab--active {
+  border-bottom-color: var(--blue);
+  background: var(--mantle);
+}
+.theme-classic body,
+.theme-classic {
+  font-family: "Segoe UI", "Arial", system-ui, sans-serif;
+}
 
 /* ── Toast Notifications ─────────────────────────────────────────────────── */
 .toast-container {
@@ -1190,8 +1221,4 @@ a      { color: var(--blue); text-decoration: none; }
   word-break: break-all;
 }
 
-/* Classic theme: sharper dialog corners */
-.theme-classic .dialog { border-radius: 6px; }
-.theme-classic .toast { border-radius: 4px; }
-.theme-classic .form-input { border-radius: 3px; }
-.theme-classic .maintenance-card { border-radius: 4px; }
+/* Classic theme overrides consolidated above in .theme-classic block */
