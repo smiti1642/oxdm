@@ -43,10 +43,10 @@ pub fn DevicePanel() -> Element {
                 NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
             }
 
-            // ── Per-stream thumbnails with NVT actions ──────────────────────
+            // ── NVT profile thumbnails ──────────────────────────────────────
             div { class: "panel-section panel-thumbnails",
-                div { class: "panel-section-title", {i18n::t(locale, "section_streams")} }
-                StreamThumbnails {}
+                div { class: "panel-section-title", "NVT" }
+                ProfileThumbnails {}
             }
         }
     }
@@ -75,22 +75,23 @@ fn NavLink(view: View, icon: &'static str, label: &'static str) -> Element {
     }
 }
 
-// ── Stream Thumbnails ───────────────────────────────────────────────────────
+// ── NVT Profile Thumbnails ──────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
-struct StreamInfo {
+struct ProfileInfo {
     profile_token: String,
     profile_name: String,
-    snapshot_url: String,
+    /// None when GetSnapshotUri is not supported by the device for this profile.
+    snapshot_url: Option<String>,
     creds: Credentials,
 }
 
 #[component]
-fn StreamThumbnails() -> Element {
+fn ProfileThumbnails() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    let streams = use_resource(move || {
+    let profiles_res = use_resource(move || {
         let devices = ctx.devices.read();
         let selected = *ctx.selected.read();
         let dev = selected.and_then(|i| devices.get(i)).cloned();
@@ -110,14 +111,16 @@ fn StreamThumbnails() -> Element {
 
             let mut infos = Vec::new();
             for profile in &profiles {
-                if let Ok(snap) = api::get_snapshot_uri(&addr, u, p, &profile.token).await {
-                    infos.push(StreamInfo {
-                        profile_token: profile.token.clone(),
-                        profile_name: profile.name.clone(),
-                        snapshot_url: snap.uri,
-                        creds: creds.clone(),
-                    });
-                }
+                let snap_url = api::get_snapshot_uri(&addr, u, p, &profile.token)
+                    .await
+                    .ok()
+                    .map(|s| s.uri);
+                infos.push(ProfileInfo {
+                    profile_token: profile.token.clone(),
+                    profile_name: profile.name.clone(),
+                    snapshot_url: snap_url,
+                    creds: creds.clone(),
+                });
             }
             Ok(infos)
         }
@@ -135,20 +138,20 @@ fn StreamThumbnails() -> Element {
     let tick_val = *tick.read();
 
     rsx! {
-        match &*streams.read_unchecked() {
+        match &*profiles_res.read_unchecked() {
             None => rsx! {
                 div { class: "thumb-loading", {i18n::t(locale, "loading")} }
             },
             Some(Err(_)) => rsx! {
-                div { class: "thumb-empty", {i18n::t(locale, "no_streams")} }
+                div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
             Some(Ok(infos)) if infos.is_empty() => rsx! {
-                div { class: "thumb-empty", {i18n::t(locale, "no_streams")} }
+                div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
             Some(Ok(infos)) => rsx! {
                 div { class: "thumb-grid",
                     for info in infos {
-                        StreamCard {
+                        ProfileCard {
                             key: "{info.profile_token}",
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
@@ -164,10 +167,10 @@ fn StreamThumbnails() -> Element {
 }
 
 #[component]
-fn StreamCard(
+fn ProfileCard(
     profile_token: String,
     profile_name: String,
-    snapshot_url: String,
+    snapshot_url: Option<String>,
     creds: Credentials,
     tick: u32,
 ) -> Element {
@@ -182,6 +185,9 @@ fn StreamCard(
         let creds = creds.clone();
         let _tick = tick; // subscribe to tick changes for periodic refresh
         async move {
+            let Some(url) = url else {
+                return Err("No snapshot".to_string());
+            };
             let (u, p) = creds.as_options();
             api::fetch_snapshot_data_uri(&url, u, p).await
         }
