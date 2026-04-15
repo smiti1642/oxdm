@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
+use crate::api;
 use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Ctx, View};
-use crate::{api, state::Credentials};
 use dioxus::prelude::*;
 
 #[component]
@@ -25,8 +25,7 @@ pub fn DevicePanel() -> Element {
     };
 
     let dev_name = dev.name.clone();
-    let dev_addr = dev.addr.clone();
-    let effective_creds = ctx.credentials_for(dev);
+    drop(devices);
 
     rsx! {
         div { class: "device-panel",
@@ -54,7 +53,7 @@ pub fn DevicePanel() -> Element {
             // ── Stream thumbnails at bottom ─────────────────────────────────
             div { class: "panel-section panel-thumbnails",
                 div { class: "panel-section-title", {i18n::t(locale, "section_streams")} }
-                StreamThumbnails { addr: dev_addr, creds: effective_creds }
+                StreamThumbnails {}
             }
         }
     }
@@ -92,15 +91,25 @@ struct StreamInfo {
 }
 
 #[component]
-fn StreamThumbnails(addr: String, creds: Credentials) -> Element {
+fn StreamThumbnails() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    // Fetch profiles + snapshot URIs
+    // Fetch profiles + snapshot URIs — reactive to device/creds changes
     let streams = use_resource(move || {
-        let addr = addr.clone();
-        let creds = creds.clone();
+        let devices = ctx.devices.read();
+        let selected = *ctx.selected.read();
+        let dev = selected.and_then(|i| devices.get(i)).cloned();
+        let creds = dev
+            .as_ref()
+            .map(|d| ctx.credentials_for(d))
+            .unwrap_or_else(|| ctx.global_credentials.read().clone());
+        let addr = dev.map(|d| d.addr).unwrap_or_default();
+
         async move {
+            if addr.is_empty() {
+                return Ok::<_, String>(Vec::new());
+            }
             let (u, p) = if creds.username.is_empty() {
                 (None, None)
             } else {
@@ -118,7 +127,7 @@ fn StreamThumbnails(addr: String, creds: Credentials) -> Element {
                     });
                 }
             }
-            Ok::<_, String>(infos)
+            Ok(infos)
         }
     });
 
@@ -150,7 +159,7 @@ fn StreamThumbnails(addr: String, creds: Credentials) -> Element {
                         div { class: "thumb-card",
                             img {
                                 class: "thumb-img",
-                                src: "{info.snapshot_url}&_t={tick_val}",
+                                src: cache_bust(&info.snapshot_url, tick_val),
                                 alt: "{info.profile_name}",
                             }
                             div { class: "thumb-label", "{info.profile_name}" }
@@ -160,6 +169,12 @@ fn StreamThumbnails(addr: String, creds: Credentials) -> Element {
             },
         }
     }
+}
+
+/// Append a cache-busting query parameter to a URL.
+fn cache_bust(url: &str, tick: u32) -> String {
+    let sep = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{sep}_t={tick}")
 }
 
 /// Inject credentials into a snapshot HTTP URL for basic auth.
