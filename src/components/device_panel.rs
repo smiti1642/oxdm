@@ -2,8 +2,9 @@
 use crate::api;
 use crate::components::Icon;
 use crate::i18n;
-use crate::state::{Ctx, View};
+use crate::state::{Credentials, Ctx, View};
 use dioxus::prelude::*;
+use tracing::{debug, warn};
 
 #[component]
 pub fn DevicePanel() -> Element {
@@ -43,10 +44,10 @@ pub fn DevicePanel() -> Element {
                 NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
             }
 
-            // ── Per-stream thumbnails with NVT actions ──────────────────────
+            // ── NVT profile thumbnails ──────────────────────────────────────
             div { class: "panel-section panel-thumbnails",
-                div { class: "panel-section-title", {i18n::t(locale, "section_streams")} }
-                StreamThumbnails {}
+                div { class: "panel-section-title", "NVT" }
+                ProfileThumbnails {}
             }
         }
     }
@@ -75,21 +76,23 @@ fn NavLink(view: View, icon: &'static str, label: &'static str) -> Element {
     }
 }
 
-// ── Stream Thumbnails ───────────────────────────────────────────────────────
+// ── NVT Profile Thumbnails ──────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
-struct StreamInfo {
+struct ProfileInfo {
     profile_token: String,
     profile_name: String,
-    snapshot_url: String,
+    /// None when GetSnapshotUri is not supported by the device for this profile.
+    snapshot_url: Option<String>,
+    creds: Credentials,
 }
 
 #[component]
-fn StreamThumbnails() -> Element {
+fn ProfileThumbnails() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    let streams = use_resource(move || {
+    let profiles_res = use_resource(move || {
         let devices = ctx.devices.read();
         let selected = *ctx.selected.read();
         let dev = selected.and_then(|i| devices.get(i)).cloned();
@@ -106,52 +109,86 @@ fn StreamThumbnails() -> Element {
             let (u, p) = creds.as_options();
 
             let profiles = api::get_profiles(&addr, u, p).await?;
+            debug!(addr = %addr, count = profiles.len(), "GetProfiles OK");
+
+            // Extract base URL from device addr for resolving relative snapshot URIs
+            // e.g. "http://192.168.4.50/onvif/device_service" → "http://192.168.4.50"
+            let base_url = addr
+                .find("://")
+                .and_then(|i| addr[i + 3..].find('/').map(|j| &addr[..i + 3 + j]))
+                .unwrap_or(&addr)
+                .to_string();
 
             let mut infos = Vec::new();
             for profile in &profiles {
-                if let Ok(snap) = api::get_snapshot_uri(&addr, u, p, &profile.token).await {
-                    infos.push(StreamInfo {
-                        profile_token: profile.token.clone(),
-                        profile_name: profile.name.clone(),
-                        snapshot_url: inject_credentials(&snap.uri, u, p),
-                    });
+                match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
+                    Ok(snap) => {
+                        // Resolve relative/incomplete snapshot URIs
+                        let raw_uri = snap.uri;
+                        let snapshot_url =
+                            if raw_uri.starts_with("http://") || raw_uri.starts_with("https://") {
+                                raw_uri.clone()
+                            } else if raw_uri.starts_with('/') {
+                                format!("{base_url}{raw_uri}")
+                            } else {
+                                format!("{base_url}/{raw_uri}")
+                            };
+                        debug!(
+                            addr = %addr,
+                            profile = %profile.token,
+                            name = %profile.name,
+                            raw_uri = %raw_uri,
+                            resolved_url = %snapshot_url,
+                            "GetSnapshotUri OK"
+                        );
+                        infos.push(ProfileInfo {
+                            profile_token: profile.token.clone(),
+                            profile_name: profile.name.clone(),
+                            snapshot_url: Some(snapshot_url),
+                            creds: creds.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        warn!(
+                            addr = %addr,
+                            profile = %profile.token,
+                            name = %profile.name,
+                            error = %e,
+                            "GetSnapshotUri FAILED — profile shown without thumbnail"
+                        );
+                        infos.push(ProfileInfo {
+                            profile_token: profile.token.clone(),
+                            profile_name: profile.name.clone(),
+                            snapshot_url: None,
+                            creds: creds.clone(),
+                        });
+                    }
                 }
             }
             Ok(infos)
         }
     });
 
-    // Auto-refresh
-    let mut tick = use_signal(|| 0u32);
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            let next = tick.peek().wrapping_add(1);
-            tick.set(next);
-        }
-    });
-    let tick_val = *tick.read();
-
     rsx! {
-        match &*streams.read_unchecked() {
+        match &*profiles_res.read_unchecked() {
             None => rsx! {
                 div { class: "thumb-loading", {i18n::t(locale, "loading")} }
             },
             Some(Err(_)) => rsx! {
-                div { class: "thumb-empty", {i18n::t(locale, "no_streams")} }
+                div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
             Some(Ok(infos)) if infos.is_empty() => rsx! {
-                div { class: "thumb-empty", {i18n::t(locale, "no_streams")} }
+                div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
             Some(Ok(infos)) => rsx! {
                 div { class: "thumb-grid",
                     for info in infos {
-                        StreamCard {
+                        ProfileCard {
                             key: "{info.profile_token}",
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
                             snapshot_url: info.snapshot_url.clone(),
-                            tick: tick_val,
+                            creds: info.creds.clone(),
                         }
                     }
                 }
@@ -161,16 +198,40 @@ fn StreamThumbnails() -> Element {
 }
 
 #[component]
-fn StreamCard(
+fn ProfileCard(
     profile_token: String,
     profile_name: String,
-    snapshot_url: String,
-    tick: u32,
+    snapshot_url: Option<String>,
+    creds: Credentials,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let mut view = ctx.view;
     let mut profile_sig = ctx.selected_profile;
+
+    // Auto-refresh tick signal — triggers use_resource re-run every 3s
+    let mut tick = use_signal(|| 0u32);
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let next = tick.peek().wrapping_add(1);
+            tick.set(next);
+        }
+    });
+
+    // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs)
+    let data_uri = use_resource(move || {
+        let url = snapshot_url.clone();
+        let creds = creds.clone();
+        let _tick = *tick.read(); // subscribe to tick signal for periodic refresh
+        async move {
+            let Some(url) = url else {
+                return Err("No snapshot".to_string());
+            };
+            let (u, p) = creds.as_options();
+            api::fetch_snapshot_data_uri(&url, u, p).await
+        }
+    });
 
     let selected = ctx
         .selected_profile
@@ -195,10 +256,15 @@ fn StreamCard(
             onclick: move |_| {
                 profile_sig.set(Some(profile_token.clone()));
             },
-            img {
-                class: "thumb-img",
-                src: cache_bust(&snapshot_url, tick),
-                alt: "{profile_name}",
+            match &*data_uri.read_unchecked() {
+                Some(Ok(src)) => rsx! {
+                    img { class: "thumb-img", src: "{src}", alt: "{profile_name}" }
+                },
+                _ => rsx! {
+                    div { class: "thumb-img thumb-img--placeholder",
+                        Icon { name: "camera", size: 24 }
+                    }
+                },
             }
             div { class: "thumb-footer",
                 span { class: "thumb-label", "{profile_name}" }
@@ -236,26 +302,5 @@ fn StreamCard(
                 }
             }
         }
-    }
-}
-
-fn cache_bust(url: &str, tick: u32) -> String {
-    let sep = if url.contains('?') { '&' } else { '?' };
-    format!("{url}{sep}_t={tick}")
-}
-
-fn inject_credentials(url: &str, username: Option<&str>, password: Option<&str>) -> String {
-    let (Some(u), Some(p)) = (username, password) else {
-        return url.to_string();
-    };
-    if u.is_empty() {
-        return url.to_string();
-    }
-    if let Some(rest) = url.strip_prefix("http://") {
-        format!("http://{u}:{p}@{rest}")
-    } else if let Some(rest) = url.strip_prefix("https://") {
-        format!("https://{u}:{p}@{rest}")
-    } else {
-        url.to_string()
     }
 }

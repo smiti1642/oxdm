@@ -4,7 +4,7 @@ use oxvif::{
     StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 pub type ApiError = String;
 
@@ -183,6 +183,193 @@ pub async fn get_snapshot_uri(
         addr,
         client.get_snapshot_uri(&media_url, profile_token).await,
     )
+}
+
+/// Download a snapshot image and return it as a `data:` URI (base64-encoded).
+///
+/// When credentials are available, tries authenticated methods first:
+/// 1. Probe with GET (no auth) to discover the auth scheme
+/// 2. If 401 + Digest challenge → manual Digest auth
+/// 3. If still failing → Basic auth
+/// 4. If no 401 (e.g. 500) → retry with Basic auth anyway (some cameras
+///    return non-401 errors when auth is missing)
+///
+/// Without credentials, sends a single unauthenticated GET.
+#[instrument(skip(username, password), fields(snapshot_url))]
+pub async fn fetch_snapshot_data_uri(
+    snapshot_url: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String, ApiError> {
+    let http = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let has_auth = matches!((username, password), (Some(u), Some(_)) if !u.is_empty());
+
+    // ── If we have credentials, try authenticated methods first ──────────
+
+    if has_auth {
+        let (u, p) = (username.unwrap(), password.unwrap());
+
+        // Probe to discover auth scheme
+        let probe = http.get(snapshot_url).send().await.map_err(|e| {
+            error!(snapshot_url, error = %e, "HTTP request failed");
+            e.to_string()
+        })?;
+
+        if probe.status().is_success() {
+            return snapshot_response_to_data_uri(probe, snapshot_url).await;
+        }
+
+        let probe_status = probe.status();
+        let www_auth = probe
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        // Try Digest auth if challenge is present
+        if www_auth.to_lowercase().contains("digest") {
+            info!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth");
+            match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
+                Ok(resp) if resp.status().is_success() => {
+                    return snapshot_response_to_data_uri(resp, snapshot_url).await;
+                }
+                Ok(resp) => {
+                    warn!(snapshot_url, status = %resp.status(), "Digest auth rejected");
+                }
+                Err(e) => {
+                    debug!(snapshot_url, error = %e, "Digest auth error");
+                }
+            }
+        }
+
+        // Try Basic auth (works for many cameras, also covers non-401 cases)
+        debug!(snapshot_url, "Attempting Basic auth");
+        let resp = http
+            .get(snapshot_url)
+            .basic_auth(u, Some(p))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.status().is_success() {
+            return snapshot_response_to_data_uri(resp, snapshot_url).await;
+        }
+
+        let status = resp.status();
+        error!(
+            snapshot_url,
+            probe_status = %probe_status,
+            final_status = %status,
+            www_authenticate = %www_auth,
+            "All auth methods failed"
+        );
+        return Err(format!("HTTP {status}"));
+    }
+
+    // ── No credentials — single unauthenticated attempt ─────────────────
+
+    let resp = http.get(snapshot_url).send().await.map_err(|e| {
+        error!(snapshot_url, error = %e, "HTTP request failed");
+        e.to_string()
+    })?;
+
+    if resp.status().is_success() {
+        return snapshot_response_to_data_uri(resp, snapshot_url).await;
+    }
+
+    let status = resp.status();
+    error!(snapshot_url, status = %status, "Snapshot failed (no credentials)");
+    Err(format!("HTTP {status}"))
+}
+
+/// Extract URI path from a full URL for Digest auth computation.
+fn url_to_path(url: &str) -> &str {
+    url.find("://")
+        .and_then(|i| url[i + 3..].find('/').map(|j| &url[i + 3 + j..]))
+        .unwrap_or("/")
+}
+
+/// Manually compute Digest Auth header and retry.
+async fn try_digest_auth(
+    http: &reqwest::Client,
+    url: &str,
+    username: &str,
+    password: &str,
+    www_authenticate: &str,
+) -> Result<reqwest::Response, ApiError> {
+    let uri_path = url_to_path(url);
+
+    // Log credential hint for diagnostics (password length + first/last char)
+    let pass_hint = if password.len() >= 2 {
+        let chars: Vec<char> = password.chars().collect();
+        format!(
+            "{}...{} (len={})",
+            chars[0],
+            chars[chars.len() - 1],
+            password.len()
+        )
+    } else {
+        format!("(len={})", password.len())
+    };
+    info!(username, pass_hint = %pass_hint, "Digest auth credentials");
+
+    let context = digest_auth::AuthContext::new(username, password, uri_path);
+    let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
+        error!(error = %e, www_authenticate, "Failed to parse WWW-Authenticate");
+        e.to_string()
+    })?;
+    let answer = prompt.respond(&context).map_err(|e| {
+        error!(error = %e, "Failed to compute Digest response");
+        e.to_string()
+    })?;
+    // Patch the header for maximum camera compatibility:
+    // 1. Quote qop value: some cameras (Hikvision) require qop="auth"
+    // 2. Remove spaces after commas: some cameras fail to parse "k=v, k=v"
+    let header_val = answer
+        .to_header_string()
+        .replace("qop=auth", r#"qop="auth""#)
+        .replace(", ", ",");
+    info!(
+        uri_path,
+        authorization = %header_val,
+        "Sending Digest auth request"
+    );
+    http.get(url)
+        .header("Authorization", header_val)
+        .send()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Extract image bytes from a successful response and encode as data URI.
+async fn snapshot_response_to_data_uri(
+    resp: reqwest::Response,
+    snapshot_url: &str,
+) -> Result<String, ApiError> {
+    use base64::Engine;
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    debug!(
+        snapshot_url,
+        content_type = %content_type,
+        size_bytes = bytes.len(),
+        "Snapshot OK"
+    );
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{content_type};base64,{b64}"))
 }
 
 /// Fetch RTSP stream URI for a specific profile.
