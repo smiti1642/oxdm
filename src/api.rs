@@ -304,6 +304,21 @@ async fn try_digest_auth(
     www_authenticate: &str,
 ) -> Result<reqwest::Response, ApiError> {
     let uri_path = url_to_path(url);
+
+    // Log credential hint for diagnostics (password length + first/last char)
+    let pass_hint = if password.len() >= 2 {
+        let chars: Vec<char> = password.chars().collect();
+        format!(
+            "{}...{} (len={})",
+            chars[0],
+            chars[chars.len() - 1],
+            password.len()
+        )
+    } else {
+        format!("(len={})", password.len())
+    };
+    info!(username, pass_hint = %pass_hint, "Digest auth credentials");
+
     let context = digest_auth::AuthContext::new(username, password, uri_path);
     let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
         error!(error = %e, www_authenticate, "Failed to parse WWW-Authenticate");
