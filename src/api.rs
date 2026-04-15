@@ -187,12 +187,14 @@ pub async fn get_snapshot_uri(
 
 /// Download a snapshot image and return it as a `data:` URI (base64-encoded).
 ///
-/// Tries three authentication strategies in order:
-/// 1. No auth (some cameras serve snapshots publicly)
-/// 2. HTTP Digest Auth via `digest_auth` crate (manual implementation)
-/// 3. HTTP Basic Auth as last resort
+/// When credentials are available, tries authenticated methods first:
+/// 1. Probe with GET (no auth) to discover the auth scheme
+/// 2. If 401 + Digest challenge → manual Digest auth
+/// 3. If still failing → Basic auth
+/// 4. If no 401 (e.g. 500) → retry with Basic auth anyway (some cameras
+///    return non-401 errors when auth is missing)
 ///
-/// Accepts self-signed certificates.
+/// Without credentials, sends a single unauthenticated GET.
 #[instrument(skip(username, password), fields(snapshot_url))]
 pub async fn fetch_snapshot_data_uri(
     snapshot_url: &str,
@@ -206,72 +208,91 @@ pub async fn fetch_snapshot_data_uri(
         .map_err(|e| e.to_string())?;
 
     let has_auth = matches!((username, password), (Some(u), Some(_)) if !u.is_empty());
-    debug!(snapshot_url, has_auth, "Fetching snapshot");
 
-    // Step 1: Send initial request (no auth)
+    // ── If we have credentials, try authenticated methods first ──────────
+
+    if has_auth {
+        let (u, p) = (username.unwrap(), password.unwrap());
+
+        // Probe to discover auth scheme
+        let probe = http.get(snapshot_url).send().await.map_err(|e| {
+            error!(snapshot_url, error = %e, "HTTP request failed");
+            e.to_string()
+        })?;
+
+        if probe.status().is_success() {
+            return snapshot_response_to_data_uri(probe, snapshot_url).await;
+        }
+
+        let probe_status = probe.status();
+        let www_auth = probe
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        // Try Digest auth if challenge is present
+        if www_auth.to_lowercase().contains("digest") {
+            debug!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth");
+            match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
+                Ok(resp) if resp.status().is_success() => {
+                    return snapshot_response_to_data_uri(resp, snapshot_url).await;
+                }
+                Ok(resp) => {
+                    debug!(snapshot_url, status = %resp.status(), "Digest auth rejected");
+                }
+                Err(e) => {
+                    debug!(snapshot_url, error = %e, "Digest auth error");
+                }
+            }
+        }
+
+        // Try Basic auth (works for many cameras, also covers non-401 cases)
+        debug!(snapshot_url, "Attempting Basic auth");
+        let resp = http
+            .get(snapshot_url)
+            .basic_auth(u, Some(p))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.status().is_success() {
+            return snapshot_response_to_data_uri(resp, snapshot_url).await;
+        }
+
+        let status = resp.status();
+        error!(
+            snapshot_url,
+            probe_status = %probe_status,
+            final_status = %status,
+            www_authenticate = %www_auth,
+            "All auth methods failed"
+        );
+        return Err(format!("HTTP {status}"));
+    }
+
+    // ── No credentials — single unauthenticated attempt ─────────────────
+
     let resp = http.get(snapshot_url).send().await.map_err(|e| {
         error!(snapshot_url, error = %e, "HTTP request failed");
         e.to_string()
     })?;
-
-    // If 200 without auth, return directly
-    if resp.status().is_success() {
-        return snapshot_response_to_data_uri(resp, snapshot_url).await;
-    }
-
-    // If not 401, or we have no credentials, fail here
-    if resp.status() != reqwest::StatusCode::UNAUTHORIZED || !has_auth {
-        let status = resp.status();
-        error!(snapshot_url, status = %status, "Snapshot fetch failed (no auth available)");
-        return Err(format!("HTTP {status}"));
-    }
-
-    let (u, p) = (username.unwrap(), password.unwrap());
-
-    // Step 2: Try Digest Auth if WWW-Authenticate: Digest is present
-    let www_auth = resp
-        .headers()
-        .get("www-authenticate")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    if www_auth.to_lowercase().contains("digest") {
-        debug!(snapshot_url, "Attempting Digest auth (manual)");
-        match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
-            Ok(resp) if resp.status().is_success() => {
-                return snapshot_response_to_data_uri(resp, snapshot_url).await;
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                debug!(snapshot_url, status = %status, "Digest auth returned non-200, trying Basic");
-            }
-            Err(e) => {
-                debug!(snapshot_url, error = %e, "Digest auth failed, trying Basic");
-            }
-        }
-    }
-
-    // Step 3: Fallback to Basic Auth
-    debug!(snapshot_url, "Attempting Basic auth");
-    let resp = http
-        .get(snapshot_url)
-        .basic_auth(u, Some(p))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
 
     if resp.status().is_success() {
         return snapshot_response_to_data_uri(resp, snapshot_url).await;
     }
 
     let status = resp.status();
-    error!(
-        snapshot_url,
-        status = %status,
-        "All auth methods failed for snapshot"
-    );
+    error!(snapshot_url, status = %status, "Snapshot failed (no credentials)");
     Err(format!("HTTP {status}"))
+}
+
+/// Extract URI path from a full URL for Digest auth computation.
+fn url_to_path(url: &str) -> &str {
+    url.find("://")
+        .and_then(|i| url[i + 3..].find('/').map(|j| &url[i + 3 + j..]))
+        .unwrap_or("/")
 }
 
 /// Manually compute Digest Auth header and retry.
@@ -282,24 +303,24 @@ async fn try_digest_auth(
     password: &str,
     www_authenticate: &str,
 ) -> Result<reqwest::Response, ApiError> {
-    // Digest auth requires the URI path, not the full URL
-    let uri_path = url
-        .find("://")
-        .and_then(|i| url[i + 3..].find('/'))
-        .map(|i| &url[url.find("://").unwrap() + 3 + i..])
-        .unwrap_or("/");
-    debug!(uri_path, "Digest auth URI path");
+    let uri_path = url_to_path(url);
     let context = digest_auth::AuthContext::new(username, password, uri_path);
     let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
-        error!(error = %e, "Failed to parse WWW-Authenticate header");
+        error!(error = %e, www_authenticate, "Failed to parse WWW-Authenticate");
         e.to_string()
     })?;
-    let auth_header = prompt.respond(&context).map_err(|e| {
+    let answer = prompt.respond(&context).map_err(|e| {
         error!(error = %e, "Failed to compute Digest response");
         e.to_string()
     })?;
+    let header_val = answer.to_header_string();
+    debug!(
+        uri_path,
+        authorization = %header_val,
+        "Sending Digest auth"
+    );
     http.get(url)
-        .header("Authorization", auth_header.to_header_string())
+        .header("Authorization", header_val)
         .send()
         .await
         .map_err(|e| e.to_string())
@@ -324,7 +345,7 @@ async fn snapshot_response_to_data_uri(
         snapshot_url,
         content_type = %content_type,
         size_bytes = bytes.len(),
-        "Snapshot fetched OK"
+        "Snapshot OK"
     );
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{content_type};base64,{b64}"))
