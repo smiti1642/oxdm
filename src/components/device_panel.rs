@@ -126,17 +126,6 @@ fn ProfileThumbnails() -> Element {
         }
     });
 
-    // Auto-refresh tick — drives periodic snapshot re-fetch
-    let mut tick = use_signal(|| 0u32);
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            let next = tick.peek().wrapping_add(1);
-            tick.set(next);
-        }
-    });
-    let tick_val = *tick.read();
-
     rsx! {
         match &*profiles_res.read_unchecked() {
             None => rsx! {
@@ -157,7 +146,6 @@ fn ProfileThumbnails() -> Element {
                             profile_name: info.profile_name.clone(),
                             snapshot_url: info.snapshot_url.clone(),
                             creds: info.creds.clone(),
-                            tick: tick_val,
                         }
                     }
                 }
@@ -172,18 +160,27 @@ fn ProfileCard(
     profile_name: String,
     snapshot_url: Option<String>,
     creds: Credentials,
-    tick: u32,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let mut view = ctx.view;
     let mut profile_sig = ctx.selected_profile;
 
+    // Auto-refresh tick signal — triggers use_resource re-run every 3s
+    let mut tick = use_signal(|| 0u32);
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let next = tick.peek().wrapping_add(1);
+            tick.set(next);
+        }
+    });
+
     // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs)
     let data_uri = use_resource(move || {
         let url = snapshot_url.clone();
         let creds = creds.clone();
-        let _tick = tick; // subscribe to tick changes for periodic refresh
+        let _tick = *tick.read(); // subscribe to tick signal for periodic refresh
         async move {
             let Some(url) = url else {
                 return Err("No snapshot".to_string());
