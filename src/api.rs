@@ -187,70 +187,123 @@ pub async fn get_snapshot_uri(
 
 /// Download a snapshot image and return it as a `data:` URI (base64-encoded).
 ///
-/// Real ONVIF cameras typically require HTTP Digest authentication for the
-/// snapshot endpoint. A plain `<img src="http://user:pass@...">` only covers
-/// HTTP Basic auth, so the webview cannot display the image. This function
-/// uses `diqwest` to handle Digest auth transparently and converts the
-/// response bytes to a data URI that the webview can render directly.
+/// Tries three authentication strategies in order:
+/// 1. No auth (some cameras serve snapshots publicly)
+/// 2. HTTP Digest Auth via `digest_auth` crate (manual implementation)
+/// 3. HTTP Basic Auth as last resort
+///
+/// Accepts self-signed certificates.
 #[instrument(skip(username, password), fields(snapshot_url))]
 pub async fn fetch_snapshot_data_uri(
     snapshot_url: &str,
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<String, ApiError> {
-    use base64::Engine;
-    use diqwest::WithDigestAuth;
-
-    let has_auth = matches!((username, password), (Some(u), Some(_)) if !u.is_empty());
-    debug!(snapshot_url, has_auth, "Fetching snapshot");
-
     let http = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|e| {
-            error!(error = %e, "Failed to build HTTP client");
-            e.to_string()
-        })?;
+        .map_err(|e| e.to_string())?;
 
-    let resp = match (username, password) {
-        (Some(u), Some(p)) if !u.is_empty() => http
-            .get(snapshot_url)
-            .send_digest_auth((u, p))
-            .await
-            .map_err(|e| {
-                error!(snapshot_url, error = %e, "Digest auth request failed");
-                e.to_string()
-            })?,
-        _ => http.get(snapshot_url).send().await.map_err(|e| {
-            error!(snapshot_url, error = %e, "HTTP request failed");
-            e.to_string()
-        })?,
-    };
+    let has_auth = matches!((username, password), (Some(u), Some(_)) if !u.is_empty());
+    debug!(snapshot_url, has_auth, "Fetching snapshot");
 
-    let status = resp.status();
-    if !status.is_success() {
-        let www_auth = resp
-            .headers()
-            .get("www-authenticate")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("(none)")
-            .to_string();
-        let body_preview = resp.text().await.unwrap_or_default();
-        let body_preview = if body_preview.len() > 500 {
-            format!("{}...", &body_preview[..500])
-        } else {
-            body_preview
-        };
-        error!(
-            snapshot_url,
-            status = %status,
-            www_authenticate = %www_auth,
-            body = %body_preview,
-            "Snapshot fetch failed"
-        );
+    // Step 1: Send initial request (no auth)
+    let resp = http.get(snapshot_url).send().await.map_err(|e| {
+        error!(snapshot_url, error = %e, "HTTP request failed");
+        e.to_string()
+    })?;
+
+    // If 200 without auth, return directly
+    if resp.status().is_success() {
+        return snapshot_response_to_data_uri(resp, snapshot_url).await;
+    }
+
+    // If not 401, or we have no credentials, fail here
+    if resp.status() != reqwest::StatusCode::UNAUTHORIZED || !has_auth {
+        let status = resp.status();
+        error!(snapshot_url, status = %status, "Snapshot fetch failed (no auth available)");
         return Err(format!("HTTP {status}"));
     }
+
+    let (u, p) = (username.unwrap(), password.unwrap());
+
+    // Step 2: Try Digest Auth if WWW-Authenticate: Digest is present
+    let www_auth = resp
+        .headers()
+        .get("www-authenticate")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    if www_auth.to_lowercase().contains("digest") {
+        debug!(snapshot_url, "Attempting Digest auth (manual)");
+        match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
+            Ok(resp) if resp.status().is_success() => {
+                return snapshot_response_to_data_uri(resp, snapshot_url).await;
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                debug!(snapshot_url, status = %status, "Digest auth returned non-200, trying Basic");
+            }
+            Err(e) => {
+                debug!(snapshot_url, error = %e, "Digest auth failed, trying Basic");
+            }
+        }
+    }
+
+    // Step 3: Fallback to Basic Auth
+    debug!(snapshot_url, "Attempting Basic auth");
+    let resp = http
+        .get(snapshot_url)
+        .basic_auth(u, Some(p))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status().is_success() {
+        return snapshot_response_to_data_uri(resp, snapshot_url).await;
+    }
+
+    let status = resp.status();
+    error!(
+        snapshot_url,
+        status = %status,
+        "All auth methods failed for snapshot"
+    );
+    Err(format!("HTTP {status}"))
+}
+
+/// Manually compute Digest Auth header and retry.
+async fn try_digest_auth(
+    http: &reqwest::Client,
+    url: &str,
+    username: &str,
+    password: &str,
+    www_authenticate: &str,
+) -> Result<reqwest::Response, ApiError> {
+    let context = digest_auth::AuthContext::new(username, password, url);
+    let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
+        error!(error = %e, "Failed to parse WWW-Authenticate header");
+        e.to_string()
+    })?;
+    let auth_header = prompt.respond(&context).map_err(|e| {
+        error!(error = %e, "Failed to compute Digest response");
+        e.to_string()
+    })?;
+    http.get(url)
+        .header("Authorization", auth_header.to_header_string())
+        .send()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Extract image bytes from a successful response and encode as data URI.
+async fn snapshot_response_to_data_uri(
+    resp: reqwest::Response,
+    snapshot_url: &str,
+) -> Result<String, ApiError> {
+    use base64::Engine;
 
     let content_type = resp
         .headers()
@@ -262,7 +315,6 @@ pub async fn fetch_snapshot_data_uri(
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
     debug!(
         snapshot_url,
-        status = %status,
         content_type = %content_type,
         size_bytes = bytes.len(),
         "Snapshot fetched OK"

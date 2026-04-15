@@ -3070,8 +3070,8 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "base64",
+ "digest_auth",
  "dioxus",
- "diqwest",
  "dirs",
  "if-addrs",
  "keyring",
