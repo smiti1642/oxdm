@@ -412,12 +412,14 @@ a      { color: var(--blue); text-decoration: none; }
   padding: 10px 8px 4px;
 }
 .panel-section-title {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--overlay0);
+  color: var(--subtext0);
   padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--surface1);
+  margin-bottom: 4px;
 }
 
 /* Stream thumbnails */
@@ -704,12 +706,14 @@ a      { color: var(--blue); text-decoration: none; }
 }
 
 .prop-section-header {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--overlay1);
-  padding: 16px 12px 6px;
+  color: var(--text);
+  padding: 10px 12px 6px;
+  margin-top: 8px;
+  border-bottom: 2px solid var(--surface1);
 }
 
 /* ── Status Bar ──────────────────────────────────────────────────────────── */
@@ -860,7 +864,7 @@ a      { color: var(--blue); text-decoration: none; }
 .theme-classic .panel-device-icon { background: var(--mantle); border: 1px solid var(--surface1); }
 
 /* Section headers */
-.theme-classic .prop-section-header { background: var(--surface0); padding: 4px 8px; border: 1px solid var(--surface1); }
+.theme-classic .prop-section-header { background: var(--surface0); padding: 6px 8px; border: 1px solid var(--surface1); border-bottom: 2px solid var(--surface1); }
 
 /* Thumbnails */
 .theme-classic .thumb-card { border: 1px solid var(--surface1); }
