@@ -1,6 +1,7 @@
 use oxvif::{
-    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, Hostname, NetworkGateway,
-    NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, SystemDateTime, User,
+    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, Hostname, MediaProfile,
+    NetworkGateway, NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, SnapshotUri,
+    StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument};
@@ -92,6 +93,58 @@ pub async fn get_capabilities(
         build_client(addr, username, password)
             .get_capabilities()
             .await,
+    )
+}
+
+// ── Media ───────────────────────────────────────────────────────────────────
+
+/// Fetch all media profiles. Requires the media service URL from GetCapabilities.
+#[instrument(skip(username, password), fields(addr))]
+pub async fn get_profiles(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<Vec<MediaProfile>, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result("GetProfiles", addr, client.get_profiles(&media_url).await)
+}
+
+/// Fetch snapshot URI for a specific profile.
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_snapshot_uri(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<SnapshotUri, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result(
+        "GetSnapshotUri",
+        addr,
+        client.get_snapshot_uri(&media_url, profile_token).await,
+    )
+}
+
+/// Fetch RTSP stream URI for a specific profile.
+#[allow(dead_code)]
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_stream_uri(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<StreamUri, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result(
+        "GetStreamUri",
+        addr,
+        client.get_stream_uri(&media_url, profile_token).await,
     )
 }
 

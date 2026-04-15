@@ -414,21 +414,50 @@ a      { color: var(--blue); text-decoration: none; }
   padding: 4px 8px 6px;
 }
 
-.panel-thumbnail {
-  margin: 0 8px 6px;
-  height: 100px;
-  border-radius: 8px;
-  background: var(--surface0);
-  border: 1px solid var(--surface1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--overlay0);
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s;
+/* Stream thumbnails */
+.panel-thumbnails {
+  margin-top: auto;
+  border-top: 1px solid var(--surface0);
 }
-.panel-thumbnail:hover { border-color: var(--blue); color: var(--blue); }
+
+.thumb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.thumb-card {
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--surface1);
+  background: var(--surface0);
+}
+
+.thumb-img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--surface0);
+}
+
+.thumb-label {
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--subtext0);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thumb-loading, .thumb-empty {
+  padding: 12px 8px;
+  font-size: 11px;
+  color: var(--overlay0);
+  text-align: center;
+}
 
 .nav-link {
   display: flex;
