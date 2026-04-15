@@ -111,21 +111,40 @@ fn ProfileThumbnails() -> Element {
             let profiles = api::get_profiles(&addr, u, p).await?;
             debug!(addr = %addr, count = profiles.len(), "GetProfiles OK");
 
+            // Extract base URL from device addr for resolving relative snapshot URIs
+            // e.g. "http://192.168.4.50/onvif/device_service" → "http://192.168.4.50"
+            let base_url = addr
+                .find("://")
+                .and_then(|i| addr[i + 3..].find('/').map(|j| &addr[..i + 3 + j]))
+                .unwrap_or(&addr)
+                .to_string();
+
             let mut infos = Vec::new();
             for profile in &profiles {
                 match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
                     Ok(snap) => {
+                        // Resolve relative/incomplete snapshot URIs
+                        let raw_uri = snap.uri;
+                        let snapshot_url =
+                            if raw_uri.starts_with("http://") || raw_uri.starts_with("https://") {
+                                raw_uri.clone()
+                            } else if raw_uri.starts_with('/') {
+                                format!("{base_url}{raw_uri}")
+                            } else {
+                                format!("{base_url}/{raw_uri}")
+                            };
                         debug!(
                             addr = %addr,
                             profile = %profile.token,
                             name = %profile.name,
-                            snapshot_url = %snap.uri,
+                            raw_uri = %raw_uri,
+                            resolved_url = %snapshot_url,
                             "GetSnapshotUri OK"
                         );
                         infos.push(ProfileInfo {
                             profile_token: profile.token.clone(),
                             profile_name: profile.name.clone(),
-                            snapshot_url: Some(snap.uri),
+                            snapshot_url: Some(snapshot_url),
                             creds: creds.clone(),
                         });
                     }
