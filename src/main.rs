@@ -46,9 +46,10 @@ fn main() {
 }
 
 fn App() -> Element {
-    // Load persisted settings
+    // Load persisted settings (single keychain read for all credentials)
     let cfg = use_hook(persist::load_config);
-    let saved_devices = use_hook(persist::load_devices);
+    let (global_creds, creds_map) = use_hook(|| persist::load_all_credentials(&cfg));
+    let saved_devices = use_hook(|| persist::load_devices(&creds_map));
 
     let ctx = Ctx {
         devices: use_signal(|| saved_devices),
@@ -61,17 +62,16 @@ fn App() -> Element {
         toasts: use_signal(Vec::new),
         next_toast_id: use_signal(|| 0),
         dialog: use_signal(|| None),
-        global_credentials: use_signal(|| persist::load_global_credentials(&cfg)),
+        global_credentials: use_signal(|| global_creds),
         selected_profile: use_signal(|| None),
     };
     use_context_provider(|| ctx);
 
-    // Auto-save when theme, locale, or credentials change
+    // Auto-save when theme or locale change
     use_effect(move || {
         let theme = *ctx.theme.read();
         let locale = *ctx.locale.read();
-        let creds = ctx.global_credentials.read().clone();
-        persist::save_config(theme, locale, &creds);
+        persist::save_config(theme, locale);
     });
 
     // Re-verify auth when credentials change
@@ -80,10 +80,11 @@ fn App() -> Element {
         device_ops::reverify_auth(ctx, ctx.devices);
     });
 
-    // Auto-save when manual devices change
+    // Auto-save credentials + devices when either changes (single keychain write)
     use_effect(move || {
+        let creds = ctx.global_credentials.read().clone();
         let devices = ctx.devices.read();
-        persist::save_devices(&devices);
+        persist::save_credentials_and_devices(&creds, &devices);
     });
 
     let theme_class = ctx.theme.read().css_class();

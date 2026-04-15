@@ -6,11 +6,13 @@
 
 use crate::state::{Credentials, DeviceEntry, Locale, Theme};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
 const KEYRING_SERVICE: &str = "com.oxdm";
-const KEYRING_GLOBAL_USER: &str = "global";
+const KEYRING_USER: &str = "credentials";
+const CREDS_KEY_GLOBAL: &str = "__global__";
 
 // ── On-disk structures ──────────────────────────────────────────────────────
 
@@ -63,35 +65,51 @@ fn ensure_dir() {
     }
 }
 
-// ── Keychain helpers ────────────────────────────────────────────────────────
+// ── Keychain helpers (single entry for all credentials) ─────────────────────
+//
+// All credentials are stored as a single JSON blob in one keychain entry
+// to avoid multiple macOS Keychain permission prompts.
+//
+// Format: `{ "__global__": [user, pass], "addr1": [user, pass], ... }`
 
-fn keyring_save(key: &str, username: &str, password: &str) {
-    let value = format!("{username}\n{password}");
-    match keyring::Entry::new(KEYRING_SERVICE, key) {
+type CredsMap = HashMap<String, (String, String)>;
+
+fn keyring_load_all() -> CredsMap {
+    let entry = match keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(error = %e, "Keychain entry creation failed");
+            return HashMap::new();
+        }
+    };
+    let json = match entry.get_password() {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+    match serde_json::from_str::<HashMap<String, (String, String)>>(&json) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!(error = %e, "Failed to parse keychain credentials JSON");
+            HashMap::new()
+        }
+    }
+}
+
+fn keyring_save_all(map: &CredsMap) {
+    let json = match serde_json::to_string(map) {
+        Ok(j) => j,
+        Err(e) => {
+            error!(error = %e, "Failed to serialize credentials");
+            return;
+        }
+    };
+    match keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
         Ok(entry) => {
-            if let Err(e) = entry.set_password(&value) {
-                warn!(error = %e, key, "Keychain save failed, credentials not persisted");
+            if let Err(e) = entry.set_password(&json) {
+                warn!(error = %e, "Keychain save failed, credentials not persisted");
             }
         }
-        Err(e) => warn!(error = %e, key, "Keychain entry creation failed"),
-    }
-}
-
-fn keyring_load(key: &str) -> Option<(String, String)> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, key).ok()?;
-    let value = entry.get_password().ok()?;
-    let mut lines = value.splitn(2, '\n');
-    let username = lines.next()?.to_string();
-    let password = lines.next().unwrap_or("").to_string();
-    if username.is_empty() {
-        return None;
-    }
-    Some((username, password))
-}
-
-fn keyring_delete(key: &str) {
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, key) {
-        let _ = entry.delete_credential();
+        Err(e) => warn!(error = %e, "Keychain entry creation failed"),
     }
 }
 
@@ -120,28 +138,40 @@ pub fn load_config() -> ConfigFile {
 }
 
 /// Load global credentials from keychain, falling back to legacy config.toml.
-pub fn load_global_credentials(cfg: &ConfigFile) -> Credentials {
+/// Also returns the loaded keychain map so `load_devices` can reuse it
+/// without a second keychain access.
+pub fn load_all_credentials(cfg: &ConfigFile) -> (Credentials, CredsMap) {
+    let mut map = keyring_load_all();
+
     // Try keychain first
-    if let Some((u, p)) = keyring_load(KEYRING_GLOBAL_USER) {
+    if let Some((u, p)) = map.get(CREDS_KEY_GLOBAL) {
         debug!("Loaded global credentials from keychain");
-        return Credentials {
-            username: u,
-            password: p,
+        let creds = Credentials {
+            username: u.clone(),
+            password: p.clone(),
         };
+        return (creds, map);
     }
+
     // Fallback: migrate from legacy config.toml
     if !cfg.username.is_empty() {
         info!("Migrating credentials from config.toml to keychain");
-        keyring_save(KEYRING_GLOBAL_USER, &cfg.username, &cfg.password);
-        return Credentials {
+        map.insert(
+            CREDS_KEY_GLOBAL.to_string(),
+            (cfg.username.clone(), cfg.password.clone()),
+        );
+        keyring_save_all(&map);
+        let creds = Credentials {
             username: cfg.username.clone(),
             password: cfg.password.clone(),
         };
+        return (creds, map);
     }
-    Credentials::default()
+
+    (Credentials::default(), map)
 }
 
-pub fn load_devices() -> Vec<DeviceEntry> {
+pub fn load_devices(creds_map: &CredsMap) -> Vec<DeviceEntry> {
     let Some(path) = devices_path() else {
         return Vec::new();
     };
@@ -158,9 +188,9 @@ pub fn load_devices() -> Vec<DeviceEntry> {
                     .map(|r| {
                         let display_addr = crate::util::extract_ip(&r.addr);
                         let creds = if r.has_credentials {
-                            keyring_load(&r.addr).map(|(u, p)| Credentials {
-                                username: u,
-                                password: p,
+                            creds_map.get(&r.addr).map(|(u, p)| Credentials {
+                                username: u.clone(),
+                                password: p.clone(),
                             })
                         } else {
                             None
@@ -193,7 +223,7 @@ pub fn load_devices() -> Vec<DeviceEntry> {
 
 // ── Save ────────────────────────────────────────────────────────────────────
 
-pub fn save_config(theme: Theme, locale: Locale, creds: &Credentials) {
+pub fn save_config(theme: Theme, locale: Locale) {
     ensure_dir();
 
     // Save theme/locale to config.toml (no credentials)
@@ -218,29 +248,30 @@ pub fn save_config(theme: Theme, locale: Locale, creds: &Credentials) {
             Err(e) => error!(error = %e, "Failed to serialize config"),
         }
     }
-
-    // Save credentials to keychain
-    if creds.username.is_empty() {
-        keyring_delete(KEYRING_GLOBAL_USER);
-    } else {
-        keyring_save(KEYRING_GLOBAL_USER, &creds.username, &creds.password);
-    }
 }
 
-pub fn save_devices(devices: &[DeviceEntry]) {
+/// Save all credentials (global + per-device) to a single keychain entry,
+/// and save manual device records to devices.toml.
+pub fn save_credentials_and_devices(global_creds: &Credentials, devices: &[DeviceEntry]) {
     ensure_dir();
-    let Some(path) = devices_path() else { return };
+
+    // Build a single credentials map for the keychain
+    let mut map: CredsMap = HashMap::new();
+
+    if !global_creds.username.is_empty() {
+        map.insert(
+            CREDS_KEY_GLOBAL.to_string(),
+            (global_creds.username.clone(), global_creds.password.clone()),
+        );
+    }
 
     let records: Vec<DeviceRecord> = devices
         .iter()
         .filter(|d| d.manual)
         .map(|d| {
             let has_creds = d.credentials.is_some();
-            // Save per-device credentials to keychain
             if let Some(c) = &d.credentials {
-                keyring_save(&d.addr, &c.username, &c.password);
-            } else {
-                keyring_delete(&d.addr);
+                map.insert(d.addr.clone(), (c.username.clone(), c.password.clone()));
             }
             DeviceRecord {
                 name: d.name.clone(),
@@ -250,6 +281,11 @@ pub fn save_devices(devices: &[DeviceEntry]) {
         })
         .collect();
 
+    // Single keychain write for all credentials
+    keyring_save_all(&map);
+
+    // Save devices.toml
+    let Some(path) = devices_path() else { return };
     let file = DevicesFile { devices: records };
     match toml::to_string_pretty(&file) {
         Ok(content) => {
