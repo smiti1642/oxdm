@@ -90,15 +90,28 @@ fn App() -> Element {
 
     rsx! {
         document::Stylesheet { href: MAIN_CSS }
-        div { class: theme_class,
-            Topbar {}
-            div { class: "shell-body",
-                DeviceList {}
-                DevicePanel {}
-                MainContent {}
+        ErrorBoundary {
+            handle_error: |errors: ErrorContext| {
+                rsx! {
+                    div { class: "error-boundary",
+                        h2 { "Something went wrong" }
+                        for error in errors.error() {
+                            p { class: "error-boundary-detail", "{error}" }
+                        }
+                        p { "Please restart the application." }
+                    }
+                }
+            },
+            div { class: theme_class,
+                Topbar {}
+                div { class: "shell-body",
+                    DeviceList {}
+                    DevicePanel {}
+                    MainContent {}
+                }
+                ToastContainer {}
+                ConfirmDialogModal {}
             }
-            ToastContainer {}
-            ConfirmDialogModal {}
         }
     }
 }
