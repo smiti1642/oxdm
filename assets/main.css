@@ -793,21 +793,21 @@ a      { color: var(--blue); text-decoration: none; }
 .theme-classic {
   --base:     #f0f0f0;
   --mantle:   #ffffff;
-  --crust:    #e0e0e0;
-  --surface0: #d4d4d4;
-  --surface1: #c0c0c0;
-  --surface2: #a8a8a8;
-  --overlay0: #8a8a8a;
-  --overlay1: #6e6e6e;
-  --overlay2: #585858;
-  --subtext0: #505050;
-  --subtext1: #383838;
+  --crust:    #e8e8e8;
+  --surface0: #e0e0e0;
+  --surface1: #c8c8c8;
+  --surface2: #b0b0b0;
+  --overlay0: #888888;
+  --overlay1: #666666;
+  --overlay2: #555555;
+  --subtext0: #444444;
+  --subtext1: #333333;
   --text:     #1a1a1a;
-  --lavender: #5c6bc0;
+  --lavender: #4466bb;
   --blue:     #0078d4;
   --sapphire: #0063b1;
   --sky:      #0099cc;
-  --teal:     #008080;
+  --teal:     #007070;
   --green:    #107c10;
   --yellow:   #c19c00;
   --peach:    #d83b01;
@@ -816,17 +816,58 @@ a      { color: var(--blue); text-decoration: none; }
   --pink:     #c239b3;
 }
 
-/* Classic: sharper corners, thinner borders for Windows feel */
-.theme-classic .device-card,
-.theme-classic .btn,
-.theme-classic .search-input,
-.theme-classic .topbar-search,
-.theme-classic .tab {
-  border-radius: 3px;
+/* Classic: square corners, match ODM's Windows look */
+.theme-classic * { border-radius: 0 !important; }
+.theme-classic {
+  font-family: "Segoe UI", "Arial", system-ui, sans-serif;
 }
-.theme-classic .device-card { border: 1px solid var(--surface1); }
-.theme-classic .panel-device-icon { border-radius: 6px; }
-.theme-classic .panel-thumbnail { border-radius: 4px; }
+
+/* Panels: all same gray background, white only for content area */
+.theme-classic .sidebar { background: var(--base); border-right: 1px solid var(--surface1); }
+.theme-classic .device-panel { background: var(--base); border-right: 1px solid var(--surface1); }
+.theme-classic .topbar { background: var(--base); border-bottom: 1px solid var(--surface1); }
+.theme-classic .main-content { background: var(--mantle); }
+
+/* Device card: flat, bordered */
+.theme-classic .device-card { border: 1px solid var(--surface1); background: var(--mantle); }
+.theme-classic .device-card:hover { background: var(--surface0); }
+.theme-classic .device-card--selected { background: var(--surface0); border-color: var(--blue); }
+
+/* Property table: visible grid lines like ODM */
+.theme-classic .prop-table td {
+  border: 1px solid var(--surface1);
+  padding: 4px 8px;
+}
+.theme-classic .prop-table tr:nth-child(even) td { background: var(--base); }
+.theme-classic .prop-table tr:nth-child(odd) td { background: var(--mantle); }
+
+/* Tabs: ODM style — gray bar, active tab white with blue top */
+.theme-classic .tab-bar { background: var(--base); border-bottom: 1px solid var(--surface1); }
+.theme-classic .tab { border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; }
+.theme-classic .tab--active {
+  background: var(--mantle);
+  border-color: var(--surface1);
+  border-bottom-color: var(--mantle);
+  color: var(--text);
+}
+
+/* Buttons */
+.theme-classic .btn-primary { background: var(--blue); color: #fff; }
+.theme-classic .btn-ghost { border: 1px solid var(--surface1); background: var(--base); }
+
+/* Panel header */
+.theme-classic .panel-header { background: var(--base); }
+.theme-classic .panel-device-icon { background: var(--mantle); border: 1px solid var(--surface1); }
+
+/* Section headers */
+.theme-classic .prop-section-header { background: var(--surface0); padding: 4px 8px; border: 1px solid var(--surface1); }
+
+/* Thumbnails */
+.theme-classic .thumb-card { border: 1px solid var(--surface1); }
+
+/* Sidebar tabs */
+.theme-classic .sidebar-tabs { background: var(--base); }
+.theme-classic .sidebar-tab--active { background: var(--mantle); }
 
 /* ── Toast Notifications ─────────────────────────────────────────────────── */
 .toast-container {
@@ -1190,8 +1231,4 @@ a      { color: var(--blue); text-decoration: none; }
   word-break: break-all;
 }
 
-/* Classic theme: sharper dialog corners */
-.theme-classic .dialog { border-radius: 6px; }
-.theme-classic .toast { border-radius: 4px; }
-.theme-classic .form-input { border-radius: 3px; }
-.theme-classic .maintenance-card { border-radius: 4px; }
+/* Classic theme overrides consolidated above in .theme-classic block */
