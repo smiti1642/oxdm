@@ -115,6 +115,7 @@ pub fn load_devices() -> Vec<DeviceEntry> {
                             firmware: String::new(),
                             location: String::new(),
                             online: false,
+                            auth_status: Default::default(),
                             manual: true,
                             credentials: creds,
                         }

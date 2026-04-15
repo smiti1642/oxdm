@@ -67,6 +67,7 @@ pub fn DeviceList() -> Element {
                             firmware: String::new(),
                             location,
                             online: true,
+                            auth_status: Default::default(),
                             manual: false,
                             credentials: None,
                         }
@@ -219,6 +220,7 @@ pub fn DeviceList() -> Element {
                         online: dev.online,
                         manual: dev.manual,
                         selected: sel == Some(i),
+                        auth_status: dev.auth_status,
                         edit_dialog_open,
                         edit_device_idx,
                     }
@@ -269,6 +271,7 @@ fn DeviceCard(
     online: bool,
     manual: bool,
     selected: bool,
+    auth_status: crate::state::AuthStatus,
     edit_dialog_open: Signal<bool>,
     edit_device_idx: Signal<Option<usize>>,
 ) -> Element {
@@ -280,10 +283,15 @@ fn DeviceCard(
 
     let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
 
+    let auth_class = match auth_status {
+        crate::state::AuthStatus::Ok => " device-card--auth-ok",
+        crate::state::AuthStatus::Failed => " device-card--auth-fail",
+        crate::state::AuthStatus::Unknown => "",
+    };
     let card_class = if selected {
-        "device-card device-card--selected"
+        format!("device-card device-card--selected{auth_class}")
     } else {
-        "device-card"
+        format!("device-card{auth_class}")
     };
     let dot_class = if manual {
         "status-dot status-dot--manual"
@@ -400,6 +408,7 @@ fn DeviceCard(
                                     firmware: dev.firmware,
                                     location: dev.location,
                                     online: false,
+                                    auth_status: dev.auth_status,
                                     manual: true,
                                     credentials: cred,
                                 });
@@ -423,14 +432,14 @@ fn DeviceCard(
     }
 }
 
-/// After scan, fetch firmware version for each discovered device in the background.
+/// After scan, fetch firmware version and verify auth for each discovered device.
 fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
     let creds = ctx.global_credentials.peek().clone();
     let addrs: Vec<(usize, String)> = devices
         .peek()
         .iter()
         .enumerate()
-        .filter(|(_, d)| !d.manual && d.firmware.is_empty())
+        .filter(|(_, d)| !d.manual)
         .map(|(i, d)| (i, d.addr.clone()))
         .collect();
 
@@ -442,10 +451,59 @@ fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
             } else {
                 (Some(creds.username.as_str()), Some(creds.password.as_str()))
             };
-            if let Ok(info) = api::get_device_info(&addr, u, p).await {
-                if let Some(d) = devices.write().get_mut(idx) {
-                    d.firmware = info.firmware_version;
+            match api::get_device_info(&addr, u, p).await {
+                Ok(info) => {
+                    if let Some(d) = devices.write().get_mut(idx) {
+                        d.firmware = info.firmware_version;
+                        d.auth_status = crate::state::AuthStatus::Ok;
+                    }
                 }
+                Err(_) => {
+                    if let Some(d) = devices.write().get_mut(idx) {
+                        d.auth_status = crate::state::AuthStatus::Failed;
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Re-verify auth status for all devices (called when credentials change).
+pub fn reverify_auth(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
+    let dev_list: Vec<(usize, String, bool)> = devices
+        .peek()
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (i, d.addr.clone(), d.manual))
+        .collect();
+
+    for (idx, addr, is_manual) in dev_list {
+        let creds = {
+            let devs = devices.peek();
+            devs.get(idx)
+                .map(|d| ctx.credentials_for(d))
+                .unwrap_or_else(|| ctx.global_credentials.peek().clone())
+        };
+        spawn(async move {
+            let (u, p) = if creds.username.is_empty() {
+                (None, None)
+            } else {
+                (Some(creds.username.as_str()), Some(creds.password.as_str()))
+            };
+            let status = match api::get_device_info(&addr, u, p).await {
+                Ok(info) => {
+                    // Also update firmware if we got it
+                    if !is_manual {
+                        if let Some(d) = devices.write().get_mut(idx) {
+                            d.firmware = info.firmware_version;
+                        }
+                    }
+                    crate::state::AuthStatus::Ok
+                }
+                Err(_) => crate::state::AuthStatus::Failed,
+            };
+            if let Some(d) = devices.write().get_mut(idx) {
+                d.auth_status = status;
             }
         });
     }

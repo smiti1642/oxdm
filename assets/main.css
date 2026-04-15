@@ -268,6 +268,12 @@ a      { color: var(--blue); text-decoration: none; }
   background: var(--surface0);
   border-color: var(--blue);
 }
+.device-card--auth-ok {
+  border-left: 3px solid var(--green);
+}
+.device-card--auth-fail {
+  border-left: 3px solid var(--red);
+}
 
 .device-card-header {
   display: flex;

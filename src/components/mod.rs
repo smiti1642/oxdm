@@ -1,6 +1,6 @@
 mod context_menu;
 pub(crate) mod credentials_dialog;
-mod device_list;
+pub(crate) mod device_list;
 mod device_panel;
 mod dialog;
 mod edit_device_dialog;

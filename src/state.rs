@@ -92,6 +92,16 @@ pub enum SettingsTab {
     Maintenance,
 }
 
+// ── Auth status ─────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum AuthStatus {
+    #[default]
+    Unknown,
+    Ok,
+    Failed,
+}
+
 // ── Toast notifications ─────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -164,6 +174,7 @@ pub struct DeviceEntry {
     pub firmware: String,
     pub location: String,
     pub online: bool,
+    pub auth_status: AuthStatus,
     /// Whether this device was manually added (can have its own credentials)
     pub manual: bool,
     /// Per-device credentials override (only for manually added devices).

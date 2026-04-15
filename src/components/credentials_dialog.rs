@@ -234,6 +234,7 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 firmware: String::new(),
                                 location: String::new(),
                                 online: false,
+                                auth_status: Default::default(),
                                 manual: true,
                                 credentials: creds,
                             });

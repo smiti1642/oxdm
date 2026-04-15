@@ -75,6 +75,12 @@ fn App() -> Element {
         persist::save_config(theme, locale, &creds);
     });
 
+    // Re-verify auth when credentials change
+    use_effect(move || {
+        let _creds = ctx.global_credentials.read();
+        components::device_list::reverify_auth(ctx, ctx.devices);
+    });
+
     // Auto-save when manual devices change
     use_effect(move || {
         let devices = ctx.devices.read();
