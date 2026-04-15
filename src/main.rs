@@ -63,6 +63,7 @@ fn App() -> Element {
             username: cfg.username.clone(),
             password: cfg.password.clone(),
         }),
+        selected_profile: use_signal(|| None),
     };
     use_context_provider(|| ctx);
 

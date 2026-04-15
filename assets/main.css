@@ -432,6 +432,13 @@ a      { color: var(--blue); text-decoration: none; }
   overflow: hidden;
   border: 1px solid var(--surface1);
   background: var(--surface0);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.thumb-card:hover { border-color: var(--overlay0); }
+.thumb-card--selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue);
 }
 
 .thumb-img {
@@ -442,15 +449,38 @@ a      { color: var(--blue); text-decoration: none; }
   background: var(--surface0);
 }
 
+.thumb-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px;
+}
+
 .thumb-label {
-  padding: 3px 8px;
   font-size: 10px;
   color: var(--subtext0);
-  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.thumb-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.thumb-action {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--overlay1);
+  transition: background 0.1s, color 0.1s;
+}
+.thumb-action:hover { background: var(--surface1); color: var(--blue); }
 
 .thumb-loading, .thumb-empty {
   padding: 12px 8px;

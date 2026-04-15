@@ -39,18 +39,11 @@ pub fn DevicePanel() -> Element {
 
             div { class: "panel-section",
                 div { class: "panel-section-title", {i18n::t(locale, "section_general")} }
-                NavLink { view: View::DeviceSettings, icon: "settings",    label: i18n::t(locale, "nav_settings") }
-                NavLink { view: View::Events,         icon: "bell",        label: i18n::t(locale, "nav_events") }
+                NavLink { view: View::DeviceSettings, icon: "settings", label: i18n::t(locale, "nav_settings") }
+                NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
             }
 
-            div { class: "panel-section",
-                div { class: "panel-section-title", {i18n::t(locale, "section_nvt")} }
-                NavLink { view: View::LiveVideo,       icon: "video",      label: i18n::t(locale, "nav_live_video") }
-                NavLink { view: View::ImagingSettings, icon: "sliders",    label: i18n::t(locale, "nav_imaging") }
-                NavLink { view: View::PtzControl,      icon: "crosshair",  label: i18n::t(locale, "nav_ptz") }
-            }
-
-            // ── Stream thumbnails at bottom ─────────────────────────────────
+            // ── Per-stream thumbnails with NVT actions ──────────────────────
             div { class: "panel-section panel-thumbnails",
                 div { class: "panel-section-title", {i18n::t(locale, "section_streams")} }
                 StreamThumbnails {}
@@ -86,6 +79,7 @@ fn NavLink(view: View, icon: &'static str, label: &'static str) -> Element {
 
 #[derive(Clone, Debug)]
 struct StreamInfo {
+    profile_token: String,
     profile_name: String,
     snapshot_url: String,
 }
@@ -95,7 +89,6 @@ fn StreamThumbnails() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    // Fetch profiles + snapshot URIs — reactive to device/creds changes
     let streams = use_resource(move || {
         let devices = ctx.devices.read();
         let selected = *ctx.selected.read();
@@ -122,6 +115,7 @@ fn StreamThumbnails() -> Element {
             for profile in &profiles {
                 if let Ok(snap) = api::get_snapshot_uri(&addr, u, p, &profile.token).await {
                     infos.push(StreamInfo {
+                        profile_token: profile.token.clone(),
                         profile_name: profile.name.clone(),
                         snapshot_url: inject_credentials(&snap.uri, u, p),
                     });
@@ -131,7 +125,7 @@ fn StreamThumbnails() -> Element {
         }
     });
 
-    // Auto-refresh counter to force image reload
+    // Auto-refresh
     let mut tick = use_signal(|| 0u32);
     use_future(move || async move {
         loop {
@@ -156,13 +150,12 @@ fn StreamThumbnails() -> Element {
             Some(Ok(infos)) => rsx! {
                 div { class: "thumb-grid",
                     for info in infos {
-                        div { class: "thumb-card",
-                            img {
-                                class: "thumb-img",
-                                src: cache_bust(&info.snapshot_url, tick_val),
-                                alt: "{info.profile_name}",
-                            }
-                            div { class: "thumb-label", "{info.profile_name}" }
+                        StreamCard {
+                            key: "{info.profile_token}",
+                            profile_token: info.profile_token.clone(),
+                            profile_name: info.profile_name.clone(),
+                            snapshot_url: info.snapshot_url.clone(),
+                            tick: tick_val,
                         }
                     }
                 }
@@ -171,14 +164,90 @@ fn StreamThumbnails() -> Element {
     }
 }
 
-/// Append a cache-busting query parameter to a URL.
+#[component]
+fn StreamCard(
+    profile_token: String,
+    profile_name: String,
+    snapshot_url: String,
+    tick: u32,
+) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    let mut view = ctx.view;
+    let mut profile_sig = ctx.selected_profile;
+
+    let selected = ctx
+        .selected_profile
+        .read()
+        .as_ref()
+        .map(|t| t == &profile_token)
+        .unwrap_or(false);
+
+    let card_class = if selected {
+        "thumb-card thumb-card--selected"
+    } else {
+        "thumb-card"
+    };
+
+    let token_live = profile_token.clone();
+    let token_img = profile_token.clone();
+    let token_ptz = profile_token.clone();
+
+    rsx! {
+        div {
+            class: card_class,
+            onclick: move |_| {
+                profile_sig.set(Some(profile_token.clone()));
+            },
+            img {
+                class: "thumb-img",
+                src: cache_bust(&snapshot_url, tick),
+                alt: "{profile_name}",
+            }
+            div { class: "thumb-footer",
+                span { class: "thumb-label", "{profile_name}" }
+                div { class: "thumb-actions",
+                    button {
+                        class: "thumb-action",
+                        title: i18n::t(locale, "nav_live_video"),
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            profile_sig.set(Some(token_live.clone()));
+                            view.set(View::LiveVideo);
+                        },
+                        Icon { name: "video", size: 12 }
+                    }
+                    button {
+                        class: "thumb-action",
+                        title: i18n::t(locale, "nav_imaging"),
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            profile_sig.set(Some(token_img.clone()));
+                            view.set(View::ImagingSettings);
+                        },
+                        Icon { name: "sliders", size: 12 }
+                    }
+                    button {
+                        class: "thumb-action",
+                        title: i18n::t(locale, "nav_ptz"),
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            profile_sig.set(Some(token_ptz.clone()));
+                            view.set(View::PtzControl);
+                        },
+                        Icon { name: "crosshair", size: 12 }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn cache_bust(url: &str, tick: u32) -> String {
     let sep = if url.contains('?') { '&' } else { '?' };
     format!("{url}{sep}_t={tick}")
 }
 
-/// Inject credentials into a snapshot HTTP URL for basic auth.
-/// e.g., http://192.168.1.10/snap.jpg → http://admin:pass@192.168.1.10/snap.jpg
 fn inject_credentials(url: &str, username: Option<&str>, password: Option<&str>) -> String {
     let (Some(u), Some(p)) = (username, password) else {
         return url.to_string();

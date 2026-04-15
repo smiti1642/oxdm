@@ -186,6 +186,8 @@ pub struct Ctx {
     pub next_toast_id: Signal<u32>,
     pub dialog: Signal<Option<ConfirmDialog>>,
     pub global_credentials: Signal<Credentials>,
+    /// Currently selected media profile token (for NVT operations).
+    pub selected_profile: Signal<Option<String>>,
 }
 
 impl Ctx {
