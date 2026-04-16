@@ -43,11 +43,13 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(800);
 
 /// Run WS-Discovery probes on all network interfaces, multiple rounds.
 ///
-/// Uses our own multi-NIC implementation instead of oxvif's single-interface
-/// `probe()`, ensuring cameras on all subnets are discovered.
+/// Delegates to [`oxvif::discovery::probe_rounds`], which handles multi-NIC
+/// enumeration and `IP_MULTICAST_IF` pinning (critical on Windows with
+/// Hyper-V / WSL virtual adapters). The multi-round loop guards against
+/// cameras that drop the first Probe on a congested network.
 #[instrument(skip_all)]
 pub async fn discover_devices() -> Result<Vec<DiscoveredDevice>, ApiError> {
-    Ok(crate::discovery::probe_all_interfaces(PROBE_ROUNDS, PROBE_TIMEOUT, PROBE_INTERVAL).await)
+    Ok(oxvif::discovery::probe_rounds(PROBE_ROUNDS, PROBE_TIMEOUT, PROBE_INTERVAL).await)
 }
 
 // ── Device Info ─────────────────────────────────────────────────────────────

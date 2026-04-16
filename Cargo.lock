@@ -3088,9 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "oxvif"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3513efc7a749ef4fd64e3447b054b28acd5213da112a53e810ea893c1a68400"
+version = "0.9.1"
 dependencies = [
  "async-stream",
  "async-trait",

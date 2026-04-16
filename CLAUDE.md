@@ -53,9 +53,9 @@ src/
                     Credentials, Theme, Locale, Toast/ConfirmDialog
   api.rs            Async wrappers around oxvif (discovery, device info,
                     media, imaging, network, users, maintenance) +
-                    snapshot fetch with Digest/Basic auth fallback
-  discovery.rs      Multi-NIC WS-Discovery (replaces oxvif's single-
-                    interface probe(); iterates every IPv4 interface)
+                    snapshot fetch with Digest/Basic auth fallback.
+                    Delegates WS-Discovery to oxvif::discovery::probe_rounds
+                    (multi-NIC + IP_MULTICAST_IF pinning handled upstream).
   persist.rs        ~/.oxdm/config.toml (theme/locale),
                     ~/.oxdm/devices.toml (manual devices),
                     + single JSON blob in system keychain for ALL
@@ -160,17 +160,28 @@ tailwind.css               Tailwind input (source of truth)
 
 ## oxvif version
 
-Pinned to `oxvif = "0.9.0"` in `Cargo.toml`. To upgrade, bump the version
-and re-verify every call site in `src/api.rs` still compiles — types like
-`ImagingSettings`, `ImagingOptions`, `FloatRange`, and the service-URL
-fields on `Capabilities` are the usual breakage points.
+Currently `oxvif = { version = "0.9.1", path = "../oxvif" }` — the path
+dep lets us iterate on oxvif locally before a crates.io release. Once
+0.9.1 is published, strip the `path` to pull from the registry:
+
+```toml
+oxvif = "0.9.1"
+```
+
+To upgrade oxvif further, bump the version and re-verify every call site
+in `src/api.rs` still compiles — types like `ImagingSettings`,
+`ImagingOptions`, `FloatRange`, and the service-URL fields on
+`Capabilities` are the usual breakage points.
 
 ## Known quirks
 
-- `discovery.rs` exists because oxvif's `probe()` binds `0.0.0.0` and the
-  OS picks one NIC — cameras on other subnets (VLAN, Docker, VPN) are
-  invisible. Keep the multi-NIC implementation until oxvif gains a
-  per-interface probe API.
+- WS-Discovery is delegated to `oxvif::discovery::probe_rounds` (3 rounds,
+  2 s timeout, 800 ms interval by default — see `api::discover_devices`).
+  oxvif handles multi-NIC enumeration and `IP_MULTICAST_IF` pinning
+  internally (the latter is critical on Windows — without it, multicast
+  leaks out through Hyper-V / WSL virtual adapters and never reaches the
+  camera subnet). Don't reintroduce a hand-rolled discovery layer in
+  oxdm; if the upstream behaviour needs tweaking, fix it in oxvif.
 - `api::fetch_snapshot_data_uri` patches the `digest_auth` crate output
   for Hikvision compatibility: `qop=auth` → `qop="auth"`, and `, ` → `,`
   between parameters. Removing these patches breaks Hikvision snapshots.

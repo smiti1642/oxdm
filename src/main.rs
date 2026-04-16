@@ -4,7 +4,6 @@ use dioxus::prelude::*;
 mod api;
 mod components;
 mod device_ops;
-mod discovery;
 mod i18n;
 mod persist;
 mod state;
