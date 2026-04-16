@@ -205,6 +205,7 @@ pub fn load_devices(creds_map: &CredsMap) -> Vec<DeviceEntry> {
                             auth_status: Default::default(),
                             manual: true,
                             credentials: creds,
+                            endpoint: String::new(),
                         }
                     })
                     .collect()

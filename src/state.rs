@@ -171,6 +171,11 @@ pub struct DeviceEntry {
     pub manual: bool,
     /// Per-device credentials override (only for manually added devices).
     pub credentials: Option<Credentials>,
+    /// WS-Discovery `EndpointReference/Address` (typically `uuid:...`).
+    /// Stable across IP changes — primary key for cross-scan merge of
+    /// discovered devices. Empty for manually-added entries that have
+    /// not yet been correlated with a discovery response.
+    pub endpoint: String,
 }
 
 // ── Global context ──────────────────────────────────────────────────────────

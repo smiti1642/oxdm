@@ -44,54 +44,100 @@ pub fn DeviceList() -> Element {
         match api::discover_devices().await {
             Ok(found) => {
                 let count = found.len();
-                let entries: Vec<DeviceEntry> = found
-                    .into_iter()
-                    .map(|d| {
-                        let addr = d.xaddrs.first().cloned().unwrap_or_default();
-                        let display_addr = util::extract_ip(&addr);
-                        let name = d
-                            .scopes
-                            .iter()
-                            .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
-                            .map(str::to_string)
-                            .unwrap_or_else(|| display_addr.clone());
-                        let location = d
-                            .scopes
-                            .iter()
-                            .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
-                            .map(util::urldecode)
-                            .unwrap_or_default();
-                        DeviceEntry {
-                            name,
-                            addr,
-                            display_addr,
-                            firmware: String::new(),
-                            location,
-                            online: true,
-                            auth_status: Default::default(),
-                            manual: false,
-                            credentials: None,
+
+                // Build the merged list:
+                //   1. Start from the existing devices.
+                //   2. For each discovered device, either update an existing
+                //      entry (matched by endpoint UUID — stable across IP
+                //      changes) or append it as new.
+                //   3. Discovered entries not seen this round get online=false
+                //      so the UI can show them as stale rather than vanishing
+                //      mid-session (manual entries are untouched).
+                //   4. URI conflict: if the discovered device's xaddrs collide
+                //      with another existing entry's xaddrs, mark that other
+                //      entry offline — its IP got reassigned.
+                let mut next: Vec<DeviceEntry> = devices.peek().clone();
+
+                // Pass 1: discovered entries that didn't come back this round
+                // are stale until proven otherwise.
+                for entry in next.iter_mut() {
+                    if !entry.manual {
+                        entry.online = false;
+                    }
+                }
+
+                // Pass 2: merge each discovery hit.
+                for d in found {
+                    let addr = d.xaddrs.first().cloned().unwrap_or_default();
+                    let display_addr = util::extract_ip(&addr);
+                    let name = d
+                        .scopes
+                        .iter()
+                        .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| display_addr.clone());
+                    let location = d
+                        .scopes
+                        .iter()
+                        .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
+                        .map(util::urldecode)
+                        .unwrap_or_default();
+                    let endpoint = d.endpoint.clone();
+
+                    // URI conflict: any *other* entry that still claims one of
+                    // this device's xaddrs is now stale (IP reassigned).
+                    if !addr.is_empty() {
+                        for other in next.iter_mut() {
+                            if other.endpoint != endpoint && !other.manual && other.addr == addr {
+                                other.online = false;
+                            }
                         }
-                    })
-                    .collect();
+                    }
 
-                // Preserve manually added devices
-                let manual: Vec<DeviceEntry> = devices
-                    .peek()
-                    .iter()
-                    .filter(|d| d.manual)
-                    .cloned()
-                    .collect();
+                    let existing_idx = if !endpoint.is_empty() {
+                        next.iter()
+                            .position(|e| !e.manual && e.endpoint == endpoint)
+                    } else {
+                        // No endpoint UUID — fall back to addr match.
+                        next.iter().position(|e| !e.manual && e.addr == addr)
+                    };
 
-                let mut all = entries;
-                all.extend(manual);
+                    match existing_idx {
+                        Some(i) => {
+                            // Refresh fields, preserve auth_status and
+                            // firmware (those are populated by separate
+                            // background tasks and must survive a re-scan).
+                            let e = &mut next[i];
+                            e.name = name;
+                            e.addr = addr;
+                            e.display_addr = display_addr;
+                            e.location = location;
+                            e.online = true;
+                            e.endpoint = endpoint;
+                        }
+                        None => {
+                            next.push(DeviceEntry {
+                                name,
+                                addr,
+                                display_addr,
+                                firmware: String::new(),
+                                location,
+                                online: true,
+                                auth_status: Default::default(),
+                                manual: false,
+                                credentials: None,
+                                endpoint,
+                            });
+                        }
+                    }
+                }
 
                 // Try to restore previous selection
                 let new_sel = prev_addr
                     .as_ref()
-                    .and_then(|addr| all.iter().position(|d| &d.addr == addr));
+                    .and_then(|addr| next.iter().position(|d| &d.addr == addr));
 
-                devices.set(all);
+                devices.set(next);
                 selected.set(new_sel);
 
                 if new_sel.is_none() {
@@ -413,6 +459,7 @@ fn DeviceCard(
                                     auth_status: dev.auth_status,
                                     manual: true,
                                     credentials: cred,
+                                    endpoint: dev.endpoint,
                                 });
                             }
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ctx_added_manual"));

@@ -175,6 +175,7 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                                 auth_status: Default::default(),
                                 manual: true,
                                 credentials: creds,
+                                endpoint: String::new(),
                             });
                             let new_idx = devs.len() - 1;
                             drop(devs);
