@@ -203,9 +203,20 @@ pub async fn fetch_snapshot_data_uri(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<String, ApiError> {
+    // Match curl's wire shape (Uniview LAPI rejects requests that diverge
+    // from curl's exact header set + Authorization field order):
+    //   - no Accept-Encoding         (no_gzip / no_brotli / no_deflate / no_zstd)
+    //   - User-Agent: curl/8.13.0
+    //   - Accept: */*                (added per-request)
+    //   - Authorization fields reordered to curl's order in try_digest_auth
     let http = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(5))
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .user_agent("curl/8.13.0")
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -234,18 +245,28 @@ pub async fn fetch_snapshot_data_uri(
             .unwrap_or("")
             .to_string();
 
-        // Try Digest auth if challenge is present
+        // Try Digest auth if challenge is present.
+        // Uses a raw TcpStream rather than reqwest because some cameras
+        // (Uniview LAPI) reject reqwest/hyper-framed requests even with
+        // a byte-identical Authorization header — likely a header-ordering
+        // or framing quirk we couldn't pin down. Raw TCP gives byte-for-byte
+        // control matching curl.
         if www_auth.to_lowercase().contains("digest") {
-            info!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth");
-            match try_digest_auth(&http, snapshot_url, u, p, &www_auth).await {
-                Ok(resp) if resp.status().is_success() => {
-                    return snapshot_response_to_data_uri(resp, snapshot_url).await;
-                }
-                Ok(resp) => {
-                    warn!(snapshot_url, status = %resp.status(), "Digest auth rejected");
+            info!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
+            match try_digest_auth_raw(snapshot_url, u, p, &www_auth).await {
+                Ok((content_type, bytes)) => {
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    debug!(
+                        snapshot_url,
+                        content_type = %content_type,
+                        size_bytes = bytes.len(),
+                        "Snapshot OK (raw TCP)"
+                    );
+                    return Ok(format!("data:{content_type};base64,{b64}"));
                 }
                 Err(e) => {
-                    debug!(snapshot_url, error = %e, "Digest auth error");
+                    warn!(snapshot_url, error = %e, "Digest auth (raw TCP) failed");
                 }
             }
         }
@@ -290,22 +311,27 @@ pub async fn fetch_snapshot_data_uri(
     Err(format!("HTTP {status}"))
 }
 
-/// Extract URI path from a full URL for Digest auth computation.
-fn url_to_path(url: &str) -> &str {
-    url.find("://")
-        .and_then(|i| url[i + 3..].find('/').map(|j| &url[i + 3 + j..]))
-        .unwrap_or("/")
-}
-
-/// Manually compute Digest Auth header and retry.
-async fn try_digest_auth(
-    http: &reqwest::Client,
+/// Manually compute Digest Auth header and send via a raw `TcpStream`,
+/// byte-for-byte matching curl's request shape. Returns `(content_type, body)`
+/// on HTTP 200, otherwise an error.
+///
+/// Why raw TCP instead of reqwest: the Uniview LAPI endpoint
+/// `/LAPI/V1.0/Media/Video/Streams/0/Snapshot` accepts curl's request but
+/// rejects reqwest's request even when the Authorization header is
+/// byte-identical and in the same field order. The discrepancy is somewhere
+/// in hyper's request framing (probably a default header we couldn't strip).
+/// Writing raw HTTP/1.1 to a `TcpStream` sidesteps the entire hyper layer.
+async fn try_digest_auth_raw(
     url: &str,
     username: &str,
     password: &str,
     www_authenticate: &str,
-) -> Result<reqwest::Response, ApiError> {
-    let uri_path = url_to_path(url);
+) -> Result<(String, Vec<u8>), ApiError> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+
+    let (host, port, path) =
+        parse_http_url(url).ok_or_else(|| format!("invalid HTTP URL: {url}"))?;
 
     // Log credential hint for diagnostics (password length + first/last char)
     let pass_hint = if password.len() >= 2 {
@@ -321,7 +347,8 @@ async fn try_digest_auth(
     };
     info!(username, pass_hint = %pass_hint, "Digest auth credentials");
 
-    let context = digest_auth::AuthContext::new(username, password, uri_path);
+    // Compute Digest Authorization header.
+    let context = digest_auth::AuthContext::new(username, password, &path);
     let mut prompt = digest_auth::parse(www_authenticate).map_err(|e| {
         error!(error = %e, www_authenticate, "Failed to parse WWW-Authenticate");
         e.to_string()
@@ -330,23 +357,187 @@ async fn try_digest_auth(
         error!(error = %e, "Failed to compute Digest response");
         e.to_string()
     })?;
-    // Patch the header for maximum camera compatibility:
-    // 1. Quote qop value: some cameras (Hikvision) require qop="auth"
-    // 2. Remove spaces after commas: some cameras fail to parse "k=v, k=v"
-    let header_val = answer
+    let raw = answer
         .to_header_string()
         .replace("qop=auth", r#"qop="auth""#)
         .replace(", ", ",");
-    info!(
-        uri_path,
-        authorization = %header_val,
-        "Sending Digest auth request"
+    let auth_header = reorder_digest_fields(&raw);
+
+    // Build the request line. Match curl exactly: Host (without :80), then
+    // Authorization, User-Agent, Accept. No Connection, no Content-Length,
+    // no Accept-Encoding.
+    let host_header = if port == 80 {
+        host.clone()
+    } else {
+        format!("{host}:{port}")
+    };
+    let req = format!(
+        "GET {path} HTTP/1.1\r\n\
+         Host: {host_header}\r\n\
+         Authorization: {auth_header}\r\n\
+         User-Agent: curl/8.13.0\r\n\
+         Accept: */*\r\n\
+         \r\n"
     );
-    http.get(url)
-        .header("Authorization", header_val)
-        .send()
+    info!(uri_path = %path, "Sending raw Digest request");
+
+    let connect = TcpStream::connect((host.as_str(), port));
+    let mut stream = tokio::time::timeout(Duration::from_secs(5), connect)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|_| "TCP connect timeout".to_string())?
+        .map_err(|e| format!("TCP connect: {e}"))?;
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .map_err(|e| format!("write: {e}"))?;
+
+    let (status, headers, body) =
+        tokio::time::timeout(Duration::from_secs(10), read_http_response(&mut stream))
+            .await
+            .map_err(|_| "HTTP read timeout".to_string())??;
+
+    if status != 200 {
+        return Err(format!("HTTP {status}"));
+    }
+    let content_type = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Content-Type"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| "image/jpeg".to_string());
+    Ok((content_type, body))
+}
+
+/// Parse `http://host[:port]/path?...` → `(host, port, path_with_query)`.
+fn parse_http_url(url: &str) -> Option<(String, u16, String)> {
+    let rest = url.strip_prefix("http://")?;
+    let (authority, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], rest[i..].to_string()),
+        None => (rest, "/".to_string()),
+    };
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) => (h.to_string(), p.parse().ok()?),
+        None => (authority.to_string(), 80u16),
+    };
+    Some((host, port, path))
+}
+
+/// Read an HTTP/1.1 response from a `TcpStream`. Honours `Content-Length`;
+/// does not handle chunked encoding (snapshot endpoints always send a fixed
+/// `Content-Length`).
+async fn read_http_response(
+    stream: &mut tokio::net::TcpStream,
+) -> Result<(u16, Vec<(String, String)>, Vec<u8>), ApiError> {
+    use tokio::io::AsyncReadExt;
+
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
+    let mut tmp = [0u8; 4096];
+    let header_end = loop {
+        let n = stream
+            .read(&mut tmp)
+            .await
+            .map_err(|e| format!("read: {e}"))?;
+        if n == 0 {
+            return Err("connection closed before headers".into());
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break pos;
+        }
+    };
+
+    let header_str = std::str::from_utf8(&buf[..header_end])
+        .map_err(|_| "non-utf8 headers".to_string())?
+        .to_string();
+    let mut lines = header_str.lines();
+    let status_line = lines.next().ok_or("no status line")?;
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or("bad status line")?;
+
+    let mut headers: Vec<(String, String)> = Vec::new();
+    for line in lines {
+        if let Some((k, v)) = line.split_once(':') {
+            headers.push((k.trim().to_string(), v.trim().to_string()));
+        }
+    }
+
+    let content_length: usize = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Content-Length"))
+        .and_then(|(_, v)| v.parse().ok())
+        .unwrap_or(0);
+
+    let body_start = header_end + 4;
+    let already = buf.len() - body_start;
+    let mut body: Vec<u8> = buf[body_start..].to_vec();
+    if content_length > already {
+        let needed = content_length - already;
+        let mut rest = vec![0u8; needed];
+        stream
+            .read_exact(&mut rest)
+            .await
+            .map_err(|e| format!("read body: {e}"))?;
+        body.extend_from_slice(&rest);
+    } else if content_length > 0 {
+        body.truncate(content_length);
+    }
+    Ok((status, headers, body))
+}
+
+/// Re-emit a `Digest k=v,k=v,...` Authorization header with fields in curl's
+/// canonical order. Unknown fields (anything not in the order list) are
+/// appended at the end in their original sequence.
+fn reorder_digest_fields(raw: &str) -> String {
+    const ORDER: &[&str] = &[
+        "username",
+        "realm",
+        "nonce",
+        "uri",
+        "cnonce",
+        "nc",
+        "algorithm",
+        "response",
+        "qop",
+        "opaque",
+    ];
+
+    let body = raw.strip_prefix("Digest ").unwrap_or(raw);
+
+    // (key, full "k=v" segment)
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
+    for seg in body.split(',') {
+        let key = seg.split('=').next().unwrap_or("").trim();
+        pairs.push((key, seg));
+    }
+
+    let mut out = String::from("Digest ");
+    let mut first = true;
+    let mut emitted = vec![false; pairs.len()];
+
+    // Emit known fields in canonical order.
+    for &want in ORDER {
+        if let Some(idx) = pairs.iter().position(|(k, _)| *k == want) {
+            if !first {
+                out.push(',');
+            }
+            out.push_str(pairs[idx].1);
+            emitted[idx] = true;
+            first = false;
+        }
+    }
+    // Append any fields not in ORDER (forward-compat for userhash, etc.).
+    for (i, (_, seg)) in pairs.iter().enumerate() {
+        if !emitted[i] {
+            if !first {
+                out.push(',');
+            }
+            out.push_str(seg);
+            first = false;
+        }
+    }
+    out
 }
 
 /// Extract image bytes from a successful response and encode as data URI.
