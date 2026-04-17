@@ -160,13 +160,15 @@ tailwind.css               Tailwind input (source of truth)
 
 ## oxvif version
 
-Currently `oxvif = { version = "0.9.1", path = "../oxvif" }` — the path
-dep lets us iterate on oxvif locally before a crates.io release. Once
-0.9.1 is published, strip the `path` to pull from the registry:
+Currently `oxvif = "0.9.3"` (pulled from crates.io). When iterating on
+oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = "0.9.1"
+oxvif = { version = "0.9.3", path = "../oxvif" }
 ```
+
+After publishing the new oxvif version to crates.io, drop the `path` to
+pin back to the registry.
 
 To upgrade oxvif further, bump the version and re-verify every call site
 in `src/api.rs` still compiles — types like `ImagingSettings`,
