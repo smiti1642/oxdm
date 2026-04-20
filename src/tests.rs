@@ -89,6 +89,11 @@ mod i18n_tests {
         "add_device_ok",
         "cred_saved",
         "scan_found",
+        // Live Video
+        "live_video_no_device",
+        "live_video_no_profile",
+        "live_video_no_backend",
+        "live_video_error",
         // Shared
         "loading",
         "yes",

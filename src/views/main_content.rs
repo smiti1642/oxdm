@@ -3,6 +3,7 @@ use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::imaging::ImagingView;
+use crate::views::live_video::LiveVideoView;
 use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
 use dioxus::prelude::*;
 
@@ -36,7 +37,7 @@ pub fn MainContent() -> Element {
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
                 View::DeviceSettings  => rsx! { DeviceSettingsView { addr, creds } },
-                View::LiveVideo       => rsx! { PlaceholderView { title: i18n::t(locale, "nav_live_video"),  icon: "video" } },
+                View::LiveVideo       => rsx! { LiveVideoView { addr, creds } },
                 View::ImagingSettings => rsx! { ImagingView { addr, creds } },
                 View::PtzControl      => rsx! { PlaceholderView { title: i18n::t(locale, "nav_ptz"),        icon: "crosshair" } },
                 View::Events          => rsx! { PlaceholderView { title: i18n::t(locale, "nav_events"),     icon: "bell" } },

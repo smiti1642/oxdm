@@ -95,6 +95,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "cred_saved" => "Credentials saved.",
         "scan_found" => "Found {n} device(s).",
 
+        // ── Live Video ──────────────────────────────────────────────────────
+        "live_video_no_device" => "Select a device to start streaming.",
+        "live_video_no_profile" => "Select a profile from the device panel.",
+        "live_video_no_backend" => "No video backend installed.",
+        "live_video_error" => "Failed to start the stream.",
+
         // ── Shared ──────────────────────────────────────────────────────────
         "loading" => "Loading\u{2026}",
         "yes" => "Yes",

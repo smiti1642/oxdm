@@ -10,6 +10,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 pub(crate) mod util;
+mod video;
 mod views;
 
 use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, Topbar};
@@ -49,6 +50,15 @@ fn App() -> Element {
     let cfg = use_hook(persist::load_config);
     let (global_creds, creds_map) = use_hook(|| persist::load_all_credentials(&cfg));
     let saved_devices = use_hook(|| persist::load_devices(&creds_map));
+
+    // Install the default video backend (MJPEG snapshot loop). Runs inside
+    // the dioxus tokio runtime so spawning the listener task is safe here.
+    // Failure to bind only logs — the rest of the app keeps working without
+    // live video.
+    use_hook(|| match video::mjpeg::MjpegBackend::start() {
+        Ok(b) => video::install(std::sync::Arc::new(b)),
+        Err(e) => tracing::error!(error = %e, "failed to start MJPEG backend"),
+    });
 
     let ctx = Ctx {
         devices: use_signal(|| saved_devices),
