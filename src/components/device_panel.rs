@@ -121,6 +121,26 @@ fn ProfileThumbnails() -> Element {
 
             let mut infos = Vec::new();
             for profile in &profiles {
+                // ONVIF Profile S: only profiles bound to a video encoder
+                // configuration support GetSnapshotUri. Metadata-only,
+                // audio-only and analytics-only profiles will either return
+                // a SOAP fault or hand back a URL the camera then 500s on
+                // (seen on GeoVision LPR series). Skip them outright.
+                if profile.video_encoder_token.is_none() {
+                    debug!(
+                        addr = %addr,
+                        profile = %profile.token,
+                        name = %profile.name,
+                        "Skipping GetSnapshotUri (no video encoder configuration)"
+                    );
+                    infos.push(ProfileInfo {
+                        profile_token: profile.token.clone(),
+                        profile_name: profile.name.clone(),
+                        snapshot_url: None,
+                        creds: creds.clone(),
+                    });
+                    continue;
+                }
                 match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
                     Ok(snap) => {
                         // Resolve relative/incomplete snapshot URIs
@@ -219,17 +239,33 @@ fn ProfileCard(
         }
     });
 
+    // Sticky failure flag — once a snapshot URL has failed to fetch, stop
+    // re-trying it on every tick. Hammering a known-broken URL every 3s
+    // wastes bandwidth, spams logs, and on cameras with brute-force
+    // protection (Hanwha/Samsung Wisenet) can lock the admin account.
+    // The flag is reset implicitly when the user re-selects the device,
+    // because that creates a fresh ProfileCard instance with a fresh signal.
+    let mut broken = use_signal(|| false);
+
     // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs)
     let data_uri = use_resource(move || {
         let url = snapshot_url.clone();
         let creds = creds.clone();
         let _tick = *tick.read(); // subscribe to tick signal for periodic refresh
+        let already_broken = *broken.read();
         async move {
+            if already_broken {
+                return Err("Snapshot endpoint marked broken — skipping retry".to_string());
+            }
             let Some(url) = url else {
                 return Err("No snapshot".to_string());
             };
             let (u, p) = creds.as_options();
-            api::fetch_snapshot_data_uri(&url, u, p).await
+            let result = api::fetch_snapshot_data_uri(&url, u, p).await;
+            if result.is_err() {
+                broken.set(true);
+            }
+            result
         }
     });
 
