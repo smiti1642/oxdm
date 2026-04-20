@@ -4,6 +4,7 @@ use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::imaging::ImagingView;
 use crate::views::live_video::LiveVideoView;
+use crate::views::ptz::PtzControlView;
 use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
 use dioxus::prelude::*;
 
@@ -32,14 +33,20 @@ pub fn MainContent() -> Element {
             .unwrap_or_else(|| ctx.global_credentials.read().clone())
     });
 
+    // Use addr as a render key so views with internal `use_resource`
+    // (LiveVideoView, ImagingView, PtzControlView) remount cleanly on
+    // device switch — otherwise their previous-device fetch result stays
+    // visible until the new fetch lands, which feels like a stale UI bug.
+    let addr_key = addr.read().clone();
+
     rsx! {
         main { class: "main-content",
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
-                View::DeviceSettings  => rsx! { DeviceSettingsView { addr, creds } },
-                View::LiveVideo       => rsx! { LiveVideoView { addr, creds } },
-                View::ImagingSettings => rsx! { ImagingView { addr, creds } },
-                View::PtzControl      => rsx! { PlaceholderView { title: i18n::t(locale, "nav_ptz"),        icon: "crosshair" } },
+                View::DeviceSettings  => rsx! { DeviceSettingsView { key: "{addr_key}", addr, creds } },
+                View::LiveVideo       => rsx! { LiveVideoView      { key: "{addr_key}", addr, creds } },
+                View::ImagingSettings => rsx! { ImagingView        { key: "{addr_key}", addr, creds } },
+                View::PtzControl      => rsx! { PtzControlView     { key: "{addr_key}", addr, creds } },
                 View::Events          => rsx! { PlaceholderView { title: i18n::t(locale, "nav_events"),     icon: "bell" } },
             }
         }

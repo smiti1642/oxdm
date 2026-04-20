@@ -104,7 +104,7 @@ fn ProfileThumbnails() -> Element {
 
         async move {
             if addr.is_empty() {
-                return Ok::<_, String>(Vec::new());
+                return Ok::<(String, Vec<ProfileInfo>), String>((addr, Vec::new()));
             }
             let (u, p) = creds.as_options();
 
@@ -185,9 +185,22 @@ fn ProfileThumbnails() -> Element {
                     }
                 }
             }
-            Ok(infos)
+            // Tag the result with the addr it was fetched for so the
+            // render layer can detect a stale fetch (different addr) and
+            // show Loading instead of mixing one camera's snapshot URLs
+            // with another camera's UI.
+            Ok((addr.clone(), infos))
         }
     });
+
+    // Read the currently-selected device addr at render time. Used both as
+    // the ProfileCard key prefix (forces remount on device switch) and as a
+    // freshness check against `profiles_res` — see comment below.
+    let addr_now = ctx
+        .selected
+        .read()
+        .and_then(|i| ctx.devices.read().get(i).map(|d| d.addr.clone()))
+        .unwrap_or_default();
 
     rsx! {
         match &*profiles_res.read_unchecked() {
@@ -197,14 +210,22 @@ fn ProfileThumbnails() -> Element {
             Some(Err(_)) => rsx! {
                 div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
-            Some(Ok(infos)) if infos.is_empty() => rsx! {
+            // Stale: result was fetched for the previous device, but the
+            // user has already switched. Render Loading until use_resource
+            // re-runs with the new addr — otherwise we'd build ProfileCards
+            // with the old device's snapshot URLs and briefly display
+            // its thumbnails on the new device's panel.
+            Some(Ok((res_addr, _))) if res_addr != &addr_now => rsx! {
+                div { class: "thumb-loading", {i18n::t(locale, "loading")} }
+            },
+            Some(Ok((_, infos))) if infos.is_empty() => rsx! {
                 div { class: "thumb-empty", {i18n::t(locale, "no_profiles")} }
             },
-            Some(Ok(infos)) => rsx! {
+            Some(Ok((_, infos))) => rsx! {
                 div { class: "thumb-grid",
                     for info in infos {
                         ProfileCard {
-                            key: "{info.profile_token}",
+                            key: "{addr_now}::{info.profile_token}",
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
                             snapshot_url: info.snapshot_url.clone(),

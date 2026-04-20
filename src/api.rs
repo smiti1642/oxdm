@@ -1,7 +1,7 @@
 use oxvif::{
-    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, Hostname, MediaProfile,
-    NetworkGateway, NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, SnapshotUri,
-    StreamUri, SystemDateTime, User,
+    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, FocusMove, Hostname, MediaProfile,
+    NetworkGateway, NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, PtzPreset,
+    SnapshotUri, StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
@@ -581,6 +581,178 @@ pub async fn get_stream_uri(
         "GetStreamUri",
         addr,
         client.get_stream_uri(&media_url, profile_token).await,
+    )
+}
+
+// ── Focus (Imaging service) ─────────────────────────────────────────────────
+//
+// Focus motor control lives on the Imaging service (not PTZ) and addresses
+// the camera by **video_source_token** (not profile_token). Auto Focus
+// mode (AUTO / MANUAL) is in `ImagingSettings.focus_mode`, edited via
+// the Imaging Settings tab.
+
+/// Fetch the device's Imaging service URL. Errors if not advertised.
+#[instrument(skip(username, password), fields(addr))]
+pub async fn get_imaging_url(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    caps.imaging
+        .url
+        .ok_or_else(|| "Imaging service not advertised by this device".to_string())
+}
+
+/// Start continuous focus movement. `speed > 0` focuses farther,
+/// `speed < 0` focuses nearer. Call [`imaging_focus_stop`] to halt.
+#[instrument(skip(username, password), fields(addr, source_token, speed))]
+pub async fn imaging_focus_continuous(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    imaging_url: &str,
+    source_token: &str,
+    speed: f32,
+) -> Result<(), ApiError> {
+    trace_result(
+        "Imaging Move (Focus)",
+        addr,
+        build_client(addr, username, password)
+            .imaging_move(imaging_url, source_token, &FocusMove::Continuous { speed })
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, source_token))]
+pub async fn imaging_focus_stop(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    imaging_url: &str,
+    source_token: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "Imaging Stop (Focus)",
+        addr,
+        build_client(addr, username, password)
+            .imaging_stop(imaging_url, source_token)
+            .await,
+    )
+}
+
+// ── PTZ ─────────────────────────────────────────────────────────────────────
+//
+// PTZ operations re-use the device's PTZ service URL. Callers should fetch
+// it once (via [`get_ptz_url`]) and cache it — joystick UX needs sub-100ms
+// response, and re-querying GetCapabilities on every mousedown would add
+// 200–400 ms of round-trip latency. The other api wrappers in this file
+// re-fetch capabilities each call because their callers are tab-rate, not
+// joystick-rate.
+
+/// Fetch the device's PTZ service URL. Errors if the device doesn't expose
+/// a PTZ service in its capabilities.
+#[instrument(skip(username, password), fields(addr))]
+pub async fn get_ptz_url(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    caps.ptz
+        .url
+        .ok_or_else(|| "PTZ service not advertised by this device".to_string())
+}
+
+#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
+#[instrument(skip(username, password), fields(addr, profile_token, pan, tilt, zoom))]
+pub async fn ptz_continuous_move(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+    pan: f32,
+    tilt: f32,
+    zoom: f32,
+) -> Result<(), ApiError> {
+    trace_result(
+        "PTZ ContinuousMove",
+        addr,
+        build_client(addr, username, password)
+            .ptz_continuous_move(ptz_url, profile_token, pan, tilt, zoom)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn ptz_stop(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "PTZ Stop",
+        addr,
+        build_client(addr, username, password)
+            .ptz_stop(ptz_url, profile_token)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn ptz_get_presets(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+) -> Result<Vec<PtzPreset>, ApiError> {
+    trace_result(
+        "PTZ GetPresets",
+        addr,
+        build_client(addr, username, password)
+            .ptz_get_presets(ptz_url, profile_token)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token, preset_token))]
+pub async fn ptz_goto_preset(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+    preset_token: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "PTZ GotoPreset",
+        addr,
+        build_client(addr, username, password)
+            .ptz_goto_preset(ptz_url, profile_token, preset_token)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn ptz_goto_home_position(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "PTZ GotoHomePosition",
+        addr,
+        build_client(addr, username, password)
+            .ptz_goto_home_position(ptz_url, profile_token, None)
+            .await,
     )
 }
 

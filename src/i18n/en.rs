@@ -101,6 +101,21 @@ pub fn get(key: &str) -> Option<&'static str> {
         "live_video_no_backend" => "No video backend installed.",
         "live_video_error" => "Failed to start the stream.",
 
+        // ── PTZ ─────────────────────────────────────────────────────────────
+        "ptz_zoom" => "Zoom",
+        "ptz_speed" => "Speed",
+        "ptz_home" => "Home",
+        "ptz_home_ok" => "Moving to home position\u{2026}",
+        "ptz_stop" => "Stop",
+        "ptz_presets" => "Presets",
+        "ptz_no_presets" => "No presets saved.",
+        "ptz_unavailable" => "PTZ not supported by this device.",
+        "ptz_focus" => "Focus",
+        "ptz_focus_near" => "Near",
+        "ptz_focus_far" => "Far",
+        "ptz_focus_auto" => "Auto",
+        "ptz_focus_manual" => "Manual",
+
         // ── Shared ──────────────────────────────────────────────────────────
         "loading" => "Loading\u{2026}",
         "yes" => "Yes",

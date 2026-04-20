@@ -101,6 +101,21 @@ pub fn get(key: &str) -> Option<&'static str> {
         "live_video_no_backend" => "\u{5C1A}\u{672A}\u{5B89}\u{88DD}\u{5F71}\u{50CF}\u{5F8C}\u{7AEF}\u{3002}",
         "live_video_error" => "\u{4E32}\u{6D41}\u{555F}\u{52D5}\u{5931}\u{6557}\u{3002}",
 
+        // ── PTZ ─────────────────────────────────────────────────────────────
+        "ptz_zoom" => "\u{8B8A}\u{7126}",
+        "ptz_speed" => "\u{901F}\u{5EA6}",
+        "ptz_home" => "\u{5DE6}\u{4F4D}",
+        "ptz_home_ok" => "\u{6B63}\u{5728}\u{8FD4}\u{56DE}\u{5DE6}\u{4F4D}\u{2026}",
+        "ptz_stop" => "\u{505C}\u{6B62}",
+        "ptz_presets" => "\u{9810}\u{8A2D}\u{9EDE}",
+        "ptz_no_presets" => "\u{5C1A}\u{7121}\u{9810}\u{8A2D}\u{9EDE}\u{3002}",
+        "ptz_unavailable" => "\u{6B64}\u{88DD}\u{7F6E}\u{4E0D}\u{652F}\u{63F4} PTZ\u{3002}",
+        "ptz_focus" => "\u{5C0D}\u{7126}",
+        "ptz_focus_near" => "\u{8FD1}",
+        "ptz_focus_far" => "\u{9060}",
+        "ptz_focus_auto" => "\u{81EA}\u{52D5}",
+        "ptz_focus_manual" => "\u{624B}\u{52D5}",
+
         // ── Shared ──────────────────────────────────────────────────────────
         "loading" => "\u{8F09}\u{5165}\u{4E2D}\u{2026}",
         "yes" => "\u{662F}",

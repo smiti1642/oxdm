@@ -184,6 +184,54 @@ fn icon_paths(name: &str) -> Element {
         "hexagon" => rsx! {
             path { d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" }
         },
+        "arrow-up" => rsx! {
+            path { d: "m5 12 7-7 7 7" }
+            path { d: "M12 19V5" }
+        },
+        "arrow-down" => rsx! {
+            path { d: "M12 5v14" }
+            path { d: "m19 12-7 7-7-7" }
+        },
+        "arrow-left" => rsx! {
+            path { d: "m12 19-7-7 7-7" }
+            path { d: "M19 12H5" }
+        },
+        "arrow-right" => rsx! {
+            path { d: "M5 12h14" }
+            path { d: "m12 5 7 7-7 7" }
+        },
+        "arrow-up-left" => rsx! {
+            path { d: "M7 17V7h10" }
+            path { d: "m7 7 10 10" }
+        },
+        "arrow-up-right" => rsx! {
+            path { d: "M7 7h10v10" }
+            path { d: "m7 17 10-10" }
+        },
+        "arrow-down-left" => rsx! {
+            path { d: "M17 7 7 17" }
+            path { d: "M17 17H7V7" }
+        },
+        "arrow-down-right" => rsx! {
+            path { d: "m7 7 10 10" }
+            path { d: "M17 7v10H7" }
+        },
+        "square" => rsx! {
+            rect { width: "18", height: "18", x: "3", y: "3", rx: "2" }
+        },
+        "minus" => rsx! {
+            path { d: "M5 12h14" }
+        },
+        "home" => rsx! {
+            path { d: "m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }
+            path { d: "M9 22V12h6v10" }
+        },
+        "bookmark" => rsx! {
+            path { d: "m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" }
+        },
+        "navigation-2" => rsx! {
+            path { d: "M12 2 19 21l-7-4-7 4z" }
+        },
         _ => rsx! {
             circle { cx: "12", cy: "12", r: "10" }
             path { d: "M12 16v-4" }
