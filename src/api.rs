@@ -187,6 +187,37 @@ pub async fn get_snapshot_uri(
     )
 }
 
+/// Extract the scheme + authority of an ONVIF device address — used as the
+/// base for resolving relative snapshot URIs.
+///
+/// `"http://192.168.1.1/onvif/device_service"` → `"http://192.168.1.1"`.
+/// Falls back to returning the address unchanged when no `/` follows the host.
+pub fn base_url_from_device_addr(addr: &str) -> String {
+    addr.find("://")
+        .and_then(|i| addr[i + 3..].find('/').map(|j| &addr[..i + 3 + j]))
+        .unwrap_or(addr)
+        .to_string()
+}
+
+/// Resolve a `<tt:Uri>` from `GetSnapshotUriResponse` to a full HTTP URL.
+///
+/// Handles three shapes that turn up in the wild:
+///   1. Already absolute (`http://…`/`https://…`) — passed through.
+///   2. Absolute path (`/cgi-bin/snap.cgi`) — prefixed with the device's
+///      base URL.
+///   3. Bare path (`snap.cgi?...`) — prefixed with `<base>/`.
+pub fn resolve_snapshot_url(device_addr: &str, raw_uri: &str) -> String {
+    if raw_uri.starts_with("http://") || raw_uri.starts_with("https://") {
+        return raw_uri.to_string();
+    }
+    let base = base_url_from_device_addr(device_addr);
+    if raw_uri.starts_with('/') {
+        format!("{base}{raw_uri}")
+    } else {
+        format!("{base}/{raw_uri}")
+    }
+}
+
 /// Download a snapshot image and return it as a `data:` URI (base64-encoded).
 ///
 /// When credentials are available, tries authenticated methods first:

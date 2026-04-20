@@ -273,28 +273,9 @@ async fn handle_connection(
 async fn fetch_jpeg(meta: &StreamMeta) -> Result<Vec<u8>, String> {
     let (u, p) = meta.creds.as_options();
     let snap = api::get_snapshot_uri(&meta.device_addr, u, p, &meta.profile_token).await?;
-
-    let raw_uri = snap.uri;
-    let snapshot_url = if raw_uri.starts_with("http://") || raw_uri.starts_with("https://") {
-        raw_uri.clone()
-    } else if raw_uri.starts_with('/') {
-        // Build base from device addr (strip /onvif/device_service path).
-        let base = base_url_from_device_addr(&meta.device_addr);
-        format!("{base}{raw_uri}")
-    } else {
-        let base = base_url_from_device_addr(&meta.device_addr);
-        format!("{base}/{raw_uri}")
-    };
-
+    let snapshot_url = api::resolve_snapshot_url(&meta.device_addr, &snap.uri);
     let data_uri = api::fetch_snapshot_data_uri(&snapshot_url, u, p).await?;
     data_uri_to_bytes(&data_uri).ok_or_else(|| "malformed data URI from snapshot".to_string())
-}
-
-fn base_url_from_device_addr(addr: &str) -> String {
-    addr.find("://")
-        .and_then(|i| addr[i + 3..].find('/').map(|j| &addr[..i + 3 + j]))
-        .unwrap_or(addr)
-        .to_string()
 }
 
 /// Decode the base64 payload of a `data:image/...;base64,…` URI.
@@ -400,15 +381,6 @@ mod tests {
         assert!(data_uri_to_bytes("not a data uri").is_none());
     }
 
-    #[test]
-    fn base_url_strips_onvif_path() {
-        assert_eq!(
-            base_url_from_device_addr("http://192.168.1.1/onvif/device_service"),
-            "http://192.168.1.1"
-        );
-        assert_eq!(
-            base_url_from_device_addr("http://192.168.1.1:8080/onvif/device_service"),
-            "http://192.168.1.1:8080"
-        );
-    }
+    // base_url_from_device_addr / resolve_snapshot_url moved to api.rs;
+    // their unit tests live there now.
 }

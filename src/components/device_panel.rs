@@ -84,6 +84,12 @@ struct ProfileInfo {
     profile_name: String,
     /// None when GetSnapshotUri is not supported by the device for this profile.
     snapshot_url: Option<String>,
+    /// `true` when the camera marked the snapshot URI as single-use
+    /// (`<tt:InvalidAfterConnect>true</tt:InvalidAfterConnect>`). Each tick
+    /// must re-resolve a fresh URL via GetSnapshotUri instead of reusing the
+    /// cached one — seen on GeoVision LPR cameras whose URLs embed a
+    /// per-call timestamp pointing at a temp file the camera then deletes.
+    invalid_after_connect: bool,
     creds: Credentials,
 }
 
@@ -111,14 +117,6 @@ fn ProfileThumbnails() -> Element {
             let profiles = api::get_profiles(&addr, u, p).await?;
             debug!(addr = %addr, count = profiles.len(), "GetProfiles OK");
 
-            // Extract base URL from device addr for resolving relative snapshot URIs
-            // e.g. "http://192.168.4.50/onvif/device_service" → "http://192.168.4.50"
-            let base_url = addr
-                .find("://")
-                .and_then(|i| addr[i + 3..].find('/').map(|j| &addr[..i + 3 + j]))
-                .unwrap_or(&addr)
-                .to_string();
-
             let mut infos = Vec::new();
             for profile in &profiles {
                 // ONVIF Profile S: only profiles bound to a video encoder
@@ -137,34 +135,28 @@ fn ProfileThumbnails() -> Element {
                         profile_token: profile.token.clone(),
                         profile_name: profile.name.clone(),
                         snapshot_url: None,
+                        invalid_after_connect: false,
                         creds: creds.clone(),
                     });
                     continue;
                 }
                 match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
                     Ok(snap) => {
-                        // Resolve relative/incomplete snapshot URIs
-                        let raw_uri = snap.uri;
-                        let snapshot_url =
-                            if raw_uri.starts_with("http://") || raw_uri.starts_with("https://") {
-                                raw_uri.clone()
-                            } else if raw_uri.starts_with('/') {
-                                format!("{base_url}{raw_uri}")
-                            } else {
-                                format!("{base_url}/{raw_uri}")
-                            };
+                        let snapshot_url = api::resolve_snapshot_url(&addr, &snap.uri);
                         debug!(
                             addr = %addr,
                             profile = %profile.token,
                             name = %profile.name,
-                            raw_uri = %raw_uri,
+                            raw_uri = %snap.uri,
                             resolved_url = %snapshot_url,
+                            invalid_after_connect = snap.invalid_after_connect,
                             "GetSnapshotUri OK"
                         );
                         infos.push(ProfileInfo {
                             profile_token: profile.token.clone(),
                             profile_name: profile.name.clone(),
                             snapshot_url: Some(snapshot_url),
+                            invalid_after_connect: snap.invalid_after_connect,
                             creds: creds.clone(),
                         });
                     }
@@ -180,6 +172,7 @@ fn ProfileThumbnails() -> Element {
                             profile_token: profile.token.clone(),
                             profile_name: profile.name.clone(),
                             snapshot_url: None,
+                            invalid_after_connect: false,
                             creds: creds.clone(),
                         });
                     }
@@ -226,9 +219,11 @@ fn ProfileThumbnails() -> Element {
                     for info in infos {
                         ProfileCard {
                             key: "{addr_now}::{info.profile_token}",
+                            device_addr: addr_now.clone(),
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
                             snapshot_url: info.snapshot_url.clone(),
+                            invalid_after_connect: info.invalid_after_connect,
                             creds: info.creds.clone(),
                         }
                     }
@@ -240,9 +235,14 @@ fn ProfileThumbnails() -> Element {
 
 #[component]
 fn ProfileCard(
+    device_addr: String,
     profile_token: String,
     profile_name: String,
     snapshot_url: Option<String>,
+    /// `true` when GetSnapshotUri reported `<InvalidAfterConnect>true</…>`.
+    /// Card re-resolves a fresh URL each tick instead of caching the first
+    /// one — see `ProfileInfo::invalid_after_connect`.
+    invalid_after_connect: bool,
     creds: Credentials,
 ) -> Element {
     let ctx = use_context::<Ctx>();
@@ -268,22 +268,45 @@ fn ProfileCard(
     // because that creates a fresh ProfileCard instance with a fresh signal.
     let mut broken = use_signal(|| false);
 
-    // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs)
+    // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs).
+    // For most cameras the cached URL is reused every tick. For cameras that
+    // marked the URL single-use (`invalid_after_connect`), GetSnapshotUri is
+    // called again per tick to mint a fresh URL — typically these embed a
+    // per-call timestamp pointing at a temp file the camera then deletes.
+    let token_for_fetch = profile_token.clone();
     let data_uri = use_resource(move || {
         let url = snapshot_url.clone();
         let creds = creds.clone();
+        let device_addr = device_addr.clone();
+        let profile_token = token_for_fetch.clone();
         let _tick = *tick.read(); // subscribe to tick signal for periodic refresh
         let already_broken = *broken.read();
+        let needs_refresh = invalid_after_connect;
         async move {
             if already_broken {
                 return Err("Snapshot endpoint marked broken — skipping retry".to_string());
             }
-            let Some(url) = url else {
-                return Err("No snapshot".to_string());
-            };
             let (u, p) = creds.as_options();
+
+            // Resolve the URL — either reuse the cached one or re-fetch.
+            // For invalid_after_connect cameras (LPR-style temp-file URLs
+            // with per-call timestamps) we don't mark broken on errors;
+            // many of those 500s are timing races where the camera serves
+            // some frames but not others, so each tick re-tries.
+            let url = if needs_refresh {
+                match api::get_snapshot_uri(&device_addr, u, p, &profile_token).await {
+                    Ok(snap) => api::resolve_snapshot_url(&device_addr, &snap.uri),
+                    Err(e) => return Err(e),
+                }
+            } else {
+                match url {
+                    Some(u) => u,
+                    None => return Err("No snapshot".to_string()),
+                }
+            };
+
             let result = api::fetch_snapshot_data_uri(&url, u, p).await;
-            if result.is_err() {
+            if result.is_err() && !needs_refresh {
                 broken.set(true);
             }
             result
