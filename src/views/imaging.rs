@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 use crate::components::Icon;
 use crate::state::{Credentials, Ctx, ToastLevel};
+use crate::views::live_video::LiveVideoStage;
 use crate::{api, i18n};
 use dioxus::prelude::*;
 
@@ -50,6 +51,13 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
             div { class: "content-header",
                 Icon { name: "sliders", size: 20 }
                 span { class: "content-title", {i18n::t(locale, "nav_imaging")} }
+            }
+            // Live preview at the top so adjustments are visible without
+            // jumping back to the LiveVideo view. Reuses the same backend
+            // pipeline; the snapshot loop refreshes ~5 fps, so the user sees
+            // the camera's response within a second of pressing Apply.
+            div { class: "imaging-preview",
+                LiveVideoStage { addr, creds }
             }
             div { class: "imaging-body",
                 match &*data.read_unchecked() {

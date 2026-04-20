@@ -241,9 +241,16 @@ a      { color: var(--blue); text-decoration: none; }
   flex-direction: column;
   gap: 2px;
 }
-.device-list::-webkit-scrollbar { width: 4px; }
+.device-list::-webkit-scrollbar { width: 10px; }
 .device-list::-webkit-scrollbar-track { background: transparent; }
-.device-list::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 2px; }
+.device-list::-webkit-scrollbar-thumb {
+  background: var(--surface1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 30px;
+}
+.device-list::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
 
 .device-empty {
   margin: 20px 8px;
@@ -368,8 +375,15 @@ a      { color: var(--blue); text-decoration: none; }
   overflow-y: auto;
   overflow-x: hidden;
 }
-.device-panel::-webkit-scrollbar { width: 4px; }
-.device-panel::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 2px; }
+.device-panel::-webkit-scrollbar { width: 10px; }
+.device-panel::-webkit-scrollbar-thumb {
+  background: var(--surface1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 30px;
+}
+.device-panel::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
 
 .device-panel--empty {
   display: flex;
@@ -537,8 +551,15 @@ a      { color: var(--blue); text-decoration: none; }
   display: flex;
   flex-direction: column;
 }
-.main-content::-webkit-scrollbar { width: 6px; }
-.main-content::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 3px; }
+.main-content::-webkit-scrollbar { width: 10px; }
+.main-content::-webkit-scrollbar-thumb {
+  background: var(--surface1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 30px;
+}
+.main-content::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
 
 /* Welcome screen */
 .welcome {
@@ -663,8 +684,15 @@ a      { color: var(--blue); text-decoration: none; }
   overflow-y: auto;
   padding: 24px;
 }
-.tab-content::-webkit-scrollbar { width: 6px; }
-.tab-content::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 3px; }
+.tab-content::-webkit-scrollbar { width: 10px; }
+.tab-content::-webkit-scrollbar-thumb {
+  background: var(--surface1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 30px;
+}
+.tab-content::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
 
 .settings-placeholder {
   display: flex;
@@ -1172,8 +1200,15 @@ a      { color: var(--blue); text-decoration: none; }
   overflow-y: auto;
   padding: 0 24px 24px;
 }
-.imaging-body::-webkit-scrollbar { width: 6px; }
-.imaging-body::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 3px; }
+.imaging-body::-webkit-scrollbar { width: 10px; }
+.imaging-body::-webkit-scrollbar-thumb {
+  background: var(--surface1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 30px;
+}
+.imaging-body::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
 
 .imaging-row {
   display: flex;
@@ -1218,6 +1253,17 @@ a      { color: var(--blue); text-decoration: none; }
   border-top: 1px solid var(--surface0);
   display: flex;
   justify-content: flex-end;
+}
+
+/* Live preview wrapper inside ImagingView (and PTZ later). Fixed-ish
+   height with a small floor so very short windows still leave room for
+   the controls below; bordered to delimit the preview from the form. */
+.imaging-preview {
+  flex: 0 0 320px;
+  min-height: 200px;
+  display: flex;
+  border-bottom: 1px solid var(--surface0);
+  background: #000;
 }
 
 /* ── Live Video ──────────────────────────────────────────────────────────── */

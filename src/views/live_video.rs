@@ -5,15 +5,41 @@ use crate::state::{Credentials, Ctx};
 use crate::video::{self, EmbedKind};
 use dioxus::prelude::*;
 
-/// Live video panel.
+/// Live video panel — full view with header.
 ///
-/// Reads the currently selected device + profile from [`Ctx`], asks the
-/// installed [`crate::video::VideoBackend`] for a [`VideoSource`], then
-/// embeds it according to its [`EmbedKind`]. The DOM tag (`<img>`,
-/// `<video>`, `<iframe>`) is the only thing that varies — every backend
-/// looks the same to this view.
+/// Reads the currently selected device + profile from [`Ctx`] and renders a
+/// [`LiveVideoStage`] inside the standard `content-header + body` shell used
+/// by every other top-level view.
 #[component]
 pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+
+    rsx! {
+        div { class: "live-video-view",
+            div { class: "content-header",
+                Icon { name: "video", size: 20 }
+                span { class: "content-title", {i18n::t(locale, "nav_live_video")} }
+                if let Some(b) = video::current() {
+                    span { class: "live-video-backend",
+                        " · {b.display_name()}"
+                    }
+                }
+            }
+
+            LiveVideoStage { addr, creds }
+        }
+    }
+}
+
+/// Embeddable video stage — header-less, fills its parent.
+///
+/// Same source resolution + render logic as [`LiveVideoView`], but exposed
+/// as a sub-component so other views (Imaging, PTZ) can drop a live preview
+/// in above their own controls. Inherits `addr` / `creds` from the caller
+/// and reads the active profile token from [`Ctx::selected_profile`].
+#[component]
+pub fn LiveVideoStage(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let profile_sig = ctx.selected_profile;
@@ -36,69 +62,57 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
     });
 
     rsx! {
-        div { class: "live-video-view",
-            div { class: "content-header",
-                Icon { name: "video", size: 20 }
-                span { class: "content-title", {i18n::t(locale, "nav_live_video")} }
-                if let Some(b) = video::current() {
-                    span { class: "live-video-backend",
-                        " · {b.display_name()}"
+        div { class: "live-video-stage",
+            match &*source.read_unchecked() {
+                None => rsx! {
+                    div { class: "live-video-placeholder",
+                        {i18n::t(locale, "loading")}
                     }
-                }
-            }
-
-            div { class: "live-video-stage",
-                match &*source.read_unchecked() {
-                    None => rsx! {
+                },
+                Some(Err(reason)) => {
+                    let key = match reason.as_str() {
+                        "no_device"  => "live_video_no_device",
+                        "no_profile" => "live_video_no_profile",
+                        "no_backend" => "live_video_no_backend",
+                        _            => "live_video_error",
+                    };
+                    let detail = reason
+                        .strip_prefix("backend_error:")
+                        .map(str::to_string);
+                    rsx! {
                         div { class: "live-video-placeholder",
-                            {i18n::t(locale, "loading")}
-                        }
-                    },
-                    Some(Err(reason)) => {
-                        let key = match reason.as_str() {
-                            "no_device"  => "live_video_no_device",
-                            "no_profile" => "live_video_no_profile",
-                            "no_backend" => "live_video_no_backend",
-                            _            => "live_video_error",
-                        };
-                        let detail = reason
-                            .strip_prefix("backend_error:")
-                            .map(str::to_string);
-                        rsx! {
-                            div { class: "live-video-placeholder",
-                                Icon { name: "alert-triangle", size: 28 }
-                                p { {i18n::t(locale, key)} }
-                                if let Some(msg) = detail {
-                                    p { class: "live-video-detail", "{msg}" }
-                                }
+                            Icon { name: "alert-triangle", size: 28 }
+                            p { {i18n::t(locale, key)} }
+                            if let Some(msg) = detail {
+                                p { class: "live-video-detail", "{msg}" }
                             }
                         }
                     }
-                    Some(Ok(src)) => match src.embed {
-                        EmbedKind::Img => rsx! {
-                            img {
-                                class: "live-video-frame",
-                                src: "{src.url}",
-                                alt: "live video stream"
-                            }
-                        },
-                        EmbedKind::Video => rsx! {
-                            video {
-                                class: "live-video-frame",
-                                src: "{src.url}",
-                                autoplay: true,
-                                controls: true,
-                                muted: true
-                            }
-                        },
-                        EmbedKind::Iframe => rsx! {
-                            iframe {
-                                class: "live-video-frame",
-                                src: "{src.url}"
-                            }
-                        },
-                    },
                 }
+                Some(Ok(src)) => match src.embed {
+                    EmbedKind::Img => rsx! {
+                        img {
+                            class: "live-video-frame",
+                            src: "{src.url}",
+                            alt: "live video stream"
+                        }
+                    },
+                    EmbedKind::Video => rsx! {
+                        video {
+                            class: "live-video-frame",
+                            src: "{src.url}",
+                            autoplay: true,
+                            controls: true,
+                            muted: true
+                        }
+                    },
+                    EmbedKind::Iframe => rsx! {
+                        iframe {
+                            class: "live-video-frame",
+                            src: "{src.url}"
+                        }
+                    },
+                },
             }
         }
     }
