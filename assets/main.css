@@ -1469,6 +1469,53 @@ a      { color: var(--blue); text-decoration: none; }
   font-size: 13px;
 }
 
+/* ── Identification edit ─────────────────────────────────────────────────── */
+.id-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+.id-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.id-edit-label {
+  width: 110px;
+  font-size: 13px;
+  color: var(--overlay1);
+  flex-shrink: 0;
+}
+.id-edit-input {
+  flex: 1;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.id-edit-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+.id-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* Time tab action row: Sync from PC / Use NTP / Apply TZ sit side by side
+   under the timezone + DST inputs. */
+.time-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 /* ── Live Video ──────────────────────────────────────────────────────────── */
 .live-video-view {
   flex: 1;

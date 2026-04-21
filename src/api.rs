@@ -68,6 +68,30 @@ pub async fn get_device_info(
     )
 }
 
+/// Replace the device's configurable scopes (typically `name` and `location`).
+///
+/// `scopes` should be a complete list of `onvif://www.onvif.org/...` scope
+/// URIs. The device retains any *fixed* scopes (hardware class, codec
+/// support, etc.) regardless of what's sent — those can't be changed —
+/// but every configurable scope it currently has is REPLACED by this list,
+/// so callers must include any existing scopes they want to keep.
+#[instrument(skip(username, password), fields(addr, count = scopes.len()))]
+pub async fn set_scopes(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    scopes: &[String],
+) -> Result<(), ApiError> {
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
+    trace_result(
+        "SetScopes",
+        addr,
+        build_client(addr, username, password)
+            .set_scopes(&scope_refs)
+            .await,
+    )
+}
+
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_scopes(
     addr: &str,
@@ -282,7 +306,7 @@ pub async fn fetch_snapshot_data_uri(
         // or framing quirk we couldn't pin down. Raw TCP gives byte-for-byte
         // control matching curl.
         if www_auth.to_lowercase().contains("digest") {
-            info!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
+            debug!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
             match try_digest_auth_raw(snapshot_url, u, p, &www_auth).await {
                 Ok((content_type, bytes)) => {
                     use base64::Engine;
@@ -375,7 +399,7 @@ async fn try_digest_auth_raw(
     } else {
         format!("(len={})", password.len())
     };
-    info!(username, pass_hint = %pass_hint, "Digest auth credentials");
+    debug!(username, pass_hint = %pass_hint, "Digest auth credentials");
 
     // Compute Digest Authorization header.
     let context = digest_auth::AuthContext::new(username, password, &path);
@@ -409,7 +433,7 @@ async fn try_digest_auth_raw(
          Accept: */*\r\n\
          \r\n"
     );
-    info!(uri_path = %path, "Sending raw Digest request");
+    debug!(uri_path = %path, "Sending raw Digest request");
 
     let connect = TcpStream::connect((host.as_str(), port));
     let mut stream = tokio::time::timeout(Duration::from_secs(5), connect)
@@ -787,6 +811,27 @@ pub async fn ptz_goto_home_position(
 }
 
 // ── Date / Time ─────────────────────────────────────────────────────────────
+
+/// Apply a new system date/time/timezone/DST configuration.
+///
+/// `datetime_type` is either `"Manual"` (use `utc_datetime`) or `"NTP"`
+/// (device syncs from its configured NTP server — see `set_ntp`).
+/// `timezone` is a POSIX TZ string, e.g. `"CST-8"` or `"EST5EDT"`.
+#[instrument(skip(username, password), fields(addr, datetime_type))]
+pub async fn set_system_date_and_time(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    req: &oxvif::SetDateTimeRequest,
+) -> Result<(), ApiError> {
+    trace_result(
+        "SetSystemDateAndTime",
+        addr,
+        build_client(addr, username, password)
+            .set_system_date_and_time(req)
+            .await,
+    )
+}
 
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_system_date_and_time(
