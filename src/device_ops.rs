@@ -57,6 +57,7 @@ fn apply_probe(
 
 /// After scan, fetch firmware version and verify auth for each discovered device.
 /// Uses addr-based matching to avoid index invalidation races.
+#[allow(dead_code)] // kept for any callers; do_scan now uses fetch_firmware_for_addr per round
 pub fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
     let creds = ctx.global_credentials.peek().clone();
     let addrs: Vec<String> = devices
@@ -74,6 +75,20 @@ pub fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
             apply_probe(&mut devices, &addr, auth_status, firmware, false);
         });
     }
+}
+
+/// Probe a single discovered device by addr. Used during progressive scan
+/// (`do_scan`) so newly discovered cameras start their auth/firmware check
+/// the instant they appear in the list, rather than waiting for the whole
+/// scan to finish.
+pub fn fetch_firmware_for_addr(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>, addr: String) {
+    let creds = ctx.global_credentials.peek().clone();
+    spawn(async move {
+        let (u, p) = creds.as_options();
+        let (auth_status, firmware) = probe_device(&addr, u, p).await;
+        // Discovered devices are non-manual by definition, so firmware is written.
+        apply_probe(&mut devices, &addr, auth_status, firmware, false);
+    });
 }
 
 /// Re-verify auth status for all devices (called when credentials change).

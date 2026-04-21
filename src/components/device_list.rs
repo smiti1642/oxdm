@@ -33,131 +33,162 @@ pub fn DeviceList() -> Element {
 
     let active_tab = *list_tab.read();
 
+    // Progressive scan: drive 3 single-round probes back-to-back so the UI
+    // fills in roughly every 2 s instead of blocking on one ~9 s call.
+    // Per-device auth/firmware probes fire the moment a device first appears
+    // (tracked in `auth_started` to avoid re-probing on subsequent rounds).
     let do_scan = move |_| async move {
+        use std::collections::HashSet;
+        const ROUNDS: u32 = 3;
+        const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+        const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(800);
+
         scanning.set(true);
 
-        // Remember current selection to try to preserve it
+        // Remember current selection to try to preserve it.
         let prev_addr = selected
             .peek()
             .and_then(|i| devices.peek().get(i).map(|d| d.addr.clone()));
 
-        match api::discover_devices().await {
-            Ok(found) => {
-                let count = found.len();
-
-                // Build the merged list:
-                //   1. Start from the existing devices.
-                //   2. For each discovered device, either update an existing
-                //      entry (matched by endpoint UUID — stable across IP
-                //      changes) or append it as new.
-                //   3. Discovered entries not seen this round get online=false
-                //      so the UI can show them as stale rather than vanishing
-                //      mid-session (manual entries are untouched).
-                //   4. URI conflict: if the discovered device's xaddrs collide
-                //      with another existing entry's xaddrs, mark that other
-                //      entry offline — its IP got reassigned.
-                let mut next: Vec<DeviceEntry> = devices.peek().clone();
-
-                // Pass 1: discovered entries that didn't come back this round
-                // are stale until proven otherwise.
-                for entry in next.iter_mut() {
-                    if !entry.manual {
-                        entry.online = false;
-                    }
-                }
-
-                // Pass 2: merge each discovery hit.
-                for d in found {
-                    let addr = d.xaddrs.first().cloned().unwrap_or_default();
-                    let display_addr = util::extract_ip(&addr);
-                    let name = d
-                        .scopes
-                        .iter()
-                        .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
-                        .map(str::to_string)
-                        .unwrap_or_else(|| display_addr.clone());
-                    let location = d
-                        .scopes
-                        .iter()
-                        .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
-                        .map(util::urldecode)
-                        .unwrap_or_default();
-                    let endpoint = d.endpoint.clone();
-
-                    // URI conflict: any *other* entry that still claims one of
-                    // this device's xaddrs is now stale (IP reassigned).
-                    if !addr.is_empty() {
-                        for other in next.iter_mut() {
-                            if other.endpoint != endpoint && !other.manual && other.addr == addr {
-                                other.online = false;
-                            }
-                        }
-                    }
-
-                    let existing_idx = if !endpoint.is_empty() {
-                        next.iter()
-                            .position(|e| !e.manual && e.endpoint == endpoint)
-                    } else {
-                        // No endpoint UUID — fall back to addr match.
-                        next.iter().position(|e| !e.manual && e.addr == addr)
-                    };
-
-                    match existing_idx {
-                        Some(i) => {
-                            // Refresh fields, preserve auth_status and
-                            // firmware (those are populated by separate
-                            // background tasks and must survive a re-scan).
-                            let e = &mut next[i];
-                            e.name = name;
-                            e.addr = addr;
-                            e.display_addr = display_addr;
-                            e.location = location;
-                            e.online = true;
-                            e.endpoint = endpoint;
-                        }
-                        None => {
-                            next.push(DeviceEntry {
-                                name,
-                                addr,
-                                display_addr,
-                                firmware: String::new(),
-                                location,
-                                online: true,
-                                auth_status: Default::default(),
-                                manual: false,
-                                credentials: None,
-                                endpoint,
-                            });
-                        }
-                    }
-                }
-
-                // Try to restore previous selection
-                let new_sel = prev_addr
-                    .as_ref()
-                    .and_then(|addr| next.iter().position(|d| &d.addr == addr));
-
-                devices.set(next);
-                selected.set(new_sel);
-
-                if new_sel.is_none() {
-                    view.set(View::Welcome);
-                }
-
-                let locale = *ctx.locale.read();
-                if count > 0 {
-                    ctx.push_toast(
-                        ToastLevel::Success,
-                        i18n::t(locale, "scan_found").replace("{n}", &count.to_string()),
-                    );
-                    // Background: fetch firmware version for each discovered device
-                    crate::device_ops::fetch_firmware_for_all(ctx, devices);
-                } else {
-                    ctx.push_toast(ToastLevel::Warning, i18n::t(locale, "scan_none"));
+        // Mark all non-manual entries offline up front. Each round flips
+        // re-discovered ones back online; ones that never reappear stay
+        // greyed so the UI can show them as stale rather than vanishing.
+        {
+            let mut snap = devices.peek().clone();
+            for entry in snap.iter_mut() {
+                if !entry.manual {
+                    entry.online = false;
                 }
             }
-            Err(e) => {
-                ctx.push_toast(ToastLevel::Error, e);
+            devices.set(snap);
+        }
+
+        let mut auth_started: HashSet<String> = HashSet::new();
+        let mut total_seen: HashSet<String> = HashSet::new();
+        let mut had_error = false;
+
+        for round in 0..ROUNDS {
+            let found = match api::discover_one_round(PROBE_TIMEOUT).await {
+                Ok(v) => v,
+                Err(e) => {
+                    ctx.push_toast(ToastLevel::Error, e);
+                    had_error = true;
+                    break;
+                }
+            };
+
+            let mut next: Vec<DeviceEntry> = devices.peek().clone();
+            // Devices first appearing this round → start their auth probe.
+            let mut new_addrs: Vec<String> = Vec::new();
+
+            for d in found {
+                let addr = d.xaddrs.first().cloned().unwrap_or_default();
+                let display_addr = util::extract_ip(&addr);
+                let name = d
+                    .scopes
+                    .iter()
+                    .find_map(|s| s.strip_prefix("onvif://www.onvif.org/name/"))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| display_addr.clone());
+                let location = d
+                    .scopes
+                    .iter()
+                    .find_map(|s| s.strip_prefix("onvif://www.onvif.org/location/"))
+                    .map(util::urldecode)
+                    .unwrap_or_default();
+                let endpoint = d.endpoint.clone();
+
+                total_seen.insert(endpoint.clone());
+
+                // URI conflict: any other entry still claiming one of this
+                // device's xaddrs is stale (its IP got reassigned).
+                if !addr.is_empty() {
+                    for other in next.iter_mut() {
+                        if other.endpoint != endpoint && !other.manual && other.addr == addr {
+                            other.online = false;
+                        }
+                    }
+                }
+
+                let existing_idx = if !endpoint.is_empty() {
+                    next.iter()
+                        .position(|e| !e.manual && e.endpoint == endpoint)
+                } else {
+                    next.iter().position(|e| !e.manual && e.addr == addr)
+                };
+
+                match existing_idx {
+                    Some(i) => {
+                        // Refresh discovery-derived fields; preserve
+                        // auth_status / firmware (background tasks own those).
+                        let e = &mut next[i];
+                        e.name = name;
+                        e.addr = addr.clone();
+                        e.display_addr = display_addr;
+                        e.location = location;
+                        e.online = true;
+                        e.endpoint = endpoint.clone();
+                    }
+                    None => {
+                        next.push(DeviceEntry {
+                            name,
+                            addr: addr.clone(),
+                            display_addr,
+                            firmware: String::new(),
+                            location,
+                            online: true,
+                            auth_status: Default::default(),
+                            manual: false,
+                            credentials: None,
+                            endpoint: endpoint.clone(),
+                        });
+                    }
+                }
+
+                // Kick off auth/firmware probe exactly once per endpoint
+                // per scan, however many rounds it gets re-discovered in.
+                let key = if endpoint.is_empty() {
+                    addr.clone()
+                } else {
+                    endpoint.clone()
+                };
+                if !key.is_empty() && auth_started.insert(key) {
+                    new_addrs.push(addr);
+                }
+            }
+
+            devices.set(next);
+
+            // Fire per-device probes. spawn'd inside fetch_firmware_for_addr,
+            // so the UI keeps painting while these run in the background.
+            for addr in new_addrs {
+                crate::device_ops::fetch_firmware_for_addr(ctx, devices, addr);
+            }
+
+            if round + 1 < ROUNDS {
+                tokio::time::sleep(PROBE_INTERVAL).await;
+            }
+        }
+
+        // Restore selection (or fall back to Welcome if device gone).
+        let new_sel = prev_addr
+            .as_ref()
+            .and_then(|addr| devices.peek().iter().position(|d| &d.addr == addr));
+        selected.set(new_sel);
+        if new_sel.is_none() {
+            view.set(View::Welcome);
+        }
+
+        if !had_error {
+            let locale = *ctx.locale.read();
+            let total = total_seen.len();
+            if total > 0 {
+                ctx.push_toast(
+                    ToastLevel::Success,
+                    i18n::t(locale, "scan_found").replace("{n}", &total.to_string()),
+                );
+            } else {
+                ctx.push_toast(ToastLevel::Warning, i18n::t(locale, "scan_none"));
             }
         }
 

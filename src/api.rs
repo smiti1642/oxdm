@@ -37,19 +37,18 @@ fn trace_result<T>(
 
 // ── Discovery ───────────────────────────────────────────────────────────────
 
-const PROBE_ROUNDS: usize = 3;
-const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-const PROBE_INTERVAL: Duration = Duration::from_millis(800);
-
-/// Run WS-Discovery probes on all network interfaces, multiple rounds.
+/// Run a single WS-Discovery round across all network interfaces.
 ///
-/// Delegates to [`oxvif::discovery::probe_rounds`], which handles multi-NIC
+/// Delegates to [`oxvif::discovery::probe`], which handles multi-NIC
 /// enumeration and `IP_MULTICAST_IF` pinning (critical on Windows with
-/// Hyper-V / WSL virtual adapters). The multi-round loop guards against
-/// cameras that drop the first Probe on a congested network.
-#[instrument(skip_all)]
-pub async fn discover_devices() -> Result<Vec<DiscoveredDevice>, ApiError> {
-    Ok(oxvif::discovery::probe_rounds(PROBE_ROUNDS, PROBE_TIMEOUT, PROBE_INTERVAL).await)
+/// Hyper-V / WSL virtual adapters). Callers that want multi-round
+/// resilience should loop and dedupe by [`DiscoveredDevice::endpoint`] —
+/// see `device_list::do_scan` which drives 3 rounds with progressive UI
+/// updates so the device list fills in as responses arrive instead of
+/// blocking on a single 9 s `probe_rounds`.
+#[instrument(skip_all, fields(timeout_secs = timeout.as_secs()))]
+pub async fn discover_one_round(timeout: Duration) -> Result<Vec<DiscoveredDevice>, ApiError> {
+    Ok(oxvif::discovery::probe(timeout).await)
 }
 
 // ── Device Info ─────────────────────────────────────────────────────────────
