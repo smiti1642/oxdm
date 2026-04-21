@@ -233,6 +233,29 @@ a      { color: var(--blue); text-decoration: none; }
 .search-input::placeholder { color: var(--overlay0); }
 .search-input:focus { border-color: var(--blue); }
 
+/* Sidebar filter/sort row — two compact selects that fit a narrow
+   sidebar. Each takes half the row width; their fonts and padding
+   match the search input above. */
+.sidebar-filters {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--surface0);
+}
+.sidebar-filter-select {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  background: var(--surface0);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 0 4px;
+  font-family: inherit;
+}
+.sidebar-filter-select:focus { outline: none; border-color: var(--blue); }
+
 .device-list {
   flex: 1;
   overflow-y: auto;
@@ -1462,6 +1485,42 @@ a      { color: var(--blue); text-decoration: none; }
 }
 .ptz-preset-item:hover { background: var(--surface1); }
 .ptz-preset-item:active { background: var(--surface2); }
+.ptz-preset-name { flex: 1; }
+.ptz-preset-delete {
+  background: transparent;
+  border: 0;
+  color: var(--overlay0);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ptz-preset-delete:hover { background: var(--surface2); color: var(--red); }
+
+/* New-preset input row pinned at the bottom of the preset list. */
+.ptz-preset-new {
+  display: flex;
+  gap: 6px;
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--surface1);
+}
+.ptz-preset-input {
+  flex: 1;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.ptz-preset-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
 .ptz-presets-empty {
   padding: 24px;
   text-align: center;

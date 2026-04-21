@@ -5,10 +5,87 @@ use crate::{
         AddDeviceDialog, ContextMenu, CtxMenuItem, EditDeviceDialog, GlobalCredentialsDialog, Icon,
     },
     i18n,
-    state::{ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
+    state::{AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
     util,
 };
 use dioxus::prelude::*;
+
+/// Which subset of the device list to show. Pairs with the tab filter.
+#[derive(Clone, Copy, PartialEq)]
+enum StatusFilter {
+    All,
+    Ok,
+    Failed,
+    Unknown,
+}
+
+impl StatusFilter {
+    fn matches(self, status: AuthStatus) -> bool {
+        match self {
+            Self::All => true,
+            Self::Ok => status == AuthStatus::Ok,
+            Self::Failed => status == AuthStatus::Failed,
+            Self::Unknown => status == AuthStatus::Unknown,
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Ok => "ok",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
+    fn from_str(s: &str) -> Self {
+        match s {
+            "ok" => Self::Ok,
+            "failed" => Self::Failed,
+            "unknown" => Self::Unknown,
+            _ => Self::All,
+        }
+    }
+}
+
+/// How to order devices within the tab. `Default` keeps insertion order,
+/// which for Discovered ≈ the order WS-Discovery responses came back in.
+#[derive(Clone, Copy, PartialEq)]
+enum SortBy {
+    Default,
+    Name,
+    Ip,
+}
+
+impl SortBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Name => "name",
+            Self::Ip => "ip",
+        }
+    }
+    fn from_str(s: &str) -> Self {
+        match s {
+            "name" => Self::Name,
+            "ip" => Self::Ip,
+            _ => Self::Default,
+        }
+    }
+}
+
+/// Parse a dotted-quad IPv4 into its packed u32 for numeric sort.
+/// Non-IPv4 strings collide at `u32::MAX`, which is fine — they end up
+/// sorted together at the bottom.
+fn ip_to_u32(addr: &str) -> u32 {
+    let octets: Vec<u8> = addr
+        .split('.')
+        .filter_map(|p| p.parse::<u8>().ok())
+        .collect();
+    if octets.len() == 4 {
+        u32::from_be_bytes([octets[0], octets[1], octets[2], octets[3]])
+    } else {
+        u32::MAX
+    }
+}
 
 #[component]
 pub fn DeviceList() -> Element {
@@ -20,6 +97,8 @@ pub fn DeviceList() -> Element {
     let edit_dialog_open = use_signal(|| false);
     let edit_device_idx: Signal<Option<usize>> = use_signal(|| None);
     let mut list_tab = use_signal(|| DeviceListTab::Discovered);
+    let mut status_filter = use_signal(|| StatusFilter::All);
+    let mut sort_by = use_signal(|| SortBy::Default);
 
     let creds = ctx.global_credentials.read();
     let creds_empty = creds.username.is_empty();
@@ -200,7 +279,10 @@ pub fn DeviceList() -> Element {
     let devs = ctx.devices.read();
     let sel = *ctx.selected.read();
 
-    let filtered: Vec<(usize, &DeviceEntry)> = devs
+    let active_status = *status_filter.read();
+    let active_sort = *sort_by.read();
+
+    let mut filtered: Vec<(usize, &DeviceEntry)> = devs
         .iter()
         .enumerate()
         .filter(|(_, d)| {
@@ -210,14 +292,40 @@ pub fn DeviceList() -> Element {
                 DeviceListTab::Manual => d.manual,
             };
             tab_match
+                && active_status.matches(d.auth_status)
                 && (filter_str.is_empty()
                     || d.name.to_lowercase().contains(&filter_str)
                     || d.display_addr.contains(&filter_str))
         })
         .collect();
 
-    let discovered_count = devs.iter().filter(|d| !d.manual).count();
-    let manual_count = devs.iter().filter(|d| d.manual).count();
+    // Sort last so the tab/filter work is done up front. Name is
+    // case-insensitive so mixed-case device names don't scatter; IP uses
+    // numeric octets to avoid the string-sort "1.2" < "1.10" wrong-order.
+    match active_sort {
+        SortBy::Default => {}
+        SortBy::Name => filtered.sort_by_key(|(_, d)| d.name.to_lowercase()),
+        SortBy::Ip => filtered.sort_by_key(|(_, d)| ip_to_u32(&d.display_addr)),
+    }
+
+    // Tab badges reflect the current filter + search, not the raw totals
+    // — otherwise "Discovered (20)" next to a list showing only 3 matches
+    // is confusing. Each badge answers "how many entries in this tab
+    // match my current filters?".
+    let matches_filters = |d: &DeviceEntry| {
+        active_status.matches(d.auth_status)
+            && (filter_str.is_empty()
+                || d.name.to_lowercase().contains(&filter_str)
+                || d.display_addr.contains(&filter_str))
+    };
+    let discovered_count = devs
+        .iter()
+        .filter(|d| !d.manual && matches_filters(d))
+        .count();
+    let manual_count = devs
+        .iter()
+        .filter(|d| d.manual && matches_filters(d))
+        .count();
 
     rsx! {
         aside { class: "sidebar",
@@ -263,6 +371,32 @@ pub fn DeviceList() -> Element {
                     placeholder: i18n::t(locale, "filter_placeholder"),
                     value: "{filter}",
                     oninput: move |e| filter.set(e.value()),
+                }
+            }
+
+            // Filter + sort controls. Narrow sidebar → two compact
+            // side-by-side selects. Resets and defaults are local state,
+            // not persisted — users who want a specific view re-pick each
+            // session. Keeps the UI discoverable without a hidden popup.
+            div { class: "sidebar-filters",
+                select {
+                    class: "sidebar-filter-select",
+                    title: i18n::t(locale, "filter_status_tooltip"),
+                    value: "{active_status.as_str()}",
+                    onchange: move |e| status_filter.set(StatusFilter::from_str(&e.value())),
+                    option { value: "all",     {i18n::t(locale, "filter_status_all")} }
+                    option { value: "ok",      {i18n::t(locale, "filter_status_ok")} }
+                    option { value: "failed",  {i18n::t(locale, "filter_status_failed")} }
+                    option { value: "unknown", {i18n::t(locale, "filter_status_unknown")} }
+                }
+                select {
+                    class: "sidebar-filter-select",
+                    title: i18n::t(locale, "filter_sort_tooltip"),
+                    value: "{active_sort.as_str()}",
+                    onchange: move |e| sort_by.set(SortBy::from_str(&e.value())),
+                    option { value: "default", {i18n::t(locale, "filter_sort_default")} }
+                    option { value: "name",    {i18n::t(locale, "filter_sort_name")} }
+                    option { value: "ip",      {i18n::t(locale, "filter_sort_ip")} }
                 }
             }
 

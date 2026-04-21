@@ -34,7 +34,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     });
 
     // Re-fetch presets when profile or PTZ URL changes.
-    let presets_state = use_resource(move || {
+    let mut presets_state = use_resource(move || {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         let url_opt = match &*ptz_state.read_unchecked() {
@@ -229,6 +229,58 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         });
     });
 
+    // Save current camera position as a new preset with the given name.
+    // On success, clears the input and re-fetches the preset list so the
+    // new entry appears.
+    let mut new_preset_name = use_signal(String::new);
+    let save_preset = use_callback(move |name: String| {
+        if name.trim().is_empty() {
+            return;
+        }
+        let url = match &*ptz_state.read_unchecked() {
+            Some(Ok(u)) => u.clone(),
+            _ => return,
+        };
+        let Some(token) = profile_sig.read().clone() else {
+            return;
+        };
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        spawn(async move {
+            let (u, p) = creds_s.as_options();
+            match api::ptz_set_preset(&addr_s, u, p, &url, &token, Some(name.trim()), None).await {
+                Ok(_) => {
+                    new_preset_name.set(String::new());
+                    presets_state.restart();
+                    ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ptz_preset_saved"));
+                }
+                Err(e) => ctx.push_toast(ToastLevel::Error, e),
+            }
+        });
+    });
+
+    let remove_preset = use_callback(move |preset_token: String| {
+        let url = match &*ptz_state.read_unchecked() {
+            Some(Ok(u)) => u.clone(),
+            _ => return,
+        };
+        let Some(token) = profile_sig.read().clone() else {
+            return;
+        };
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        spawn(async move {
+            let (u, p) = creds_s.as_options();
+            match api::ptz_remove_preset(&addr_s, u, p, &url, &token, &preset_token).await {
+                Ok(()) => {
+                    presets_state.restart();
+                    ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ptz_preset_removed"));
+                }
+                Err(e) => ctx.push_toast(ToastLevel::Error, e),
+            }
+        });
+    });
+
     let goto_preset = use_callback(move |preset_token: String| {
         let url = match &*ptz_state.read_unchecked() {
             Some(Ok(u)) => u.clone(),
@@ -366,7 +418,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                     }
                 }
 
-                // ── Right: presets list ──
+                // ── Right: presets list + new-preset input ──
                 div { class: "ptz-presets",
                     div { class: "ptz-presets-header",
                         Icon { name: "bookmark", size: 14 }
@@ -392,10 +444,34 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                                         token: preset.token.clone(),
                                         name: preset.name.clone(),
                                         goto_preset: goto_preset,
+                                        remove_preset: remove_preset,
                                     }
                                 }
                             }
                         },
+                    }
+                    // Save the camera's current position as a new preset.
+                    // The camera captures whatever it's pointing at when
+                    // SetPreset fires; we only supply the label here.
+                    div { class: "ptz-preset-new",
+                        input {
+                            class: "ptz-preset-input",
+                            r#type: "text",
+                            placeholder: i18n::t(locale, "ptz_preset_new_placeholder"),
+                            value: "{*new_preset_name.read()}",
+                            oninput: move |e| new_preset_name.set(e.value()),
+                            onkeydown: move |e| {
+                                if e.key() == Key::Enter {
+                                    save_preset.call(new_preset_name.peek().clone());
+                                }
+                            },
+                        }
+                        button {
+                            class: "btn btn-sm btn-primary",
+                            title: i18n::t(locale, "ptz_preset_save_hint"),
+                            onclick: move |_| save_preset.call(new_preset_name.peek().clone()),
+                            Icon { name: "plus", size: 12 }
+                        }
                     }
                 }
             }
@@ -475,19 +551,35 @@ fn FocusButton(
 }
 
 #[component]
-fn PresetRow(token: String, name: String, goto_preset: Callback<String>) -> Element {
+fn PresetRow(
+    token: String,
+    name: String,
+    goto_preset: Callback<String>,
+    remove_preset: Callback<String>,
+) -> Element {
     let display = if name.is_empty() {
         format!("[{token}]")
     } else {
         name.clone()
     };
     let token_for_click = token.clone();
+    let token_for_delete = token;
     rsx! {
         li {
             class: "ptz-preset-item",
             onclick: move |_| goto_preset.call(token_for_click.clone()),
             Icon { name: "navigation-2", size: 12 }
-            span { "{display}" }
+            span { class: "ptz-preset-name", "{display}" }
+            button {
+                class: "ptz-preset-delete",
+                title: "Delete",
+                onclick: move |e| {
+                    // Don't bubble up into the row's Goto click.
+                    e.stop_propagation();
+                    remove_preset.call(token_for_delete.clone());
+                },
+                Icon { name: "x", size: 12 }
+            }
         }
     }
 }

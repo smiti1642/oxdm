@@ -775,6 +775,50 @@ pub async fn ptz_get_presets(
     )
 }
 
+/// Save the camera's current position as a preset.
+///
+/// `preset_name` is the label shown in the UI; `preset_token` is optional —
+/// pass `None` to create a new preset, or `Some(token)` to overwrite an
+/// existing one. Returns the token of the saved preset (camera-assigned
+/// for new ones, same as input for updates).
+#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
+#[instrument(skip(username, password), fields(addr, profile_token, preset_name))]
+pub async fn ptz_set_preset(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+    preset_name: Option<&str>,
+    preset_token: Option<&str>,
+) -> Result<String, ApiError> {
+    trace_result(
+        "PTZ SetPreset",
+        addr,
+        build_client(addr, username, password)
+            .ptz_set_preset(ptz_url, profile_token, preset_name, preset_token)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token, preset_token))]
+pub async fn ptz_remove_preset(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ptz_url: &str,
+    profile_token: &str,
+    preset_token: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "PTZ RemovePreset",
+        addr,
+        build_client(addr, username, password)
+            .ptz_remove_preset(ptz_url, profile_token, preset_token)
+            .await,
+    )
+}
+
 #[instrument(skip(username, password), fields(addr, profile_token, preset_token))]
 pub async fn ptz_goto_preset(
     addr: &str,
