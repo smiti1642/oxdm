@@ -649,3 +649,56 @@ ODM 使用者的肌肉記憶：
 - 惰性載入（切到 tab 時才拉資料）
 
 *更新：2026-04-14*
+
+---
+
+## 附錄：ODM 對標缺口（2026-04-21 快照）
+
+目前 Tier 1（管理基礎）已大致完成：
+- ✅ Identification 讀寫（Set Scopes：裝置名稱 + 位置）
+- ✅ Time 讀寫（SetSystemDateAndTime + 從 PC 同步 + 時區下拉 / 自訂 + DST + 活動秒針）
+- ✅ PTZ Preset CRUD（Set / Goto / Remove）
+- ⬜ **Users CRUD**（Create / SetUser / Delete 對話框；oxvif 端齊全，缺 UI）
+- ⬜ **Network 寫入**（Set Hostname / NetworkInterfaces / DNS / NTP / DefaultGateway / NetworkProtocols；UI 欄位多、有誤設變磚風險，最好配 confirm 警告）
+
+其餘工作按影響度分層記錄，之後依需要回來撿：
+
+### Tier 2 — 操作體驗（讓 oxdm 從「可用」變「順手」）
+
+- **真正 RTSP H.264 / H.265 影像** — 目前 `video/mjpeg.rs` 用 snapshot loop，
+  ~5 fps。升級路徑兩條：
+  - `gstreamer-rs` pipeline + native child window（跨平台、硬解、安裝 runtime 成本高）
+  - subprocess `mpv` 另開視窗（最快，但脫離 Dioxus 主窗）
+  架構上 `video::VideoBackend` trait 已經設計成 swap-able，`go2rtc.rs` skeleton 也在；
+  新 backend 只要實作 trait + 在 main 掛上去。
+- **Events 即時監看** — placeholder，待做。對應 ONVIF 是 PullPoint 訂閱
+  （oxvif `events.rs` 完整）。UI 要設計 live log 面板 + 過濾器。
+- **Snapshot 存檔** — 縮圖 / live view 上右鍵「另存為 .jpg」。
+- **Logs viewer** — `~/.oxdm/logs/` 目前沒實際落檔（只 console）。
+  先加 file appender，再做 GUI viewer。
+- **About 對話框** — 版本 / oxvif 版本 / license / GitHub 連結。
+  Topbar 的 help 按鈕現在是空 no-op，自然入口。
+
+### Tier 3 — NVR / 進階（少用但差異化）
+
+- **Recording / Search / Replay** — oxvif 端完整（`recording.rs` / `search.rs` /
+  `replay.rs`）。需要整個新的 View，UI 設計類似 ODM Replay 視圖。
+- **Analytics** — 動偵 / 越線等規則引擎（oxvif `GetAnalyticsModules` 等齊全）。
+  UI 需 rule builder，相當於一個子應用。
+- **Firmware upgrade** — `StartFirmwareUpgrade` / `UpgradeSystemFirmware`。
+  寫 UI 簡單，但失敗會變磚，要配二次確認 + 進度條 + 失敗回報。
+- **GetSystemLog 下載** — 維護頁補一個「下載日誌」按鈕。
+- **憑證管理** — HTTPS client cert 管理（ONVIF 14 系列 API）。
+  少數部署會用。
+- **IO / Relay 控制** — `GetRelayOutputs` / `SetRelayOutputState`。
+  部分 camera 支援繼電器輸出控制門鎖 / 警示燈。
+
+### Tier 4 — Polish
+
+- 多 camera 網格 / 監控牆視圖（2×2、3×3 等）
+- 鍵盤快捷鍵：`Ctrl+F` 搜尋、`F5` 掃描、`Esc` 關閉、`↑↓` 切 device
+- 裝置匯出 / 匯入（備份 `~/.oxdm/devices.toml` 到其他機器）
+- 啟動時檢查 GitHub Releases 新版
+- 安裝包簽章：macOS notarize、Windows code sign、Linux AppImage / deb
+
+*更新：2026-04-21*
