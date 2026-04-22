@@ -1289,6 +1289,40 @@ a      { color: var(--blue); text-decoration: none; }
   background: #000;
 }
 
+/* ── Users tab: edit + delete per-row controls ───────────────────────────── */
+.user-row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.user-row-btn {
+  background: transparent;
+  border: 0;
+  color: var(--overlay1);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-row-btn:hover { background: var(--surface1); color: var(--text); }
+.user-row-btn--danger:hover { color: var(--red); }
+.user-edit-password {
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 6px;
+  width: 140px;
+  font-family: inherit;
+}
+.user-edit-password:focus { outline: none; border-color: var(--blue); }
+
 /* ── PTZ ─────────────────────────────────────────────────────────────────── */
 .ptz-view {
   flex: 1;

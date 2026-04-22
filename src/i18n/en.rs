@@ -176,6 +176,17 @@ pub fn get(key: &str) -> Option<&'static str> {
         "user_name" => "Username",
         "user_level" => "Level",
         "user_none" => "No users found.",
+        "user_add_section" => "Add user",
+        "user_add" => "Add",
+        "user_created" => "User created.",
+        "user_updated" => "User updated.",
+        "user_deleted" => "User deleted.",
+        "user_delete_title" => "Delete user?",
+        "user_delete_confirm" => "Delete user '{name}'? This cannot be undone.",
+        "user_edit_pw_placeholder" => "New password (blank = keep)",
+        "user_create_needs_fields" => "Username and password are required.",
+        "btn_edit" => "Edit",
+        "btn_delete" => "Delete",
 
         // ── Maintenance tab ─────────────────────────────────────────────────
         "maint_reboot" => "Reboot",

@@ -993,7 +993,6 @@ pub async fn get_users(
     )
 }
 
-#[allow(dead_code)]
 #[instrument(skip(username, password, new_password), fields(addr, new_username))]
 pub async fn create_user(
     addr: &str,
@@ -1012,7 +1011,6 @@ pub async fn create_user(
     )
 }
 
-#[allow(dead_code)]
 #[instrument(skip(username, password), fields(addr, target_username))]
 pub async fn delete_user(
     addr: &str,
@@ -1025,6 +1023,32 @@ pub async fn delete_user(
         addr,
         build_client(addr, username, password)
             .delete_users(&[target_username])
+            .await,
+    )
+}
+
+/// Update an existing user's password and/or role.
+///
+/// Pass `new_password: None` to keep the existing password; `Some("")` is
+/// treated as a password change to empty by most cameras (rare and
+/// usually rejected), so we guard against that at the call site.
+#[instrument(
+    skip(username, password, new_password),
+    fields(addr, target_username, user_level)
+)]
+pub async fn set_user(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    target_username: &str,
+    new_password: Option<&str>,
+    user_level: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "SetUser",
+        addr,
+        build_client(addr, username, password)
+            .set_user(target_username, new_password, user_level)
             .await,
     )
 }
