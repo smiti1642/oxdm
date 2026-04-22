@@ -171,6 +171,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "net_interface" => "Interface",
         "net_gateway" => "Gateway",
         "net_protocols" => "Protocols",
+        "net_saved" => "Network settings saved.",
+        "net_saved_reboot" => "Saved — the device requires a reboot for the change to take effect.",
+        "net_iface_enabled" => "Enabled",
+        "net_iface_prefix" => "Prefix length",
+        "net_iface_confirm_title" => "Change interface settings?",
+        "net_iface_confirm_msg" => "Changing IP, prefix, or DHCP on this interface may disconnect the device from this app. Continue?",
 
         // ── Users tab ───────────────────────────────────────────────────────
         "user_name" => "Username",

@@ -894,6 +894,127 @@ pub async fn get_system_date_and_time(
 
 // ── Network ─────────────────────────────────────────────────────────────────
 
+/// Set the device hostname. Most firmware requires a reboot to take effect.
+#[instrument(skip(username, password), fields(addr, name))]
+pub async fn set_hostname(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    name: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "SetHostname",
+        addr,
+        build_client(addr, username, password)
+            .set_hostname(name)
+            .await,
+    )
+}
+
+/// Update the IPv4 configuration of a network interface. Returns `true`
+/// if the device needs a reboot to apply the change — we surface this to
+/// the caller so the UI can prompt the user.
+#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
+#[instrument(skip(username, password), fields(addr, token, ipv4_address, from_dhcp))]
+pub async fn set_network_interfaces(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    token: &str,
+    enabled: bool,
+    ipv4_address: &str,
+    prefix_length: u32,
+    from_dhcp: bool,
+) -> Result<bool, ApiError> {
+    trace_result(
+        "SetNetworkInterfaces",
+        addr,
+        build_client(addr, username, password)
+            .set_network_interfaces(token, enabled, ipv4_address, prefix_length, from_dhcp)
+            .await,
+    )
+}
+
+/// Set the DNS servers. If `from_dhcp` is true, `servers` is ignored.
+#[instrument(skip(username, password), fields(addr, from_dhcp))]
+pub async fn set_dns(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    from_dhcp: bool,
+    servers: &[String],
+) -> Result<(), ApiError> {
+    let refs: Vec<&str> = servers.iter().map(String::as_str).collect();
+    trace_result(
+        "SetDNS",
+        addr,
+        build_client(addr, username, password)
+            .set_dns(from_dhcp, &refs)
+            .await,
+    )
+}
+
+/// Set the NTP servers. If `from_dhcp` is true, `servers` is ignored.
+#[instrument(skip(username, password), fields(addr, from_dhcp))]
+pub async fn set_ntp(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    from_dhcp: bool,
+    servers: &[String],
+) -> Result<(), ApiError> {
+    let refs: Vec<&str> = servers.iter().map(String::as_str).collect();
+    trace_result(
+        "SetNTP",
+        addr,
+        build_client(addr, username, password)
+            .set_ntp(from_dhcp, &refs)
+            .await,
+    )
+}
+
+/// Replace the default IPv4 gateway list.
+#[instrument(skip(username, password), fields(addr))]
+pub async fn set_network_default_gateway(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    ipv4_addresses: &[String],
+) -> Result<(), ApiError> {
+    let refs: Vec<&str> = ipv4_addresses.iter().map(String::as_str).collect();
+    trace_result(
+        "SetNetworkDefaultGateway",
+        addr,
+        build_client(addr, username, password)
+            .set_network_default_gateway(&refs)
+            .await,
+    )
+}
+
+/// Enable/disable network protocols (HTTP / HTTPS / RTSP) and their ports.
+/// Each entry: `(name, enabled, ports)`. Names are ONVIF-standard strings.
+#[instrument(skip(username, password), fields(addr))]
+pub async fn set_network_protocols(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    protocols: &[(String, bool, Vec<u32>)],
+) -> Result<(), ApiError> {
+    // Build the `&[(&str, bool, &[u32])]` shape oxvif expects by
+    // borrowing every name and ports slice from our owned inputs.
+    let refs: Vec<(&str, bool, &[u32])> = protocols
+        .iter()
+        .map(|(n, e, p)| (n.as_str(), *e, p.as_slice()))
+        .collect();
+    trace_result(
+        "SetNetworkProtocols",
+        addr,
+        build_client(addr, username, password)
+            .set_network_protocols(&refs)
+            .await,
+    )
+}
+
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_hostname(
     addr: &str,

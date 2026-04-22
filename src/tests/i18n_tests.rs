@@ -158,6 +158,12 @@ const ALL_KEYS: &[&str] = &[
     "net_interface",
     "net_gateway",
     "net_protocols",
+    "net_saved",
+    "net_saved_reboot",
+    "net_iface_enabled",
+    "net_iface_prefix",
+    "net_iface_confirm_title",
+    "net_iface_confirm_msg",
     // Users tab
     "user_name",
     "user_level",

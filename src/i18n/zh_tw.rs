@@ -171,6 +171,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "net_interface" => "\u{7DB2}\u{8DEF}\u{4ECB}\u{9762}",
         "net_gateway" => "\u{9810}\u{8A2D}\u{9598}\u{9053}",
         "net_protocols" => "\u{5354}\u{5B9A}",
+        "net_saved" => "\u{7DB2}\u{8DEF}\u{8A2D}\u{5B9A}\u{5DF2}\u{5132}\u{5B58}\u{3002}",
+        "net_saved_reboot" => "\u{5DF2}\u{5132}\u{5B58}\u{FF0C}\u{88DD}\u{7F6E}\u{9700}\u{91CD}\u{65B0}\u{958B}\u{6A5F}\u{624D}\u{6703}\u{751F}\u{6548}\u{3002}",
+        "net_iface_enabled" => "\u{555F}\u{7528}",
+        "net_iface_prefix" => "\u{9577}\u{5EA6}\u{524D}\u{7DB4}",
+        "net_iface_confirm_title" => "\u{8B8A}\u{66F4}\u{7DB2}\u{8DEF}\u{4ECB}\u{9762}\u{FF1F}",
+        "net_iface_confirm_msg" => "\u{8B8A}\u{66F4} IP\u{3001}\u{524D}\u{7DB4}\u{6216} DHCP \u{53EF}\u{80FD}\u{4F7F}\u{672C}\u{7A0B}\u{5F0F}\u{7121}\u{6CD5}\u{9023}\u{7DDA}\u{5230}\u{88DD}\u{7F6E}\u{3002}\u{78BA}\u{5B9A}\u{7E7C}\u{7E8C}\u{FF1F}",
 
         // ── Users tab ───────────────────────────────────────────────────────
         "user_name" => "\u{5E33}\u{865F}",
