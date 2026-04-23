@@ -24,8 +24,15 @@ const RENEW_EVERY_N_PULLS: u32 = 5;
 struct EventRow {
     seq: u64,
     received_at: String,
+    utc_time: String,
     topic: String,
+    operation: String,
+    /// Pre-rendered "k=v, k=v" for the compact view.
     fields: String,
+    /// Sorted source items for the details view.
+    source: Vec<(String, String)>,
+    /// Sorted data items for the details view.
+    data: Vec<(String, String)>,
 }
 
 #[component]
@@ -36,6 +43,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
     let mut events = use_signal(VecDeque::<EventRow>::new);
     let mut status = use_signal(|| StatusKind::Connecting);
     let paused = use_signal(|| false);
+    let show_details = use_signal(|| false);
     let mut next_seq = use_signal(|| 0u64);
 
     // Long-running subscription task. Lives for the EventsView's component
@@ -114,8 +122,12 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                                 log.push_back(EventRow {
                                     seq: *seq,
                                     received_at: format_now(),
+                                    utc_time: msg.utc_time,
                                     topic: msg.topic,
+                                    operation: msg.property_operation,
                                     fields: format_fields(&msg.source, &msg.data),
+                                    source: sorted_pairs(&msg.source),
+                                    data: sorted_pairs(&msg.data),
                                 });
                                 while log.len() > MAX_EVENTS {
                                     log.pop_front();
@@ -186,26 +198,87 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                     onclick: move |_| events.write().clear(),
                     {i18n::t(locale, "events_clear")}
                 }
+                label { class: "events-details-toggle",
+                    input {
+                        r#type: "checkbox",
+                        checked: *show_details.read(),
+                        onchange: {
+                            let mut show_details = show_details;
+                            move |evt: Event<FormData>| show_details.set(evt.checked())
+                        },
+                    }
+                    {i18n::t(locale, "events_show_details")}
+                }
             }
             div { class: "events-log",
                 if event_count == 0 {
                     div { class: "events-empty", {i18n::t(locale, "events_empty")} }
+                } else if *show_details.read() {
+                    EventsDetailedTable { rows: events.read().clone() }
                 } else {
-                    table { class: "events-table",
-                        thead { tr {
-                            th { {i18n::t(locale, "events_col_time")} }
-                            th { {i18n::t(locale, "events_col_topic")} }
-                            th { {i18n::t(locale, "events_col_data")} }
-                        }}
-                        tbody {
-                            // Render newest-first so new events appear at the top
-                            // without needing to scroll.
-                            for row in events.read().iter().rev().cloned() {
-                                tr { key: "{row.seq}",
-                                    td { class: "events-time", "{row.received_at}" }
-                                    td { class: "events-topic", "{row.topic}" }
-                                    td { class: "events-data", "{row.fields}" }
-                                }
+                    EventsCompactTable { rows: events.read().clone() }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn EventsCompactTable(rows: VecDeque<EventRow>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    rsx! {
+        table { class: "events-table",
+            thead { tr {
+                th { {i18n::t(locale, "events_col_time")} }
+                th { {i18n::t(locale, "events_col_topic")} }
+                th { {i18n::t(locale, "events_col_data")} }
+            }}
+            tbody {
+                for row in rows.iter().rev().cloned() {
+                    tr { key: "{row.seq}",
+                        td { class: "events-time", "{row.received_at}" }
+                        td { class: "events-topic", "{row.topic}" }
+                        td { class: "events-data", "{row.fields}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn EventsDetailedTable(rows: VecDeque<EventRow>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    rsx! {
+        table { class: "events-table events-table--detailed",
+            thead { tr {
+                th { {i18n::t(locale, "events_col_time")} }
+                th { {i18n::t(locale, "events_col_utc")} }
+                th { {i18n::t(locale, "events_col_op")} }
+                th { {i18n::t(locale, "events_col_topic")} }
+                th { {i18n::t(locale, "events_col_source")} }
+                th { {i18n::t(locale, "events_col_data")} }
+            }}
+            tbody {
+                for row in rows.iter().rev().cloned() {
+                    tr { key: "{row.seq}",
+                        td { class: "events-time", "{row.received_at}" }
+                        td { class: "events-time", "{row.utc_time}" }
+                        td {
+                            class: operation_class(&row.operation),
+                            "{row.operation}"
+                        }
+                        td { class: "events-topic", "{row.topic}" }
+                        td { class: "events-data",
+                            for (k, v) in row.source.iter() {
+                                div { "{k}={v}" }
+                            }
+                        }
+                        td { class: "events-data",
+                            for (k, v) in row.data.iter() {
+                                div { "{k}={v}" }
                             }
                         }
                     }
@@ -213,6 +286,21 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
             }
         }
     }
+}
+
+fn operation_class(op: &str) -> &'static str {
+    match op {
+        "Initialized" => "events-op events-op--init",
+        "Changed" => "events-op events-op--changed",
+        "Deleted" => "events-op events-op--deleted",
+        _ => "events-op",
+    }
+}
+
+fn sorted_pairs(map: &std::collections::HashMap<String, String>) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    v
 }
 
 #[derive(Clone)]

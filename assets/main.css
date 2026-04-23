@@ -1762,5 +1762,28 @@ iframe.live-video-frame {
   background-clip: padding-box;
 }
 .events-log::-webkit-scrollbar-thumb:hover { background: var(--surface2); background-clip: padding-box; }
+.events-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--overlay1);
+  cursor: pointer;
+  user-select: none;
+}
+.events-details-toggle input { cursor: pointer; }
+.events-table--detailed td.events-data div { white-space: nowrap; }
+.events-op {
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface0);
+  color: var(--overlay1);
+  display: inline-block;
+}
+.events-op--init { background: rgba(116, 199, 236, 0.15); color: var(--sapphire); }
+.events-op--changed { background: rgba(166, 227, 161, 0.15); color: var(--green); }
+.events-op--deleted { background: rgba(243, 139, 168, 0.15); color: var(--red); }
 
 /* Classic theme overrides consolidated above in .theme-classic block */
