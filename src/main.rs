@@ -17,7 +17,9 @@ use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, To
 use state::{Ctx, SettingsTab, View};
 use views::MainContent;
 
-const MAIN_CSS: Asset = asset!("/assets/main.css");
+/// CSS is embedded directly in the binary so the release ships as a
+/// single executable — no sibling `assets/` directory needed at runtime.
+const MAIN_CSS: &str = include_str!("../assets/main.css");
 
 fn main() {
     tracing_subscriber::fmt()
@@ -99,7 +101,7 @@ fn App() -> Element {
     let theme_class = ctx.theme.read().css_class();
 
     rsx! {
-        document::Stylesheet { href: MAIN_CSS }
+        document::Style { {MAIN_CSS} }
         ErrorBoundary {
             handle_error: |errors: ErrorContext| {
                 rsx! {
