@@ -1,3 +1,4 @@
+pub mod events;
 pub mod imaging;
 pub mod live_video;
 mod main_content;

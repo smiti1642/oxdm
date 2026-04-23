@@ -1,7 +1,7 @@
 use oxvif::{
     Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, FocusMove, Hostname, MediaProfile,
-    NetworkGateway, NetworkInterface, NetworkProtocol, NtpInfo, OnvifClient, PtzPreset,
-    SnapshotUri, StreamUri, SystemDateTime, User,
+    NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage, NtpInfo, OnvifClient,
+    PtzPreset, PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
@@ -1203,6 +1203,89 @@ pub async fn set_system_factory_default(
         addr,
         build_client(addr, username, password)
             .set_system_factory_default(default_type)
+            .await,
+    )
+}
+
+// ── Events ──────────────────────────────────────────────────────────────────
+
+#[instrument(skip(username, password), fields(addr))]
+pub async fn get_events_url(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    caps.events
+        .url
+        .ok_or_else(|| "Events service not advertised by this device".to_string())
+}
+
+#[instrument(skip(username, password), fields(addr))]
+pub async fn create_pull_subscription(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    events_url: &str,
+    initial_termination_time: Option<&str>,
+) -> Result<PullPointSubscription, ApiError> {
+    trace_result(
+        "CreatePullPointSubscription",
+        addr,
+        build_client(addr, username, password)
+            .create_pull_point_subscription(events_url, None, initial_termination_time)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, timeout))]
+pub async fn pull_event_messages(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    subscription_url: &str,
+    timeout: &str,
+    max_messages: u32,
+) -> Result<Vec<NotificationMessage>, ApiError> {
+    trace_result(
+        "PullMessages",
+        addr,
+        build_client(addr, username, password)
+            .pull_messages(subscription_url, timeout, max_messages)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr))]
+pub async fn renew_event_subscription(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    subscription_url: &str,
+    termination_time: &str,
+) -> Result<String, ApiError> {
+    trace_result(
+        "RenewSubscription",
+        addr,
+        build_client(addr, username, password)
+            .renew_subscription(subscription_url, termination_time)
+            .await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr))]
+pub async fn unsubscribe_events(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    subscription_url: &str,
+) -> Result<(), ApiError> {
+    trace_result(
+        "Unsubscribe",
+        addr,
+        build_client(addr, username, password)
+            .unsubscribe(subscription_url)
             .await,
     )
 }

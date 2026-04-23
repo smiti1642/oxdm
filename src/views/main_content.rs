@@ -2,6 +2,7 @@
 use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
+use crate::views::events::EventsView;
 use crate::views::imaging::ImagingView;
 use crate::views::live_video::LiveVideoView;
 use crate::views::ptz::PtzControlView;
@@ -12,7 +13,6 @@ use dioxus::prelude::*;
 pub fn MainContent() -> Element {
     let ctx = use_context::<Ctx>();
     let view = *ctx.view.read();
-    let locale = *ctx.locale.read();
 
     // Derive addr and effective credentials as reactive memos
     let addr = use_memo(move || {
@@ -47,7 +47,7 @@ pub fn MainContent() -> Element {
                 View::LiveVideo       => rsx! { LiveVideoView      { key: "{addr_key}", addr, creds } },
                 View::ImagingSettings => rsx! { ImagingView        { key: "{addr_key}", addr, creds } },
                 View::PtzControl      => rsx! { PtzControlView     { key: "{addr_key}", addr, creds } },
-                View::Events          => rsx! { PlaceholderView { title: i18n::t(locale, "nav_events"),     icon: "bell" } },
+                View::Events          => rsx! { EventsView         { key: "{addr_key}", addr, creds } },
             }
         }
     }
