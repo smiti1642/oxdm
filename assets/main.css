@@ -1852,4 +1852,34 @@ iframe.live-video-frame {
 }
 .events-topics-error { color: var(--red); }
 
+.events-search {
+  flex: 0 1 200px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--surface1);
+  border-radius: 4px;
+  background: var(--base);
+  color: var(--text);
+  font-family: monospace;
+}
+.events-search:focus { outline: none; border-color: var(--blue); }
+
+.events-th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.events-th-sortable:hover { color: var(--sapphire); }
+.events-th-sortable--active { color: var(--sapphire); }
+
+.ptz-preset-search {
+  margin: 8px 12px 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--surface1);
+  border-radius: 4px;
+  background: var(--base);
+  color: var(--text);
+}
+.ptz-preset-search:focus { outline: none; border-color: var(--blue); }
+
 /* Classic theme overrides consolidated above in .theme-classic block */

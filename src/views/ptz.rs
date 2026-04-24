@@ -17,6 +17,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     let profile_sig = ctx.selected_profile;
 
     let speed = use_signal(|| 0.5_f32);
+    let preset_search = use_signal(String::new);
 
     // Resolve the PTZ service URL once per (addr, creds). This is the slow
     // call (GetCapabilities round-trip); cache it so joystick mousedowns
@@ -424,6 +425,16 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                         Icon { name: "bookmark", size: 14 }
                         span { {i18n::t(locale, "ptz_presets")} }
                     }
+                    input {
+                        class: "ptz-preset-search",
+                        r#type: "text",
+                        placeholder: i18n::t(locale, "ptz_preset_search_placeholder"),
+                        value: "{*preset_search.read()}",
+                        oninput: {
+                            let mut preset_search = preset_search;
+                            move |evt: Event<FormData>| preset_search.set(evt.value())
+                        },
+                    }
                     match &*presets_state.read_unchecked() {
                         None => rsx! { div { class: "ptz-presets-empty", {i18n::t(locale, "loading")} } },
                         Some(Err(e)) if e == "no_profile" => rsx! {
@@ -436,19 +447,39 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                         Some(Ok(list)) if list.is_empty() => rsx! {
                             div { class: "ptz-presets-empty", {i18n::t(locale, "ptz_no_presets")} }
                         },
-                        Some(Ok(list)) => rsx! {
-                            ul { class: "ptz-presets-list",
-                                for preset in list {
-                                    PresetRow {
-                                        key: "{preset.token}",
-                                        token: preset.token.clone(),
-                                        name: preset.name.clone(),
-                                        goto_preset: goto_preset,
-                                        remove_preset: remove_preset,
+                        Some(Ok(list)) => {
+                            let needle = preset_search.read().to_lowercase();
+                            let filtered: Vec<_> = list
+                                .iter()
+                                .filter(|p| {
+                                    needle.is_empty()
+                                        || p.name.to_lowercase().contains(&needle)
+                                        || p.token.to_lowercase().contains(&needle)
+                                })
+                                .cloned()
+                                .collect();
+                            if filtered.is_empty() {
+                                rsx! {
+                                    div { class: "ptz-presets-empty",
+                                        {i18n::t(locale, "ptz_presets_no_match")}
+                                    }
+                                }
+                            } else {
+                                rsx! {
+                                    ul { class: "ptz-presets-list",
+                                        for preset in filtered {
+                                            PresetRow {
+                                                key: "{preset.token}",
+                                                token: preset.token.clone(),
+                                                name: preset.name.clone(),
+                                                goto_preset: goto_preset,
+                                                remove_preset: remove_preset,
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        },
+                        }
                     }
                     // Save the camera's current position as a new preset.
                     // The camera captures whatever it's pointing at when

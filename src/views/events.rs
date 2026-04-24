@@ -48,6 +48,10 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
     let paused = use_signal(|| false);
     let show_details = use_signal(|| false);
     let mut next_seq = use_signal(|| 0u64);
+    let search = use_signal(String::new);
+    // Default: newest-first by receive sequence. Clicking a column header
+    // cycles that column between asc/desc; clicking Time resets to default.
+    let sort_mode = use_signal(|| (SortColumn::Time, SortDir::Desc));
 
     // Topics the user has toggled OFF. Empty set = receive everything.
     // This inversion means the default (no interaction) is "no filter",
@@ -184,7 +188,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         }
     });
 
-    let event_count = events.read().len();
+    let total_count = events.read().len();
     let status_text = match &*status.read() {
         StatusKind::Connecting => i18n::t(locale, "events_status_connecting").to_string(),
         StatusKind::Connected => i18n::t(locale, "events_status_connected").to_string(),
@@ -193,13 +197,47 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
 
     let topics_label = topics_button_label(locale, &hidden_topics.read(), topics_info);
 
+    // Build the render list: clone → filter by search → sort.
+    // Sorting a live log feels jarring at very high rates, but the mock
+    // (and most cameras) cap out at a few events/sec so re-sorting on
+    // each render is cheap enough. Newest-first by seq is the default,
+    // matching the behaviour before this feature.
+    let visible_rows: Vec<EventRow> = {
+        let needle = search.read().to_lowercase();
+        let (col, dir) = *sort_mode.read();
+        let mut v: Vec<EventRow> = events
+            .read()
+            .iter()
+            .filter(|r| needle.is_empty() || searchable_text(r).contains(&needle))
+            .cloned()
+            .collect();
+        sort_rows(&mut v, col, dir);
+        v
+    };
+    let visible_count = visible_rows.len();
+    let count_label = if visible_count == total_count {
+        format!("{total_count}")
+    } else {
+        format!("{visible_count}/{total_count}")
+    };
+
     rsx! {
         div { class: "events-view",
             div { class: "content-header",
                 Icon { name: "bell", size: 20 }
                 span { class: "content-title", {i18n::t(locale, "nav_events")} }
                 span { class: "events-status", "{status_text}" }
-                span { class: "events-count", "{event_count}" }
+                span { class: "events-count", "{count_label}" }
+                input {
+                    class: "events-search",
+                    r#type: "text",
+                    placeholder: i18n::t(locale, "events_search_placeholder"),
+                    value: "{*search.read()}",
+                    oninput: {
+                        let mut search = search;
+                        move |evt: Event<FormData>| search.set(evt.value())
+                    },
+                }
                 TopicsButton { topics_info, hidden_topics, topics_panel_open, label: topics_label }
                 button {
                     class: "btn btn--small",
@@ -230,12 +268,14 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                 }
             }
             div { class: "events-log",
-                if event_count == 0 {
+                if total_count == 0 {
                     div { class: "events-empty", {i18n::t(locale, "events_empty")} }
+                } else if visible_count == 0 {
+                    div { class: "events-empty", {i18n::t(locale, "events_empty_filtered")} }
                 } else if *show_details.read() {
-                    EventsDetailedTable { rows: events.read().clone() }
+                    EventsDetailedTable { rows: visible_rows, sort_mode }
                 } else {
-                    EventsCompactTable { rows: events.read().clone() }
+                    EventsCompactTable { rows: visible_rows, sort_mode }
                 }
             }
         }
@@ -412,18 +452,18 @@ fn TopicRow(topic: String, hidden_topics: Signal<HashSet<String>>) -> Element {
 }
 
 #[component]
-fn EventsCompactTable(rows: VecDeque<EventRow>) -> Element {
+fn EventsCompactTable(rows: Vec<EventRow>, sort_mode: Signal<(SortColumn, SortDir)>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     rsx! {
         table { class: "events-table",
             thead { tr {
-                th { {i18n::t(locale, "events_col_time")} }
-                th { {i18n::t(locale, "events_col_topic")} }
+                SortableTh { col: SortColumn::Time, label: i18n::t(locale, "events_col_time"), sort_mode }
+                SortableTh { col: SortColumn::Topic, label: i18n::t(locale, "events_col_topic"), sort_mode }
                 th { {i18n::t(locale, "events_col_data")} }
             }}
             tbody {
-                for row in rows.iter().rev().cloned() {
+                for row in rows.iter().cloned() {
                     tr { key: "{row.seq}",
                         td { class: "events-time", "{row.received_at}" }
                         td { class: "events-topic", "{row.topic}" }
@@ -436,21 +476,21 @@ fn EventsCompactTable(rows: VecDeque<EventRow>) -> Element {
 }
 
 #[component]
-fn EventsDetailedTable(rows: VecDeque<EventRow>) -> Element {
+fn EventsDetailedTable(rows: Vec<EventRow>, sort_mode: Signal<(SortColumn, SortDir)>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     rsx! {
         table { class: "events-table events-table--detailed",
             thead { tr {
-                th { {i18n::t(locale, "events_col_time")} }
+                SortableTh { col: SortColumn::Time, label: i18n::t(locale, "events_col_time"), sort_mode }
                 th { {i18n::t(locale, "events_col_utc")} }
-                th { {i18n::t(locale, "events_col_op")} }
-                th { {i18n::t(locale, "events_col_topic")} }
+                SortableTh { col: SortColumn::Op, label: i18n::t(locale, "events_col_op"), sort_mode }
+                SortableTh { col: SortColumn::Topic, label: i18n::t(locale, "events_col_topic"), sort_mode }
                 th { {i18n::t(locale, "events_col_source")} }
                 th { {i18n::t(locale, "events_col_data")} }
             }}
             tbody {
-                for row in rows.iter().rev().cloned() {
+                for row in rows.iter().cloned() {
                     tr { key: "{row.seq}",
                         td { class: "events-time", "{row.received_at}" }
                         td { class: "events-time", "{row.utc_time}" }
@@ -474,6 +514,94 @@ fn EventsDetailedTable(rows: VecDeque<EventRow>) -> Element {
             }
         }
     }
+}
+
+#[component]
+fn SortableTh(
+    col: SortColumn,
+    label: &'static str,
+    sort_mode: Signal<(SortColumn, SortDir)>,
+) -> Element {
+    let (cur_col, cur_dir) = *sort_mode.read();
+    let active = cur_col == col;
+    let indicator = if active {
+        match cur_dir {
+            SortDir::Asc => " ↑",
+            SortDir::Desc => " ↓",
+        }
+    } else {
+        ""
+    };
+    let class_name = if active {
+        "events-th-sortable events-th-sortable--active"
+    } else {
+        "events-th-sortable"
+    };
+    rsx! {
+        th {
+            class: class_name,
+            onclick: {
+                let mut sort_mode = sort_mode;
+                move |_| {
+                    let (c, d) = *sort_mode.read();
+                    if c == col {
+                        sort_mode.set((col, d.flip()));
+                    } else {
+                        // First click on a new column: start descending —
+                        // for most columns (time, op) that matches the
+                        // usual "newest/latest on top" expectation.
+                        sort_mode.set((col, SortDir::Desc));
+                    }
+                }
+            },
+            "{label}{indicator}"
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortColumn {
+    Time,
+    Topic,
+    Op,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortDir {
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    fn flip(self) -> Self {
+        match self {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        }
+    }
+}
+
+fn sort_rows(rows: &mut [EventRow], col: SortColumn, dir: SortDir) {
+    match col {
+        SortColumn::Time => rows.sort_by_key(|r| r.seq),
+        SortColumn::Topic => rows.sort_by(|a, b| a.topic.cmp(&b.topic)),
+        SortColumn::Op => rows.sort_by(|a, b| a.operation.cmp(&b.operation)),
+    }
+    if matches!(dir, SortDir::Desc) {
+        rows.reverse();
+    }
+}
+
+fn searchable_text(row: &EventRow) -> String {
+    // Build one lowercase blob per row so the hot-loop contains needle
+    // check stays O(n) instead of re-formatting per keystroke per row.
+    // The fields string already flattens source+data for the compact
+    // view, so we don't need to iterate them separately.
+    format!(
+        "{} {} {} {}",
+        row.topic, row.operation, row.fields, row.utc_time
+    )
+    .to_lowercase()
 }
 
 fn operation_class(op: &str) -> &'static str {
