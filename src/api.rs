@@ -1,7 +1,8 @@
 use oxvif::{
-    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, FocusMove, Hostname, MediaProfile,
-    NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage, NtpInfo, OnvifClient,
-    PtzPreset, PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime, User,
+    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
+    Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
+    NtpInfo, OnvifClient, PtzPreset, PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime,
+    User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
@@ -1223,18 +1224,36 @@ pub async fn get_events_url(
 }
 
 #[instrument(skip(username, password), fields(addr))]
+pub async fn get_event_properties(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    events_url: &str,
+) -> Result<EventProperties, ApiError> {
+    trace_result(
+        "GetEventProperties",
+        addr,
+        build_client(addr, username, password)
+            .get_event_properties(events_url)
+            .await,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
+#[instrument(skip(username, password), fields(addr))]
 pub async fn create_pull_subscription(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
     events_url: &str,
+    filter: Option<&str>,
     initial_termination_time: Option<&str>,
 ) -> Result<PullPointSubscription, ApiError> {
     trace_result(
         "CreatePullPointSubscription",
         addr,
         build_client(addr, username, password)
-            .create_pull_point_subscription(events_url, None, initial_termination_time)
+            .create_pull_point_subscription(events_url, filter, initial_termination_time)
             .await,
     )
 }
