@@ -240,6 +240,7 @@ fn InterfaceSection(
                     class: "id-edit-input",
                     r#type: "text",
                     disabled: "{*dhcp_in.read()}",
+                    title: if *dhcp_in.read() { i18n::t(locale, "net_disabled_by_dhcp") } else { "" },
                     value: "{*addr_in.read()}",
                     oninput: move |e| addr_in.clone().set(e.value()),
                 }
@@ -251,6 +252,7 @@ fn InterfaceSection(
                     r#type: "number",
                     min: "1", max: "32",
                     disabled: "{*dhcp_in.read()}",
+                    title: if *dhcp_in.read() { i18n::t(locale, "net_disabled_by_dhcp") } else { "" },
                     value: "{*prefix_in.read()}",
                     oninput: move |e| prefix_in.clone().set(e.value()),
                 }

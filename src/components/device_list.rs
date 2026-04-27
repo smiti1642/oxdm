@@ -491,6 +491,7 @@ pub fn DeviceList() -> Element {
                         button {
                             class: "btn btn-primary btn-sm btn-scan",
                             disabled: is_scanning,
+                            title: if is_scanning { i18n::t(locale, "btn_scanning_tooltip") } else { "" },
                             onclick: move |_| do_scan.call(()),
                             if is_scanning {
                                 {i18n::t(locale, "btn_scanning")}

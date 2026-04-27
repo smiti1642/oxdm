@@ -26,6 +26,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "devtab_manual" => "Manual",
         "btn_scan_label" => "Scan",
         "btn_scanning" => "Scanning\u{2026}",
+        "btn_scanning_tooltip" => "A scan is already in progress.",
+        "net_disabled_by_dhcp" => "Disabled while DHCP is on.",
         "btn_add_label" => "Add",
 
         // ── Device Panel ────────────────────────────────────────────────────

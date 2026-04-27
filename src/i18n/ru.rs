@@ -26,6 +26,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "devtab_manual" => "\u{0412}\u{0440}\u{0443}\u{0447}\u{043D}\u{0443}\u{044E}",
         "btn_scan_label" => "\u{0421}\u{043A}\u{0430}\u{043D}.",
         "btn_scanning" => "\u{0421}\u{043A}\u{0430}\u{043D}.\u{2026}",
+        "btn_scanning_tooltip" => "Сканирование уже выполняется.",
+        "net_disabled_by_dhcp" => "Недоступно при включённом DHCP.",
         "btn_add_label" => "\u{0414}\u{043E}\u{0431}.",
 
         // ── Device Panel ────────────────────────────────────────────────────

@@ -354,7 +354,8 @@ fn ProfileCard(
                 }
                 button {
                     class: "thumb-snapshot-save",
-                    title: i18n::t(locale, "snapshot_save"),
+                    disabled: !matches!(&*data_uri_for_save.read_unchecked(), Some(Ok(_))),
+                    title: if matches!(&*data_uri_for_save.read_unchecked(), Some(Ok(_))) { i18n::t(locale, "snapshot_save") } else { i18n::t(locale, "snapshot_save_no_image") },
                     onclick: move |e| {
                         e.stop_propagation();
                         // Snapshot only the *current* data URI value;
@@ -362,13 +363,7 @@ fn ProfileCard(
                         // doesn't block the auto-refresh tick.
                         let snap = match &*data_uri_for_save.read_unchecked() {
                             Some(Ok(uri)) => uri.clone(),
-                            _ => {
-                                ctx.push_toast(
-                                    crate::state::ToastLevel::Error,
-                                    i18n::t(locale, "snapshot_save_no_image"),
-                                );
-                                return;
-                            }
+                            _ => return,
                         };
                         let default_name = format!("{}.jpg", sanitize_filename(&name_for_save));
                         let toast_ctx = ctx;

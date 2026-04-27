@@ -29,6 +29,8 @@ const ALL_KEYS: &[&str] = &[
     "devtab_manual",
     "btn_scan_label",
     "btn_scanning",
+    "btn_scanning_tooltip",
+    "net_disabled_by_dhcp",
     "btn_add_label",
     // Device Panel
     "select_device",
