@@ -85,6 +85,14 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Buttons (shared) ────────────────────────────────────────────────
         "btn_cancel" => "Cancel",
+        "btn_close" => "Close",
+        "snapshot_save" => "Save snapshot",
+        "snapshot_save_no_image" => "No snapshot available yet.",
+        "snapshot_saved" => "Snapshot saved",
+        "snapshot_save_failed" => "Save failed",
+        "about_open_logs" => "Open log folder",
+        "about_github" => "GitHub",
+        "about_log_dir" => "Logs:",
         "btn_save" => "Save",
         "btn_confirm" => "Confirm",
         "btn_add_short" => "Add",

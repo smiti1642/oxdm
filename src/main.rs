@@ -21,14 +21,57 @@ use views::MainContent;
 /// single executable — no sibling `assets/` directory needed at runtime.
 const MAIN_CSS: &str = include_str!("../assets/main.css");
 
-fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "oxdm=info".parse().unwrap()),
-        )
-        .with_target(false)
+/// Set up tracing with a stderr layer (env-filter respected) plus a
+/// daily-rolling file appender at `~/.oxdm/logs/oxdm.log`. Returns the
+/// file appender's `WorkerGuard` — the caller MUST keep it alive (bind
+/// it for the duration of `main`) so the background flush thread isn't
+/// dropped before the program exits.
+fn init_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+    let env_filter =
+        || EnvFilter::try_from_default_env().unwrap_or_else(|_| "oxdm=info".parse().unwrap());
+    let stderr_layer = fmt::layer().with_target(false).with_filter(env_filter());
+
+    // File appender: daily rolling under ~/.oxdm/logs/. Failure here
+    // (no home dir, no write perms) is non-fatal — we still get stderr
+    // output and the user sees the warning on first launch.
+    let log_dir = dirs::home_dir().map(|h| h.join(".oxdm").join("logs"));
+    let (file_layer, guard) = match log_dir {
+        Some(ref dir) => match std::fs::create_dir_all(dir) {
+            Ok(()) => {
+                let file_appender = tracing_appender::rolling::daily(dir, "oxdm.log");
+                let (nb, guard) = tracing_appender::non_blocking(file_appender);
+                let layer = fmt::layer()
+                    .with_writer(nb)
+                    .with_ansi(false)
+                    .with_target(false)
+                    .with_filter(env_filter());
+                (Some(layer), Some(guard))
+            }
+            Err(e) => {
+                eprintln!("Could not create log dir {}: {e}", dir.display());
+                (None, None)
+            }
+        },
+        None => (None, None),
+    };
+
+    tracing_subscriber::registry()
+        .with(stderr_layer)
+        .with(file_layer)
         .init();
+
+    guard
+}
+
+/// Path to the directory holding rotated log files.
+pub fn log_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".oxdm").join("logs"))
+}
+
+fn main() {
+    let _log_guard = init_logging();
 
     tracing::info!("OxDM starting");
 

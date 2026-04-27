@@ -85,6 +85,14 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Buttons (shared) ────────────────────────────────────────────────
         "btn_cancel" => "\u{53D6}\u{6D88}",
+        "btn_close" => "關閉",
+        "snapshot_save" => "儲存快照",
+        "snapshot_save_no_image" => "目前沒有可用的快照。",
+        "snapshot_saved" => "快照已儲存",
+        "snapshot_save_failed" => "儲存失敗",
+        "about_open_logs" => "開啟日誌資料夾",
+        "about_github" => "GitHub",
+        "about_log_dir" => "日誌：",
         "btn_save" => "\u{5132}\u{5B58}",
         "btn_confirm" => "\u{78BA}\u{8A8D}",
         "btn_add_short" => "\u{65B0}\u{589E}",

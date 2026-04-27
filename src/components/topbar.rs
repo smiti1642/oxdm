@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::Icon;
+use crate::components::{AboutDialog, Icon};
 use crate::i18n;
 use crate::state::{Ctx, Theme};
 use dioxus::prelude::*;
@@ -11,6 +11,7 @@ pub fn Topbar() -> Element {
     let theme = *ctx.theme.read();
     let mut theme_sig = ctx.theme;
     let mut locale_sig = ctx.locale;
+    let about_open = use_signal(|| false);
 
     let locale_label = locale.label();
     let theme_icon = match theme {
@@ -44,9 +45,14 @@ pub fn Topbar() -> Element {
                 button {
                     class: "icon-btn",
                     title: i18n::t(locale, "tooltip_help"),
+                    onclick: {
+                        let mut about_open = about_open;
+                        move |_| about_open.set(true)
+                    },
                     Icon { name: "help-circle", size: 16 }
                 }
             }
         }
+        AboutDialog { open: about_open }
     }
 }

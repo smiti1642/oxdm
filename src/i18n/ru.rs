@@ -85,6 +85,14 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Buttons (shared) ────────────────────────────────────────────────
         "btn_cancel" => "\u{041E}\u{0442}\u{043C}\u{0435}\u{043D}\u{0430}",
+        "btn_close" => "Закрыть",
+        "snapshot_save" => "Сохранить снимок",
+        "snapshot_save_no_image" => "Снимок пока недоступен.",
+        "snapshot_saved" => "Снимок сохранён",
+        "snapshot_save_failed" => "Не удалось сохранить",
+        "about_open_logs" => "Папка журналов",
+        "about_github" => "GitHub",
+        "about_log_dir" => "Журналы:",
         "btn_save" => "\u{0421}\u{043E}\u{0445}\u{0440}.",
         "btn_confirm" => "\u{041F}\u{043E}\u{0434}\u{0442}\u{0432}.",
         "btn_add_short" => "\u{0414}\u{043E}\u{0431}.",
