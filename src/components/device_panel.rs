@@ -338,15 +338,80 @@ fn ProfileCard(
             onclick: move |_| {
                 profile_sig.set(Some(profile_token.clone()));
             },
-            match &*data_uri.read_unchecked() {
-                Some(Ok(src)) => rsx! {
-                    img { class: "thumb-img", src: "{src}", alt: "{profile_name}" }
-                },
-                _ => rsx! {
-                    div { class: "thumb-img thumb-img--placeholder",
-                        Icon { name: "camera", size: 24 }
-                    }
-                },
+            // Snapshot wrapper so the download button can be absolutely
+            // positioned in the top-right of the image without joining
+            // the page-switch action row in the footer.
+            div { class: "thumb-img-wrap",
+                match &*data_uri.read_unchecked() {
+                    Some(Ok(src)) => rsx! {
+                        img { class: "thumb-img", src: "{src}", alt: "{profile_name}" }
+                    },
+                    _ => rsx! {
+                        div { class: "thumb-img thumb-img--placeholder",
+                            Icon { name: "camera", size: 24 }
+                        }
+                    },
+                }
+                button {
+                    class: "thumb-snapshot-save",
+                    title: i18n::t(locale, "snapshot_save"),
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        // Snapshot only the *current* data URI value;
+                        // fire-and-forget the save so the file dialog
+                        // doesn't block the auto-refresh tick.
+                        let snap = match &*data_uri_for_save.read_unchecked() {
+                            Some(Ok(uri)) => uri.clone(),
+                            _ => {
+                                ctx.push_toast(
+                                    crate::state::ToastLevel::Error,
+                                    i18n::t(locale, "snapshot_save_no_image"),
+                                );
+                                return;
+                            }
+                        };
+                        let default_name = format!("{}.jpg", sanitize_filename(&name_for_save));
+                        let toast_ctx = ctx;
+                        let saved_label = i18n::t(locale, "snapshot_saved").to_string();
+                        let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
+                        spawn(async move {
+                            let Some(handle) = rfd::AsyncFileDialog::new()
+                                .set_file_name(&default_name)
+                                .add_filter("JPEG", &["jpg", "jpeg"])
+                                .save_file()
+                                .await
+                            else {
+                                return;
+                            };
+                            let path = handle.path().to_path_buf();
+                            match decode_jpeg_data_uri(&snap) {
+                                Some(bytes) => match std::fs::write(&path, &bytes) {
+                                    Ok(()) => {
+                                        tracing::info!(path = %path.display(), bytes = bytes.len(), "snapshot saved");
+                                        toast_ctx.push_toast(
+                                            crate::state::ToastLevel::Success,
+                                            format!("{}: {}", saved_label, path.display()),
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(error = %e, path = %path.display(), "snapshot save failed");
+                                        toast_ctx.push_toast(
+                                            crate::state::ToastLevel::Error,
+                                            format!("{failed_label}: {e}"),
+                                        );
+                                    }
+                                },
+                                None => {
+                                    toast_ctx.push_toast(
+                                        crate::state::ToastLevel::Error,
+                                        failed_label,
+                                    );
+                                }
+                            }
+                        });
+                    },
+                    Icon { name: "download", size: 12 }
+                }
             }
             div { class: "thumb-footer",
                 span { class: "thumb-label", "{profile_name}" }
@@ -380,66 +445,6 @@ fn ProfileCard(
                             view.set(View::PtzControl);
                         },
                         Icon { name: "crosshair", size: 12 }
-                    }
-                    button {
-                        class: "thumb-action",
-                        title: i18n::t(locale, "snapshot_save"),
-                        onclick: move |e| {
-                            e.stop_propagation();
-                            // Snapshot only the *current* data URI value;
-                            // fire-and-forget the save so the file dialog
-                            // doesn't block the auto-refresh tick.
-                            let snap = match &*data_uri_for_save.read_unchecked() {
-                                Some(Ok(uri)) => uri.clone(),
-                                _ => {
-                                    ctx.push_toast(
-                                        crate::state::ToastLevel::Error,
-                                        i18n::t(locale, "snapshot_save_no_image"),
-                                    );
-                                    return;
-                                }
-                            };
-                            let default_name = format!("{}.jpg", sanitize_filename(&name_for_save));
-                            let toast_ctx = ctx;
-                            let saved_label = i18n::t(locale, "snapshot_saved").to_string();
-                            let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
-                            spawn(async move {
-                                let Some(handle) = rfd::AsyncFileDialog::new()
-                                    .set_file_name(&default_name)
-                                    .add_filter("JPEG", &["jpg", "jpeg"])
-                                    .save_file()
-                                    .await
-                                else {
-                                    return;
-                                };
-                                let path = handle.path().to_path_buf();
-                                match decode_jpeg_data_uri(&snap) {
-                                    Some(bytes) => match std::fs::write(&path, &bytes) {
-                                        Ok(()) => {
-                                            tracing::info!(path = %path.display(), bytes = bytes.len(), "snapshot saved");
-                                            toast_ctx.push_toast(
-                                                crate::state::ToastLevel::Success,
-                                                format!("{}: {}", saved_label, path.display()),
-                                            );
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(error = %e, path = %path.display(), "snapshot save failed");
-                                            toast_ctx.push_toast(
-                                                crate::state::ToastLevel::Error,
-                                                format!("{failed_label}: {e}"),
-                                            );
-                                        }
-                                    },
-                                    None => {
-                                        toast_ctx.push_toast(
-                                            crate::state::ToastLevel::Error,
-                                            failed_label,
-                                        );
-                                    }
-                                }
-                            });
-                        },
-                        Icon { name: "download", size: 12 }
                     }
                 }
             }

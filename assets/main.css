@@ -486,6 +486,10 @@ a      { color: var(--blue); text-decoration: none; }
   box-shadow: 0 0 0 1px var(--blue);
 }
 
+.thumb-img-wrap {
+  position: relative;
+  display: block;
+}
 .thumb-img {
   width: 100%;
   display: block;
@@ -499,6 +503,25 @@ a      { color: var(--blue); text-decoration: none; }
   justify-content: center;
   color: var(--overlay0);
 }
+.thumb-snapshot-save {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.thumb-img-wrap:hover .thumb-snapshot-save { opacity: 1; }
+.thumb-snapshot-save:hover { background: rgba(0, 0, 0, 0.8); }
 
 .thumb-footer {
   display: flex;
