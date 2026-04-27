@@ -374,7 +374,16 @@ fn TopicsPanel(
     let guard = topics_info.read();
     let body = match guard.as_ref() {
         None => rsx! { div { class: "events-topics-loading", {i18n::t(locale, "loading")} } },
-        Some(Err(e)) => rsx! { div { class: "events-topics-error", "{e}" } },
+        Some(Err(e)) => rsx! {
+            div { class: "events-topics-error",
+                div { "{e}" }
+                button {
+                    class: "btn btn--small",
+                    onclick: move |_| topics_info.restart(),
+                    {i18n::t(locale, "btn_retry")}
+                }
+            }
+        },
         Some(Ok(props)) if props.topics.is_empty() => rsx! {
             div { class: "events-topics-empty", {i18n::t(locale, "events_topics_empty")} }
         },

@@ -12,7 +12,7 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
     let profile_token = ctx.selected_profile.read().clone();
 
     // Fetch settings + options together
-    let data = use_resource(move || {
+    let mut data = use_resource(move || {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         let profile = profile_token.clone();
@@ -62,7 +62,16 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
             div { class: "imaging-body",
                 match &*data.read_unchecked() {
                     None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
-                    Some(Err(e)) => rsx! { div { class: "tab-error", "{e}" } },
+                    Some(Err(e)) => rsx! {
+                        div { class: "tab-error",
+                            span { "{e}" }
+                            button {
+                                class: "btn btn-sm btn-ghost tab-error-retry",
+                                onclick: move |_| data.restart(),
+                                {i18n::t(locale, "btn_retry")}
+                            }
+                        }
+                    },
                     Some(Ok((source_token, settings, options))) => {
                         // Init local signals from fetched data (once)
                         if !*initialized.peek() {

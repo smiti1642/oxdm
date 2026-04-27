@@ -66,7 +66,16 @@ pub fn NetworkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
     rsx! {
         match &*info.read_unchecked() {
             None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
-            Some(Err(e)) => rsx! { div { class: "tab-error", "{e}" } },
+            Some(Err(e)) => rsx! {
+                div { class: "tab-error",
+                    span { "{e}" }
+                    button {
+                        class: "btn btn-sm btn-ghost tab-error-retry",
+                        onclick: move |_| info.restart(),
+                        {i18n::t(locale, "btn_retry")}
+                    }
+                }
+            },
             Some(Ok(data)) => rsx! {
                 HostnameSection {
                     addr, creds, refresh,

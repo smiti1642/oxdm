@@ -1153,7 +1153,12 @@ a      { color: var(--blue); text-decoration: none; }
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
+.tab-error-retry { align-self: flex-start; }
 .tab-empty {
   padding: 16px 12px;
   color: var(--overlay0);

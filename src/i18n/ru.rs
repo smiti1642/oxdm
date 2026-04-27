@@ -27,6 +27,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scan_label" => "\u{0421}\u{043A}\u{0430}\u{043D}.",
         "btn_scanning" => "\u{0421}\u{043A}\u{0430}\u{043D}.\u{2026}",
         "btn_scanning_tooltip" => "Сканирование уже выполняется.",
+        "btn_retry" => "Повторить",
         "net_disabled_by_dhcp" => "Недоступно при включённом DHCP.",
         "btn_add_label" => "\u{0414}\u{043E}\u{0431}.",
 

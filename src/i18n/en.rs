@@ -27,6 +27,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scan_label" => "Scan",
         "btn_scanning" => "Scanning\u{2026}",
         "btn_scanning_tooltip" => "A scan is already in progress.",
+        "btn_retry" => "Retry",
         "net_disabled_by_dhcp" => "Disabled while DHCP is on.",
         "btn_add_label" => "Add",
 

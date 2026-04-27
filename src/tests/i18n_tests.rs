@@ -30,6 +30,7 @@ const ALL_KEYS: &[&str] = &[
     "btn_scan_label",
     "btn_scanning",
     "btn_scanning_tooltip",
+    "btn_retry",
     "net_disabled_by_dhcp",
     "btn_add_label",
     // Device Panel

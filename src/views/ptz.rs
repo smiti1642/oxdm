@@ -443,7 +443,16 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                         Some(Err(e)) if e == "ptz_unavailable" => rsx! {
                             div { class: "ptz-presets-empty", {i18n::t(locale, "ptz_unavailable")} }
                         },
-                        Some(Err(e)) => rsx! { div { class: "ptz-presets-empty", "{e}" } },
+                        Some(Err(e)) => rsx! {
+                            div { class: "ptz-presets-empty",
+                                span { "{e}" }
+                                button {
+                                    class: "btn btn-sm btn-ghost tab-error-retry",
+                                    onclick: move |_| presets_state.restart(),
+                                    {i18n::t(locale, "btn_retry")}
+                                }
+                            }
+                        },
                         Some(Ok(list)) if list.is_empty() => rsx! {
                             div { class: "ptz-presets-empty", {i18n::t(locale, "ptz_no_presets")} }
                         },

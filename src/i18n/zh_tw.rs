@@ -27,6 +27,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scan_label" => "\u{6383}\u{63CF}",
         "btn_scanning" => "\u{6383}\u{63CF}\u{4E2D}\u{2026}",
         "btn_scanning_tooltip" => "已有一個掃描進行中。",
+        "btn_retry" => "重試",
         "net_disabled_by_dhcp" => "DHCP 開啟時無法手動設定。",
         "btn_add_label" => "\u{65B0}\u{589E}",
 

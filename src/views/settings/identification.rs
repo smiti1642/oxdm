@@ -36,7 +36,14 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
                 div { class: "tab-loading", {i18n::t(locale, "loading")} }
             },
             Some(Err(e)) => rsx! {
-                div { class: "tab-error", "{e}" }
+                div { class: "tab-error",
+                    span { "{e}" }
+                    button {
+                        class: "btn btn-sm btn-ghost tab-error-retry",
+                        onclick: move |_| info.restart(),
+                        {i18n::t(locale, "btn_retry")}
+                    }
+                }
             },
             Some(Ok((dev, scopes))) => {
                 if !*initialized.peek() {
