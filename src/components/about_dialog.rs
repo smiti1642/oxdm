@@ -26,9 +26,18 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
+            tabindex: "-1",
             onmousedown: {
                 let mut open = open;
                 move |_| open.set(false)
+            },
+            onkeydown: {
+                let mut open = open;
+                move |evt: KeyboardEvent| {
+                    if evt.key() == Key::Escape {
+                        open.set(false);
+                    }
+                }
             },
 
             div {

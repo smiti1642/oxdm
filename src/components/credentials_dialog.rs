@@ -28,7 +28,13 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
+            tabindex: "-1",
             onmousedown: move |_| open_sig.set(false),
+            onkeydown: move |evt: KeyboardEvent| {
+                if evt.key() == Key::Escape {
+                    open_sig.set(false);
+                }
+            },
             div {
                 class: "dialog",
                 onmousedown: |e| e.stop_propagation(),
@@ -105,7 +111,13 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
+            tabindex: "-1",
             onmousedown: move |_| open_sig.set(false),
+            onkeydown: move |evt: KeyboardEvent| {
+                if evt.key() == Key::Escape {
+                    open_sig.set(false);
+                }
+            },
             div {
                 class: "dialog dialog--wide",
                 onmousedown: |e| e.stop_propagation(),

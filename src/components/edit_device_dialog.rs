@@ -51,9 +51,16 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
     rsx! {
         div {
             class: "dialog-overlay",
+            tabindex: "-1",
             onmousedown: move |_| {
                 name.set(String::new());
                 open_sig.set(false);
+            },
+            onkeydown: move |evt: KeyboardEvent| {
+                if evt.key() == Key::Escape {
+                    name.set(String::new());
+                    open_sig.set(false);
+                }
             },
             div {
                 class: "dialog dialog--wide",

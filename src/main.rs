@@ -14,7 +14,7 @@ mod video;
 mod views;
 
 use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, Topbar};
-use state::{Ctx, SettingsTab, View};
+use state::{Ctx, GlobalKey, SettingsTab, View};
 use views::MainContent;
 
 /// CSS is embedded directly in the binary so the release ships as a
@@ -118,6 +118,7 @@ fn App() -> Element {
         dialog: use_signal(|| None),
         global_credentials: use_signal(|| global_creds),
         selected_profile: use_signal(|| None),
+        keyboard_action: use_signal(|| None),
     };
     use_context_provider(|| ctx);
 
@@ -157,7 +158,40 @@ fn App() -> Element {
                     }
                 }
             },
-            div { class: theme_class,
+            div {
+                class: theme_class,
+                tabindex: "-1",
+                autofocus: true,
+                // App-level shortcuts. Esc is handled per-modal because each
+                // dialog has its own close semantics; the keys here are the
+                // ones that should always work no matter what's focused.
+                onkeydown: move |evt| {
+                    let key = evt.key();
+                    let mods = evt.modifiers();
+                    use dioxus::html::input_data::keyboard_types::{Key, Modifiers};
+                    let ctrl_or_meta =
+                        mods.contains(Modifiers::CONTROL) || mods.contains(Modifiers::META);
+                    let mut action = ctx.keyboard_action;
+                    match key {
+                        Key::Character(ref s) if ctrl_or_meta && s.eq_ignore_ascii_case("f") => {
+                            action.set(Some(GlobalKey::FocusSearch));
+                            evt.prevent_default();
+                        }
+                        Key::F5 => {
+                            action.set(Some(GlobalKey::Scan));
+                            evt.prevent_default();
+                        }
+                        Key::ArrowUp => {
+                            action.set(Some(GlobalKey::NavUp));
+                            evt.prevent_default();
+                        }
+                        Key::ArrowDown => {
+                            action.set(Some(GlobalKey::NavDown));
+                            evt.prevent_default();
+                        }
+                        _ => {}
+                    }
+                },
                 Topbar {}
                 div { class: "shell-body",
                     DeviceList {}

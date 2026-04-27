@@ -28,7 +28,13 @@ pub fn ConfirmDialogModal() -> Element {
     rsx! {
         div {
             class: "dialog-overlay",
+            tabindex: "-1",
             onmousedown: move |_| dialog_sig.set(None),
+            onkeydown: move |evt: KeyboardEvent| {
+                if evt.key() == Key::Escape {
+                    dialog_sig.set(None);
+                }
+            },
 
             div {
                 class: "dialog",

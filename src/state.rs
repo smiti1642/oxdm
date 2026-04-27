@@ -196,6 +196,24 @@ pub struct Ctx {
     pub global_credentials: Signal<Credentials>,
     /// Currently selected media profile token (for NVT operations).
     pub selected_profile: Signal<Option<String>>,
+    /// Pending global keyboard shortcut. Producers (root onkeydown) write
+    /// here; consumers (DeviceList, etc.) react via use_effect and clear
+    /// the slot back to None. `Esc` is handled by individual modals via
+    /// their own onkeydown — they have richer close semantics than a
+    /// global signal can express cleanly.
+    pub keyboard_action: Signal<Option<GlobalKey>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GlobalKey {
+    /// Ctrl+F / Cmd+F — focus the device list filter input.
+    FocusSearch,
+    /// F5 — kick off a WS-Discovery scan.
+    Scan,
+    /// Up arrow — move device list selection up by one.
+    NavUp,
+    /// Down arrow — move device list selection down by one.
+    NavDown,
 }
 
 impl Ctx {
