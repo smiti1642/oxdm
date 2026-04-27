@@ -232,6 +232,11 @@ fn icon_paths(name: &str) -> Element {
         "navigation-2" => rsx! {
             path { d: "M12 2 19 21l-7-4-7 4z" }
         },
+        "download" => rsx! {
+            path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
+            polyline { points: "7 10 12 15 17 10" }
+            line { x1: "12", x2: "12", y1: "15", y2: "3" }
+        },
         _ => rsx! {
             circle { cx: "12", cy: "12", r: "10" }
             path { d: "M12 16v-4" }

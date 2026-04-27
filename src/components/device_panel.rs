@@ -329,6 +329,8 @@ fn ProfileCard(
     let token_live = profile_token.clone();
     let token_img = profile_token.clone();
     let token_ptz = profile_token.clone();
+    let name_for_save = profile_name.clone();
+    let data_uri_for_save = data_uri;
 
     rsx! {
         div {
@@ -379,8 +381,101 @@ fn ProfileCard(
                         },
                         Icon { name: "crosshair", size: 12 }
                     }
+                    button {
+                        class: "thumb-action",
+                        title: i18n::t(locale, "snapshot_save"),
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            // Snapshot only the *current* data URI value;
+                            // fire-and-forget the save so the file dialog
+                            // doesn't block the auto-refresh tick.
+                            let snap = match &*data_uri_for_save.read_unchecked() {
+                                Some(Ok(uri)) => uri.clone(),
+                                _ => {
+                                    ctx.push_toast(
+                                        crate::state::ToastLevel::Error,
+                                        i18n::t(locale, "snapshot_save_no_image"),
+                                    );
+                                    return;
+                                }
+                            };
+                            let default_name = format!("{}.jpg", sanitize_filename(&name_for_save));
+                            let toast_ctx = ctx;
+                            let saved_label = i18n::t(locale, "snapshot_saved").to_string();
+                            let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
+                            spawn(async move {
+                                let Some(handle) = rfd::AsyncFileDialog::new()
+                                    .set_file_name(&default_name)
+                                    .add_filter("JPEG", &["jpg", "jpeg"])
+                                    .save_file()
+                                    .await
+                                else {
+                                    return;
+                                };
+                                let path = handle.path().to_path_buf();
+                                match decode_jpeg_data_uri(&snap) {
+                                    Some(bytes) => match std::fs::write(&path, &bytes) {
+                                        Ok(()) => {
+                                            tracing::info!(path = %path.display(), bytes = bytes.len(), "snapshot saved");
+                                            toast_ctx.push_toast(
+                                                crate::state::ToastLevel::Success,
+                                                format!("{}: {}", saved_label, path.display()),
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(error = %e, path = %path.display(), "snapshot save failed");
+                                            toast_ctx.push_toast(
+                                                crate::state::ToastLevel::Error,
+                                                format!("{failed_label}: {e}"),
+                                            );
+                                        }
+                                    },
+                                    None => {
+                                        toast_ctx.push_toast(
+                                            crate::state::ToastLevel::Error,
+                                            failed_label,
+                                        );
+                                    }
+                                }
+                            });
+                        },
+                        Icon { name: "download", size: 12 }
+                    }
                 }
             }
         }
     }
+}
+
+/// Strip non-filesystem-safe characters and collapse whitespace so the
+/// suggested filename in the Save dialog doesn't get rejected on
+/// Windows (which forbids `<>:"/\|?*`).
+fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "snapshot".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Decode a `data:image/jpeg;base64,...` URI into raw JPEG bytes.
+/// Returns `None` if the URI doesn't have the expected prefix or the
+/// base64 payload doesn't decode.
+fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    // We accept both "image/jpeg" and "image/jpg" since some cameras
+    // (and our own snapshot fetcher) have shipped both at various points.
+    let payload = uri
+        .strip_prefix("data:image/jpeg;base64,")
+        .or_else(|| uri.strip_prefix("data:image/jpg;base64,"))?;
+    STANDARD.decode(payload).ok()
 }
