@@ -72,6 +72,7 @@ pub enum View {
     ImagingSettings,
     PtzControl,
     Events,
+    Osd,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

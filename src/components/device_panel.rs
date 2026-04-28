@@ -41,6 +41,7 @@ pub fn DevicePanel() -> Element {
             div { class: "panel-section",
                 div { class: "panel-section-title", {i18n::t(locale, "section_general")} }
                 NavLink { view: View::DeviceSettings, icon: "settings", label: i18n::t(locale, "nav_settings") }
+                NavLink { view: View::Osd,            icon: "info",     label: i18n::t(locale, "nav_osd") }
                 NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
             }
 
@@ -98,7 +99,7 @@ fn ProfileThumbnails() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    let profiles_res = use_resource(move || {
+    let mut profiles_res = use_resource(move || {
         let devices = ctx.devices.read();
         let selected = *ctx.selected.read();
         let dev = selected.and_then(|i| devices.get(i)).cloned();
@@ -225,7 +226,12 @@ fn ProfileThumbnails() -> Element {
                             snapshot_url: info.snapshot_url.clone(),
                             invalid_after_connect: info.invalid_after_connect,
                             creds: info.creds.clone(),
+                            on_changed: move |_| profiles_res.restart(),
                         }
+                    }
+                    NewProfileCard {
+                        device_addr: addr_now.clone(),
+                        on_created: move |_| profiles_res.restart(),
                     }
                 }
             },
@@ -244,6 +250,9 @@ fn ProfileCard(
     /// one — see `ProfileInfo::invalid_after_connect`.
     invalid_after_connect: bool,
     creds: Credentials,
+    /// Fired after a successful create/delete so the parent's
+    /// `profiles_res` can restart and re-render the grid.
+    on_changed: EventHandler<()>,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
@@ -267,6 +276,14 @@ fn ProfileCard(
     // The flag is reset implicitly when the user re-selects the device,
     // because that creates a fresh ProfileCard instance with a fresh signal.
     let mut broken = use_signal(|| false);
+
+    // Stash extra clones up front for the delete-button onclick — the
+    // use_resource closure below moves device_addr / creds / profile_token
+    // into its async block, so these copies need to be split off first.
+    let token_for_delete = profile_token.clone();
+    let device_addr_for_delete = device_addr.clone();
+    let creds_for_delete = creds.clone();
+    let name_for_delete = profile_name.clone();
 
     // Fetch snapshot via Rust backend (handles Digest auth, self-signed certs).
     // For most cameras the cached URL is reused every tick. For cameras that
@@ -407,6 +424,47 @@ fn ProfileCard(
                     },
                     Icon { name: "download", size: 12 }
                 }
+                button {
+                    class: "thumb-profile-delete",
+                    title: i18n::t(locale, "profile_delete"),
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        let token = token_for_delete.clone();
+                        let device_addr = device_addr_for_delete.clone();
+                        let creds = creds_for_delete.clone();
+                        let name = name_for_delete.clone();
+                        let on_changed = on_changed;
+                        let confirm_label = i18n::t(locale, "btn_confirm").to_string();
+                        let cancel_label = i18n::t(locale, "btn_cancel").to_string();
+                        let title = i18n::t(locale, "profile_delete_title").to_string();
+                        let message = i18n::t(locale, "profile_delete_confirm").replace("{name}", &name);
+                        ctx.dialog.clone().set(Some(crate::state::ConfirmDialog {
+                            title,
+                            message,
+                            confirm_label,
+                            cancel_label,
+                            dangerous: true,
+                            on_confirm: Callback::new(move |_| {
+                                let token = token.clone();
+                                let device_addr = device_addr.clone();
+                                let creds = creds.clone();
+                                let on_changed = on_changed;
+                                spawn(async move {
+                                    let (u, p) = creds.as_options();
+                                    match api::delete_profile(&device_addr, u, p, &token).await {
+                                        Ok(()) => {
+                                            ctx.push_toast(crate::state::ToastLevel::Success,
+                                                i18n::t(locale, "profile_deleted"));
+                                            on_changed.call(());
+                                        }
+                                        Err(e) => ctx.push_toast(crate::state::ToastLevel::Error, e),
+                                    }
+                                });
+                            }),
+                        }));
+                    },
+                    Icon { name: "x", size: 12 }
+                }
             }
             div { class: "thumb-footer",
                 span { class: "thumb-label", "{profile_name}" }
@@ -478,4 +536,104 @@ fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
         .strip_prefix("data:image/jpeg;base64,")
         .or_else(|| uri.strip_prefix("data:image/jpg;base64,"))?;
     STANDARD.decode(payload).ok()
+}
+
+/// "+ New profile" tile that toggles into an inline name input. Sits at
+/// the end of the thumbnail grid so creating a profile feels like
+/// adding another card. Inline form (vs popup modal) keeps the action
+/// in context.
+#[component]
+fn NewProfileCard(device_addr: String, on_created: EventHandler<()>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    let mut editing = use_signal(|| false);
+    let mut name = use_signal(String::new);
+    let mut saving = use_signal(|| false);
+
+    // use_callback so the same dispatch can fire from the input's
+    // Enter key handler and the Save button without lifetime gymnastics.
+    let do_create = use_callback(move |_: ()| {
+        let n = name.read().trim().to_string();
+        if n.is_empty() || *saving.read() {
+            return;
+        }
+        saving.set(true);
+        let device_addr = device_addr.clone();
+        let on_created = on_created;
+        spawn(async move {
+            // Profile creation needs admin creds. We use the global
+            // credentials Ctx provides — manual devices override via
+            // their own per-device creds in the same lookup path the
+            // rest of the app uses.
+            let creds = ctx
+                .selected
+                .peek()
+                .and_then(|i| ctx.devices.peek().get(i).cloned())
+                .map(|d| ctx.credentials_for(&d))
+                .unwrap_or_else(|| ctx.global_credentials.peek().clone());
+            let (u, p) = creds.as_options();
+            match api::create_profile(&device_addr, u, p, &n).await {
+                Ok(_) => {
+                    ctx.push_toast(
+                        crate::state::ToastLevel::Success,
+                        i18n::t(locale, "profile_created"),
+                    );
+                    name.set(String::new());
+                    editing.set(false);
+                    on_created.call(());
+                }
+                Err(e) => ctx.push_toast(crate::state::ToastLevel::Error, e),
+            }
+            saving.set(false);
+        });
+    });
+
+    rsx! {
+        div { class: "thumb-card thumb-card--new",
+            if *editing.read() {
+                div { class: "new-profile-form",
+                    input {
+                        class: "form-input",
+                        r#type: "text",
+                        placeholder: i18n::t(locale, "profile_name_placeholder"),
+                        value: "{name}",
+                        oninput: move |evt: Event<FormData>| name.set(evt.value()),
+                        onkeydown: move |evt| {
+                            if evt.key() == Key::Enter {
+                                do_create.call(());
+                            } else if evt.key() == Key::Escape {
+                                editing.set(false);
+                                name.set(String::new());
+                            }
+                        },
+                    }
+                    div { class: "new-profile-form-actions",
+                        button {
+                            class: "btn btn-sm btn-ghost",
+                            onclick: move |_| {
+                                editing.set(false);
+                                name.set(String::new());
+                            },
+                            {i18n::t(locale, "btn_cancel")}
+                        }
+                        button {
+                            class: "btn btn-sm btn-primary",
+                            disabled: name.read().trim().is_empty() || *saving.read(),
+                            onclick: move |_| do_create.call(()),
+                            {i18n::t(locale, "btn_save")}
+                        }
+                    }
+                }
+            } else {
+                button {
+                    class: "new-profile-btn",
+                    onclick: move |_| editing.set(true),
+                    Icon { name: "plus", size: 24 }
+                    span { class: "new-profile-label",
+                        {i18n::t(locale, "profile_create")}
+                    }
+                }
+            }
+        }
+    }
 }

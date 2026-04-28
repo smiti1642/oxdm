@@ -1,8 +1,8 @@
 use oxvif::{
     Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
-    NtpInfo, OnvifClient, PtzPreset, PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime,
-    User,
+    NtpInfo, OnvifClient, OsdConfiguration, PtzPreset, PullPointSubscription, SnapshotUri,
+    StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
@@ -1349,5 +1349,145 @@ pub async fn unsubscribe_events(
         build_client(addr, username, password)
             .unsubscribe(subscription_url)
             .await,
+    )
+}
+
+// ── OSD ─────────────────────────────────────────────────────────────────────
+//
+// Two-call pattern in every wrapper: GetCapabilities → media_url, then
+// the OSD operation. The cost is one extra round-trip per call which
+// matters less here than for hot paths (snapshot loop) — the OSD UI is
+// click-driven, not auto-refreshed.
+
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_osds(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<Vec<OsdConfiguration>, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    // Resolve the video source config token from the selected profile so
+    // the GetOSDs call only returns OSDs attached to *this* video stream.
+    // Without the filter the camera returns every OSD across every
+    // configuration, which the UI would have to filter anyway.
+    let profiles = client
+        .get_profiles(&media_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    let vsc_token = profiles
+        .iter()
+        .find(|p| p.token == profile_token)
+        .and_then(|p| p.video_source_config_token.clone())
+        .ok_or("Profile has no video source configuration")?;
+    trace_result(
+        "GetOSDs",
+        addr,
+        client.get_osds(&media_url, Some(&vsc_token)).await,
+    )
+}
+
+#[instrument(skip(username, password, osd), fields(addr, token = %osd.token))]
+pub async fn set_osd(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    osd: &OsdConfiguration,
+) -> Result<(), ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result("SetOSD", addr, client.set_osd(&media_url, osd).await)
+}
+
+#[instrument(skip(username, password, osd), fields(addr))]
+pub async fn create_osd(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    osd: &OsdConfiguration,
+) -> Result<String, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result("CreateOSD", addr, client.create_osd(&media_url, osd).await)
+}
+
+#[instrument(skip(username, password), fields(addr, osd_token))]
+pub async fn delete_osd(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    osd_token: &str,
+) -> Result<(), ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result(
+        "DeleteOSD",
+        addr,
+        client.delete_osd(&media_url, osd_token).await,
+    )
+}
+
+/// Resolve the video source configuration token for a profile.
+/// Used by the OSD UI when CREATING a new OSD — the new entry needs
+/// to know which video source it attaches to.
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_video_source_config_token(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<String, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    let profiles = client
+        .get_profiles(&media_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    profiles
+        .iter()
+        .find(|p| p.token == profile_token)
+        .and_then(|p| p.video_source_config_token.clone())
+        .ok_or_else(|| "Profile has no video source configuration".to_string())
+}
+
+// ── Profile management ──────────────────────────────────────────────────────
+
+#[instrument(skip(username, password), fields(addr, name))]
+pub async fn create_profile(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    name: &str,
+) -> Result<MediaProfile, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result(
+        "CreateProfile",
+        addr,
+        client.create_profile(&media_url, name, None).await,
+    )
+}
+
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn delete_profile(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<(), ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    trace_result(
+        "DeleteProfile",
+        addr,
+        client.delete_profile(&media_url, profile_token).await,
     )
 }

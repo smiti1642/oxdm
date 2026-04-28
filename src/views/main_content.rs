@@ -5,6 +5,7 @@ use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::events::EventsView;
 use crate::views::imaging::ImagingView;
 use crate::views::live_video::LiveVideoView;
+use crate::views::osd::OsdView;
 use crate::views::ptz::PtzControlView;
 use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
 use dioxus::prelude::*;
@@ -48,6 +49,7 @@ pub fn MainContent() -> Element {
                 View::ImagingSettings => rsx! { ImagingView        { key: "{addr_key}", addr, creds } },
                 View::PtzControl      => rsx! { PtzControlView     { key: "{addr_key}", addr, creds } },
                 View::Events          => rsx! { EventsView         { key: "{addr_key}", addr, creds } },
+                View::Osd             => rsx! { OsdView            { key: "{addr_key}", addr, creds } },
             }
         }
     }
