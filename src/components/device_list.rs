@@ -72,6 +72,42 @@ impl SortBy {
     }
 }
 
+/// Compute the device list as the UI sees it — same filter + sort that
+/// the render path applies. Returns *original* indices (into `devs`)
+/// in their visible order, so the keyboard navigator and any other
+/// caller can step through them and write back into `selected`
+/// without remembering a separate visible-index space.
+fn visible_device_indices(
+    devs: &[DeviceEntry],
+    filter_lower: &str,
+    status: StatusFilter,
+    sort: SortBy,
+    tab: DeviceListTab,
+) -> Vec<usize> {
+    let mut indices: Vec<usize> = devs
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| {
+            let tab_match = match tab {
+                DeviceListTab::Discovered => !d.manual,
+                DeviceListTab::Manual => d.manual,
+            };
+            tab_match
+                && status.matches(d.auth_status)
+                && (filter_lower.is_empty()
+                    || d.name.to_lowercase().contains(filter_lower)
+                    || d.display_addr.contains(filter_lower))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    match sort {
+        SortBy::Default => {}
+        SortBy::Name => indices.sort_by_key(|&i| devs[i].name.to_lowercase()),
+        SortBy::Ip => indices.sort_by_key(|&i| ip_to_u32(&devs[i].display_addr)),
+    }
+    indices
+}
+
 /// Parse a dotted-quad IPv4 into its packed u32 for numeric sort.
 /// Non-IPv4 strings collide at `u32::MAX`, which is fine — they end up
 /// sorted together at the bottom.
@@ -299,20 +335,39 @@ pub fn DeviceList() -> Element {
                 }
             }
             crate::state::GlobalKey::NavUp | crate::state::GlobalKey::NavDown => {
-                let len = ctx.devices.peek().len();
-                if len > 0 {
-                    let cur = ctx.selected.peek().unwrap_or(0);
-                    let next = if matches!(action, crate::state::GlobalKey::NavUp) {
-                        if cur == 0 {
-                            len - 1
-                        } else {
-                            cur - 1
-                        }
-                    } else {
-                        (cur + 1) % len
-                    };
-                    ctx.selected.clone().set(Some(next));
+                // Walk the *visible* list, not the underlying devices, so a
+                // search filter or status filter narrows the navigation
+                // accordingly. If the current selection is filtered out,
+                // jump to the first/last visible entry depending on direction.
+                let devs = ctx.devices.peek();
+                let visible = visible_device_indices(
+                    &devs,
+                    &filter.peek().to_lowercase(),
+                    *status_filter.peek(),
+                    *sort_by.peek(),
+                    *list_tab.peek(),
+                );
+                if visible.is_empty() {
+                    return;
                 }
+                let cur_pos = ctx
+                    .selected
+                    .peek()
+                    .and_then(|sel| visible.iter().position(|&i| i == sel));
+                let new_pos = match (cur_pos, action) {
+                    (Some(p), crate::state::GlobalKey::NavUp) => {
+                        if p == 0 {
+                            visible.len() - 1
+                        } else {
+                            p - 1
+                        }
+                    }
+                    (Some(p), crate::state::GlobalKey::NavDown) => (p + 1) % visible.len(),
+                    (None, crate::state::GlobalKey::NavDown) => 0,
+                    (None, _) => visible.len() - 1,
+                    _ => return,
+                };
+                ctx.selected.clone().set(Some(visible[new_pos]));
             }
         }
         keyboard_action_sig.set(None);
