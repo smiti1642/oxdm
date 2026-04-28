@@ -61,6 +61,22 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                             code { "{log_path}" }
                         }
                     }
+                    label { class: "about-log-toggle",
+                        input {
+                            r#type: "checkbox",
+                            checked: *ctx.log_to_file.read(),
+                            onchange: {
+                                let mut log_sig = ctx.log_to_file;
+                                move |evt: Event<FormData>| log_sig.set(evt.checked())
+                            },
+                        }
+                        span { class: "about-log-toggle-text",
+                            {i18n::t(locale, "about_log_to_file")}
+                        }
+                        span { class: "about-log-toggle-hint",
+                            {i18n::t(locale, "about_log_takes_effect")}
+                        }
+                    }
 
                     div { class: "about-shortcuts",
                         div { class: "about-shortcuts-title", {i18n::t(locale, "about_shortcuts")} }

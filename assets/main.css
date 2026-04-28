@@ -1955,6 +1955,26 @@ iframe.live-video-frame {
 }
 .about-footer { gap: 6px; }
 
+.about-log-toggle {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  flex-wrap: wrap;
+}
+.about-log-toggle input { cursor: pointer; }
+.about-log-toggle-text { color: var(--text); }
+.about-log-toggle-hint {
+  color: var(--overlay0);
+  font-size: 11px;
+  flex-basis: 100%;
+  margin-left: 22px;
+}
+
 .about-shortcuts {
   margin-top: 16px;
   width: 100%;

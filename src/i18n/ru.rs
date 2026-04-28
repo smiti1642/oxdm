@@ -106,6 +106,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "shortcut_scan" => "Начать поиск",
         "shortcut_nav_devices" => "Перемещение по списку",
         "shortcut_close_modal" => "Закрыть диалог",
+        "about_log_to_file" => "Сохранять логи на диск",
+        "about_log_takes_effect" => "(применится после перезапуска)",
         "btn_save" => "\u{0421}\u{043E}\u{0445}\u{0440}.",
         "btn_confirm" => "\u{041F}\u{043E}\u{0434}\u{0442}\u{0432}.",
         "btn_add_short" => "\u{0414}\u{043E}\u{0431}.",

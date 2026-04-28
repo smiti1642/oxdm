@@ -22,6 +22,11 @@ pub struct ConfigFile {
     pub theme: String,
     #[serde(default)]
     pub locale: String,
+    /// Persist tracing output to `~/.oxdm/logs/oxdm.log.*`. Defaults to
+    /// `false` so a fresh install doesn't quietly start writing log files
+    /// most users won't read; the About dialog has the toggle.
+    #[serde(default)]
+    pub log_to_file: bool,
     // Legacy fields — read for migration, not written
     #[serde(default)]
     pub username: String,
@@ -224,19 +229,21 @@ pub fn load_devices(creds_map: &CredsMap) -> Vec<DeviceEntry> {
 
 // ── Save ────────────────────────────────────────────────────────────────────
 
-pub fn save_config(theme: Theme, locale: Locale) {
+pub fn save_config(theme: Theme, locale: Locale, log_to_file: bool) {
     ensure_dir();
 
-    // Save theme/locale to config.toml (no credentials)
+    // Save theme/locale/log preference to config.toml (no credentials)
     if let Some(path) = config_path() {
         #[derive(Serialize)]
         struct ConfigOut {
             theme: String,
             locale: String,
+            log_to_file: bool,
         }
         let cfg = ConfigOut {
             theme: theme_to_str(theme).to_string(),
             locale: locale_to_str(locale).to_string(),
+            log_to_file,
         };
         match toml::to_string_pretty(&cfg) {
             Ok(content) => {

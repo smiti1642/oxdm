@@ -21,40 +21,45 @@ use views::MainContent;
 /// single executable — no sibling `assets/` directory needed at runtime.
 const MAIN_CSS: &str = include_str!("../assets/main.css");
 
-/// Set up tracing with a stderr layer (env-filter respected) plus a
-/// daily-rolling file appender at `~/.oxdm/logs/oxdm.log`. Returns the
-/// file appender's `WorkerGuard` — the caller MUST keep it alive (bind
-/// it for the duration of `main`) so the background flush thread isn't
-/// dropped before the program exits.
-fn init_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+/// Set up tracing with a stderr layer (env-filter respected). When
+/// `log_to_file` is true, also adds a daily-rolling file appender at
+/// `~/.oxdm/logs/oxdm.log.*` and returns its `WorkerGuard` — the caller
+/// MUST keep it alive (bind it for the duration of `main`) so the
+/// background flush thread isn't dropped before the program exits.
+///
+/// Defaults to off because most users never look at logs but they do
+/// notice ~/.oxdm growing on disk. The About dialog has the toggle and
+/// it persists to config.toml; takes effect on next launch.
+fn init_logging(log_to_file: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     let env_filter =
         || EnvFilter::try_from_default_env().unwrap_or_else(|_| "oxdm=info".parse().unwrap());
     let stderr_layer = fmt::layer().with_target(false).with_filter(env_filter());
 
-    // File appender: daily rolling under ~/.oxdm/logs/. Failure here
-    // (no home dir, no write perms) is non-fatal — we still get stderr
-    // output and the user sees the warning on first launch.
-    let log_dir = dirs::home_dir().map(|h| h.join(".oxdm").join("logs"));
-    let (file_layer, guard) = match log_dir {
-        Some(ref dir) => match std::fs::create_dir_all(dir) {
-            Ok(()) => {
-                let file_appender = tracing_appender::rolling::daily(dir, "oxdm.log");
-                let (nb, guard) = tracing_appender::non_blocking(file_appender);
-                let layer = fmt::layer()
-                    .with_writer(nb)
-                    .with_ansi(false)
-                    .with_target(false)
-                    .with_filter(env_filter());
-                (Some(layer), Some(guard))
-            }
-            Err(e) => {
-                eprintln!("Could not create log dir {}: {e}", dir.display());
-                (None, None)
-            }
-        },
-        None => (None, None),
+    let (file_layer, guard) = if log_to_file {
+        let log_dir = dirs::home_dir().map(|h| h.join(".oxdm").join("logs"));
+        match log_dir {
+            Some(ref dir) => match std::fs::create_dir_all(dir) {
+                Ok(()) => {
+                    let file_appender = tracing_appender::rolling::daily(dir, "oxdm.log");
+                    let (nb, guard) = tracing_appender::non_blocking(file_appender);
+                    let layer = fmt::layer()
+                        .with_writer(nb)
+                        .with_ansi(false)
+                        .with_target(false)
+                        .with_filter(env_filter());
+                    (Some(layer), Some(guard))
+                }
+                Err(e) => {
+                    eprintln!("Could not create log dir {}: {e}", dir.display());
+                    (None, None)
+                }
+            },
+            None => (None, None),
+        }
+    } else {
+        (None, None)
     };
 
     tracing_subscriber::registry()
@@ -71,9 +76,14 @@ pub fn log_dir() -> Option<std::path::PathBuf> {
 }
 
 fn main() {
-    let _log_guard = init_logging();
+    // Read just the log preference up-front so init_logging knows whether
+    // to spin up the file appender. The full config is re-loaded inside
+    // App() — this duplicate read is one tiny TOML parse, not worth a
+    // hand-off mechanism.
+    let log_to_file = persist::load_config().log_to_file;
+    let _log_guard = init_logging(log_to_file);
 
-    tracing::info!("OxDM starting");
+    tracing::info!(log_to_file, "OxDM starting");
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
@@ -119,14 +129,16 @@ fn App() -> Element {
         global_credentials: use_signal(|| global_creds),
         selected_profile: use_signal(|| None),
         keyboard_action: use_signal(|| None),
+        log_to_file: use_signal(|| cfg.log_to_file),
     };
     use_context_provider(|| ctx);
 
-    // Auto-save when theme or locale change
+    // Auto-save when theme / locale / log preference change
     use_effect(move || {
         let theme = *ctx.theme.read();
         let locale = *ctx.locale.read();
-        persist::save_config(theme, locale);
+        let log_to_file = *ctx.log_to_file.read();
+        persist::save_config(theme, locale, log_to_file);
     });
 
     // Re-verify auth when credentials change

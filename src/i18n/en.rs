@@ -106,6 +106,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "shortcut_scan" => "Start a discovery scan",
         "shortcut_nav_devices" => "Move device selection",
         "shortcut_close_modal" => "Close the open dialog",
+        "about_log_to_file" => "Save logs to disk",
+        "about_log_takes_effect" => "(takes effect on next launch)",
         "btn_save" => "Save",
         "btn_confirm" => "Confirm",
         "btn_add_short" => "Add",

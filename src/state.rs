@@ -196,6 +196,9 @@ pub struct Ctx {
     pub global_credentials: Signal<Credentials>,
     /// Currently selected media profile token (for NVT operations).
     pub selected_profile: Signal<Option<String>>,
+    /// Persist tracing output to disk. Toggled in the About dialog,
+    /// saved to config.toml, applied on next launch.
+    pub log_to_file: Signal<bool>,
     /// Pending global keyboard shortcut. Producers (root onkeydown) write
     /// here; consumers (DeviceList, etc.) react via use_effect and clear
     /// the slot back to None. `Esc` is handled by individual modals via
