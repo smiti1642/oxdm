@@ -32,10 +32,15 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
     let locale = *ctx.locale.read();
     let mut mode = use_signal(|| LiveVideoMode::Snapshot);
 
-    let backend_id = match *mode.read() {
+    // Memo so LiveVideoStage's use_resource sees the backend choice
+    // as a reactive dep — Dioxus only re-runs a resource when signals
+    // it reads change, so passing a plain value (or relying on `key`
+    // on a single child) doesn't actually trigger a re-fetch on tab
+    // switch.
+    let backend_id = use_memo(move || match *mode.read() {
         LiveVideoMode::Snapshot => "mjpeg",
         LiveVideoMode::Rtsp => "go2rtc",
-    };
+    });
     let backend_display = match *mode.read() {
         LiveVideoMode::Snapshot => video::mjpeg(),
         LiveVideoMode::Rtsp => video::go2rtc(),
@@ -68,15 +73,10 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                 }
             }
 
-            // `key` forces the Stage to fully remount when the tab
-            // changes. Otherwise `use_resource` inside the Stage
-            // captures `backend_id` as a value, not a signal, so it
-            // never re-fetches when the user flips Snapshot ↔ RTSP.
             LiveVideoStage {
-                key: "{backend_id}",
                 addr,
                 creds,
-                backend_id: Some(backend_id),
+                backend_id: Some(backend_id.into()),
             }
         }
     }
@@ -114,12 +114,14 @@ fn ModeTab(
 pub fn LiveVideoStage(
     addr: ReadSignal<String>,
     creds: Memo<Credentials>,
-    /// Which backend to use ("mjpeg" or "go2rtc"). `None` falls back
-    /// to the implicit default (currently MJPEG via `video::current()`).
-    /// String prop instead of `Arc<dyn VideoBackend>` because Dioxus
-    /// props need PartialEq and trait objects don't implement it.
+    /// Which backend to use as a reactive signal — reading it inside
+    /// `use_resource` makes Dioxus re-run the fetch on tab switch.
+    /// `None` falls back to the implicit default (MJPEG via
+    /// `video::current()`). Signal-of-string instead of trait object
+    /// because Dioxus props need PartialEq and trait objects don't
+    /// implement it.
     #[props(optional)]
-    backend_id: Option<&'static str>,
+    backend_id: Option<ReadSignal<&'static str>>,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
@@ -129,12 +131,14 @@ pub fn LiveVideoStage(
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         let profile = profile_sig.read().clone();
+        // Read INSIDE the closure so changes re-trigger the resource.
+        let backend_name = backend_id.map(|sig| *sig.read());
         async move {
             if addr.is_empty() {
                 return Err("no_device".to_string());
             }
             let token = profile.ok_or_else(|| "no_profile".to_string())?;
-            let backend = match backend_id {
+            let backend = match backend_name {
                 Some("mjpeg") => video::mjpeg(),
                 Some("go2rtc") => video::go2rtc(),
                 _ => video::current(),
