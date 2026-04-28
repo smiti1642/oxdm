@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::components::Icon;
 use crate::state::{Credentials, Ctx, ToastLevel};
-use crate::views::live_video::LiveVideoStage;
+use crate::views::live_video::{LiveH265Tip, LiveModeTabs, LiveVideoMode, LiveVideoStage};
 use crate::{api, i18n};
 use dioxus::prelude::*;
 
@@ -18,6 +18,12 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
 
     let speed = use_signal(|| 0.5_f32);
     let preset_search = use_signal(String::new);
+
+    // Per-view backend choice — same Snapshot/RTSP toggle as Live Video.
+    // Independent state from the other views so each tab remembers its
+    // own preference for the current session.
+    let preview_mode = use_signal(|| LiveVideoMode::Snapshot);
+    let preview_backend_id = use_memo(move || preview_mode.read().backend_id());
 
     // Resolve the PTZ service URL once per (addr, creds). This is the slow
     // call (GetCapabilities round-trip); cache it so joystick mousedowns
@@ -306,12 +312,18 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             div { class: "content-header",
                 Icon { name: "crosshair", size: 20 }
                 span { class: "content-title", {i18n::t(locale, "nav_ptz")} }
+                LiveModeTabs { mode: preview_mode }
                 if let Some(Err(e)) = &*ptz_state.read_unchecked() {
                     span { class: "ptz-status-error", " · {e}" }
                 }
             }
+            LiveH265Tip { mode: preview_mode }
             div { class: "imaging-preview",
-                LiveVideoStage { addr, creds }
+                LiveVideoStage {
+                    addr,
+                    creds,
+                    backend_id: Some(preview_backend_id.into()),
+                }
             }
 
             div { class: "ptz-body",

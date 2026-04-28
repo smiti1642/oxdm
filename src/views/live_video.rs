@@ -5,15 +5,79 @@ use crate::state::{Credentials, Ctx};
 use crate::video::{self, EmbedKind};
 use dioxus::prelude::*;
 
-/// Which video backend Live Video should use for the current view.
+/// Which video backend a stage should use for the current view.
 /// Defaults to Snapshot — light, no extra runtime, works everywhere.
 /// User flips to Rtsp from the tab strip; preference is per-session
 /// (intentionally not persisted yet — most users will pick once and
 /// stay).
+///
+/// Reused by Imaging and PTZ so they can offer the same Snapshot/RTSP
+/// choice as the dedicated Live Video view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LiveVideoMode {
+pub enum LiveVideoMode {
     Snapshot,
     Rtsp,
+}
+
+impl LiveVideoMode {
+    pub fn backend_id(self) -> &'static str {
+        match self {
+            Self::Snapshot => "mjpeg",
+            Self::Rtsp => "go2rtc",
+        }
+    }
+}
+
+/// Reusable `<Snapshot | RTSP>` tab strip plus the H.265-needs-ffmpeg
+/// tip. The caller owns the `mode` signal and decides where to place
+/// this in its header. Designed to drop into Live Video, Imaging, and
+/// PTZ uniformly so users encounter the same affordance everywhere.
+#[component]
+pub fn LiveModeTabs(mode: Signal<LiveVideoMode>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    rsx! {
+        div { class: "live-video-modes",
+            ModeTab {
+                active: *mode.read() == LiveVideoMode::Snapshot,
+                label: i18n::t(locale, "live_mode_snapshot"),
+                title: i18n::t(locale, "live_mode_snapshot_hint"),
+                onclick: {
+                    let mut mode = mode;
+                    move |_| mode.set(LiveVideoMode::Snapshot)
+                },
+            }
+            ModeTab {
+                active: *mode.read() == LiveVideoMode::Rtsp,
+                label: i18n::t(locale, "live_mode_rtsp"),
+                title: i18n::t(locale, "live_mode_rtsp_hint"),
+                onclick: {
+                    let mut mode = mode;
+                    move |_| mode.set(LiveVideoMode::Rtsp)
+                },
+            }
+        }
+    }
+}
+
+/// Conditional banner explaining the H.265 / ffmpeg situation. Renders
+/// nothing unless the user is on RTSP mode without ffmpeg in PATH.
+#[component]
+pub fn LiveH265Tip(mode: Signal<LiveVideoMode>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    let show = matches!(*mode.read(), LiveVideoMode::Rtsp) && !video::go2rtc::ffmpeg_available();
+    if !show {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "live-video-tip",
+            Icon { name: "info", size: 14 }
+            span { class: "live-video-tip-body",
+                {i18n::t(locale, "live_h265_tip")}
+            }
+        }
+    }
 }
 
 /// Live video panel — full view with header.
@@ -30,49 +94,25 @@ enum LiveVideoMode {
 pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let mut mode = use_signal(|| LiveVideoMode::Snapshot);
+    let mode = use_signal(|| LiveVideoMode::Snapshot);
 
     // Memo so LiveVideoStage's use_resource sees the backend choice
     // as a reactive dep — Dioxus only re-runs a resource when signals
-    // it reads change, so passing a plain value (or relying on `key`
-    // on a single child) doesn't actually trigger a re-fetch on tab
-    // switch.
-    let backend_id = use_memo(move || match *mode.read() {
-        LiveVideoMode::Snapshot => "mjpeg",
-        LiveVideoMode::Rtsp => "go2rtc",
-    });
+    // it reads change, so passing a plain value doesn't trigger a
+    // re-fetch on tab switch.
+    let backend_id = use_memo(move || mode.read().backend_id());
     let backend_display = match *mode.read() {
         LiveVideoMode::Snapshot => video::mjpeg(),
         LiveVideoMode::Rtsp => video::go2rtc(),
     }
     .map(|b| b.display_name());
 
-    // Surface a tip when on the RTSP tab without ffmpeg available —
-    // H.265 cameras silently fail to render in WebView2 without an
-    // HEVC decoder or transcoder. Computed once per render; the result
-    // doesn't change at runtime because PATH doesn't change.
-    let show_h265_tip =
-        matches!(*mode.read(), LiveVideoMode::Rtsp) && !video::go2rtc::ffmpeg_available();
-
     rsx! {
         div { class: "live-video-view",
             div { class: "content-header",
                 Icon { name: "video", size: 20 }
                 span { class: "content-title", {i18n::t(locale, "nav_live_video")} }
-                div { class: "live-video-modes",
-                    ModeTab {
-                        active: *mode.read() == LiveVideoMode::Snapshot,
-                        label: i18n::t(locale, "live_mode_snapshot"),
-                        title: i18n::t(locale, "live_mode_snapshot_hint"),
-                        onclick: move |_| mode.set(LiveVideoMode::Snapshot),
-                    }
-                    ModeTab {
-                        active: *mode.read() == LiveVideoMode::Rtsp,
-                        label: i18n::t(locale, "live_mode_rtsp"),
-                        title: i18n::t(locale, "live_mode_rtsp_hint"),
-                        onclick: move |_| mode.set(LiveVideoMode::Rtsp),
-                    }
-                }
+                LiveModeTabs { mode }
                 if let Some(name) = backend_display {
                     span { class: "live-video-backend",
                         " · {name}"
@@ -80,14 +120,7 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                 }
             }
 
-            if show_h265_tip {
-                div { class: "live-video-tip",
-                    Icon { name: "info", size: 14 }
-                    span { class: "live-video-tip-body",
-                        {i18n::t(locale, "live_h265_tip")}
-                    }
-                }
-            }
+            LiveH265Tip { mode }
 
             LiveVideoStage {
                 addr,
