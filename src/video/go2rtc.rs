@@ -311,13 +311,18 @@ fn stream_name_for(device_addr: &str, profile_token: &str) -> String {
     format!("oxdm-{:016x}", h.finish())
 }
 
-/// Splice credentials into an RTSP URL. Also rewrites the host to
-/// `device_addr`'s host:port pair so cameras that return their own
-/// internal hostname (or `0.0.0.0`) still work — we already know which
-/// IP responded to ONVIF, so trust that over whatever the camera says.
+/// Splice credentials into an RTSP URL. Trusts the camera's
+/// `host:port` because RTSP and ONVIF live on different ports
+/// (typically 554 vs 80) — overriding port from `device_addr` would
+/// silently send go2rtc to the HTTP port and silently fail.
 ///
-/// `device_addr` may be the full ONVIF service URL (`http://1.2.3.4/onvif/...`)
-/// or a bare host. We extract just the host:port piece.
+/// We only fall back to `device_addr`'s host (NOT port) when the
+/// camera returns a host that obviously can't be reached from where
+/// oxdm is running (empty, `0.0.0.0`, loopback). Even then we keep
+/// the camera's port if it specified one.
+///
+/// `device_addr` may be the full ONVIF service URL
+/// (`http://1.2.3.4/onvif/...`) or a bare host.
 fn inject_credentials(rtsp_uri: &str, device_addr: &str, user: &str, pass: &str) -> String {
     // Strip scheme.
     let after_scheme = rtsp_uri.strip_prefix("rtsp://").unwrap_or(rtsp_uri);
@@ -334,19 +339,23 @@ fn inject_credentials(rtsp_uri: &str, device_addr: &str, user: &str, pass: &str)
         None => (after_creds, ""),
     };
 
-    // Pull the host (and any port) from device_addr.
-    let device_host_port =
-        host_port_from_addr(device_addr).unwrap_or_else(|| orig_host_port.to_string());
-
-    // We keep the camera's port if it set one explicitly (rtsp port may
-    // differ from the ONVIF http port — usually 554 vs 80), but only if
-    // device_addr didn't already specify one.
-    let final_host_port = if device_host_port.contains(':') {
-        device_host_port
-    } else if let Some((_h, port)) = orig_host_port.rsplit_once(':') {
-        format!("{device_host_port}:{port}")
+    // Default: trust whatever the camera returned. Only substitute the
+    // host (never the port) when the camera reports something that
+    // can't be reached from oxdm's perspective — Hikvision/Dahua
+    // sometimes report 0.0.0.0 or their own internal hostname.
+    let (orig_host, orig_port) = match orig_host_port.rsplit_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (orig_host_port, None),
+    };
+    let final_host_port = if host_unreachable(orig_host) {
+        let fallback_host =
+            host_only_from_addr(device_addr).unwrap_or_else(|| orig_host.to_string());
+        match orig_port {
+            Some(p) => format!("{fallback_host}:{p}"),
+            None => fallback_host,
+        }
     } else {
-        device_host_port
+        orig_host_port.to_string()
     };
 
     let cred_prefix = if user.is_empty() && pass.is_empty() {
@@ -358,19 +367,25 @@ fn inject_credentials(rtsp_uri: &str, device_addr: &str, user: &str, pass: &str)
     format!("rtsp://{cred_prefix}{final_host_port}{path_with_query}")
 }
 
-/// Extract `host` or `host:port` from various address shapes — bare
-/// host, `host:port`, `http://host/path`, etc.
-fn host_port_from_addr(addr: &str) -> Option<String> {
+fn host_unreachable(host: &str) -> bool {
+    host.is_empty() || host == "0.0.0.0" || host == "127.0.0.1" || host == "localhost"
+}
+
+/// Extract just the host (no port) from various address shapes.
+fn host_only_from_addr(addr: &str) -> Option<String> {
     let stripped = addr
         .strip_prefix("http://")
         .or_else(|| addr.strip_prefix("https://"))
         .unwrap_or(addr);
     let host_port = stripped.split('/').next()?;
     if host_port.is_empty() {
-        None
-    } else {
-        Some(host_port.to_string())
+        return None;
     }
+    let host = host_port
+        .rsplit_once(':')
+        .map(|(h, _)| h)
+        .unwrap_or(host_port);
+    Some(host.to_string())
 }
 
 /// Minimal percent-encoder for URL query / path components. We can't
@@ -410,25 +425,53 @@ mod tests {
     }
 
     #[test]
-    fn drops_camera_supplied_creds() {
+    fn drops_camera_supplied_creds_but_keeps_camera_host() {
+        // Camera's host is reachable; we only replace creds.
         let url = inject_credentials(
             "rtsp://other:wrong@cam.local/s1",
             "192.168.1.10",
             "admin",
             "secret",
         );
-        assert_eq!(url, "rtsp://admin:secret@192.168.1.10/s1");
+        assert_eq!(url, "rtsp://admin:secret@cam.local/s1");
     }
 
     #[test]
-    fn keeps_rtsp_port_when_device_addr_has_none() {
+    fn keeps_camera_rtsp_port() {
         let url = inject_credentials(
             "rtsp://192.168.1.10:554/s",
-            "http://192.168.1.10/onvif/device",
+            "http://192.168.1.10:80/onvif/device",
             "u",
             "p",
         );
         assert_eq!(url, "rtsp://u:p@192.168.1.10:554/s");
+    }
+
+    #[test]
+    fn does_not_force_onvif_port_onto_rtsp() {
+        // Regression: previously we'd take device_addr's port (80)
+        // and apply it to the RTSP URL, sending go2rtc to the HTTP
+        // port and silently failing.
+        let url = inject_credentials(
+            "rtsp://192.168.1.10/s1",
+            "http://192.168.1.10:80/onvif/device",
+            "u",
+            "p",
+        );
+        assert_eq!(url, "rtsp://u:p@192.168.1.10/s1");
+    }
+
+    #[test]
+    fn substitutes_host_when_camera_returns_zero_addr() {
+        // Hikvision/Dahua sometimes report 0.0.0.0; fall back to
+        // device_addr's host but keep the camera's port.
+        let url = inject_credentials(
+            "rtsp://0.0.0.0:8554/live",
+            "http://192.168.1.10/onvif/device",
+            "u",
+            "p",
+        );
+        assert_eq!(url, "rtsp://u:p@192.168.1.10:8554/live");
     }
 
     #[test]
