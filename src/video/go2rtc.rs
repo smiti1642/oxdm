@@ -105,8 +105,8 @@ impl Go2rtcBackend {
         let config_path = write_config_file()?;
         info!(binary = %binary.display(), config = %config_path.display(), "spawning go2rtc");
 
-        let child = Command::new(binary)
-            .arg("-config")
+        let mut cmd = Command::new(binary);
+        cmd.arg("-config")
             .arg(&config_path)
             // Detach stdio — go2rtc's own logging is verbose and noisy
             // for end users. If diagnostics are needed, set OXDM_GO2RTC
@@ -114,9 +114,22 @@ impl Go2rtcBackend {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .stdin(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("spawn go2rtc: {e}"))?;
+            .kill_on_drop(true);
+
+        // Hide the console window on Windows. Without this, spawning a
+        // console exe (go2rtc is built without /SUBSYSTEM:WINDOWS)
+        // pops a cmd window even when stdio is redirected, which looks
+        // like a "black flash" to the user every time they open the
+        // RTSP tab.
+        // tokio::process::Command exposes `creation_flags` directly on
+        // Windows — no trait import needed (unlike std::process::Command).
+        #[cfg(windows)]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let child = cmd.spawn().map_err(|e| format!("spawn go2rtc: {e}"))?;
 
         *self.child.lock().unwrap() = Some(child);
 
