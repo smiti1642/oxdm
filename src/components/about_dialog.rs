@@ -61,6 +61,30 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                             code { "{log_path}" }
                         }
                     }
+
+                    div { class: "about-shortcuts",
+                        div { class: "about-shortcuts-title", {i18n::t(locale, "about_shortcuts")} }
+                        div { class: "about-shortcut",
+                            span { class: "about-shortcut-keys",
+                                kbd { "Ctrl" } "+" kbd { "F" }
+                            }
+                            span { class: "about-shortcut-desc", {i18n::t(locale, "shortcut_focus_search")} }
+                        }
+                        div { class: "about-shortcut",
+                            span { class: "about-shortcut-keys", kbd { "F5" } }
+                            span { class: "about-shortcut-desc", {i18n::t(locale, "shortcut_scan")} }
+                        }
+                        div { class: "about-shortcut",
+                            span { class: "about-shortcut-keys",
+                                kbd { "↑" } " / " kbd { "↓" }
+                            }
+                            span { class: "about-shortcut-desc", {i18n::t(locale, "shortcut_nav_devices")} }
+                        }
+                        div { class: "about-shortcut",
+                            span { class: "about-shortcut-keys", kbd { "Esc" } }
+                            span { class: "about-shortcut-desc", {i18n::t(locale, "shortcut_close_modal")} }
+                        }
+                    }
                 }
                 div { class: "dialog-footer about-footer",
                     button {

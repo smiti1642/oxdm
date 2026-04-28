@@ -1955,4 +1955,47 @@ iframe.live-video-frame {
 }
 .about-footer { gap: 6px; }
 
+.about-shortcuts {
+  margin-top: 16px;
+  width: 100%;
+  border-top: 1px solid var(--surface0);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.about-shortcuts-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--overlay1);
+  margin-bottom: 4px;
+}
+.about-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.about-shortcut-keys {
+  flex: 0 0 110px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--overlay1);
+}
+.about-shortcut-desc { color: var(--text); }
+.about-shortcut kbd {
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text);
+  min-width: 22px;
+  text-align: center;
+  display: inline-block;
+}
+
 /* Classic theme overrides consolidated above in .theme-classic block */
