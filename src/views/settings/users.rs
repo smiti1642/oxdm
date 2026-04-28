@@ -122,13 +122,9 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         match &*users.read_unchecked() {
             None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
             Some(Err(e)) => rsx! {
-                div { class: "tab-error",
-                    span { "{e}" }
-                    button {
-                        class: "btn btn-sm btn-ghost tab-error-retry",
-                        onclick: move |_| users.restart(),
-                        {i18n::t(locale, "btn_retry")}
-                    }
+                crate::components::TabError {
+                    error: e.clone(),
+                    on_retry: move |_| users.restart(),
                 }
             },
             Some(Ok(user_list)) => rsx! {

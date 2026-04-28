@@ -63,13 +63,9 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                 match &*data.read_unchecked() {
                     None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
                     Some(Err(e)) => rsx! {
-                        div { class: "tab-error",
-                            span { "{e}" }
-                            button {
-                                class: "btn btn-sm btn-ghost tab-error-retry",
-                                onclick: move |_| data.restart(),
-                                {i18n::t(locale, "btn_retry")}
-                            }
+                        crate::components::TabError {
+                            error: e.clone(),
+                            on_retry: move |_| data.restart(),
                         }
                     },
                     Some(Ok((source_token, settings, options))) => {

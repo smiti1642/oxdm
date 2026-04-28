@@ -8,6 +8,7 @@ mod edit_device_dialog;
 mod icon;
 mod shared;
 mod status_bar;
+mod tab_error;
 mod toast;
 mod topbar;
 
@@ -20,5 +21,6 @@ pub use dialog::ConfirmDialogModal;
 pub use edit_device_dialog::EditDeviceDialog;
 pub use icon::Icon;
 pub use shared::{PasswordField, PropRow};
+pub use tab_error::TabError;
 pub use toast::ToastContainer;
 pub use topbar::Topbar;
