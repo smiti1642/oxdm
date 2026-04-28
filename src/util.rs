@@ -42,6 +42,96 @@ pub fn urldecode(s: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// Validation outcome for the Add Device address field. Lets the dialog
+/// show a specific reason inline instead of a generic "looks bad" hint
+/// (and keeps the "what counts as a valid address" rule in one place).
+#[derive(Debug, PartialEq, Eq)]
+pub enum AddrError {
+    Empty,
+    InvalidIpOctet,
+    InvalidPort,
+    InvalidHostname,
+    NoHost,
+}
+
+impl AddrError {
+    /// i18n key for the message shown under the input field.
+    pub fn i18n_key(&self) -> &'static str {
+        match self {
+            Self::Empty => "addr_err_empty",
+            Self::InvalidIpOctet => "addr_err_ip",
+            Self::InvalidPort => "addr_err_port",
+            Self::InvalidHostname => "addr_err_hostname",
+            Self::NoHost => "addr_err_no_host",
+        }
+    }
+}
+
+/// Validate a device address string.
+///
+/// Accepts:
+/// - Bare IPv4: `192.168.1.10`
+/// - IPv4 with port: `192.168.1.10:8080`
+/// - With path: `192.168.1.10/onvif/device`
+/// - With scheme: `http://192.168.1.10/onvif/device`
+/// - Hostname: `camera.local`, `cam-01`
+///
+/// Permissive on accepted shape, strict on the parts: 0–255 octets,
+/// 1–65535 ports, RFC1123-ish hostname chars only.
+pub fn validate_device_addr(input: &str) -> Result<(), AddrError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(AddrError::Empty);
+    }
+    // Strip scheme.
+    let rest = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or(trimmed);
+    // Strip path.
+    let host_port = rest.split('/').next().unwrap_or("");
+    if host_port.is_empty() {
+        return Err(AddrError::NoHost);
+    }
+    // Split host:port.
+    let (host, port_opt) = match host_port.rsplit_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (host_port, None),
+    };
+    if host.is_empty() {
+        return Err(AddrError::NoHost);
+    }
+    if let Some(port) = port_opt {
+        match port.parse::<u32>() {
+            Ok(p) if (1..=65535).contains(&p) => {}
+            _ => return Err(AddrError::InvalidPort),
+        }
+    }
+    // If host parses as 4 dotted octets, validate as IPv4. Otherwise
+    // validate as hostname (RFC1123: letters, digits, hyphens, dots).
+    let parts: Vec<&str> = host.split('.').collect();
+    let looks_like_ipv4 =
+        parts.len() == 4 && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()));
+    if looks_like_ipv4 {
+        for p in &parts {
+            match p.parse::<u32>() {
+                Ok(o) if o <= 255 => {}
+                _ => return Err(AddrError::InvalidIpOctet),
+            }
+        }
+        Ok(())
+    } else {
+        let valid = host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
+        if valid && !host.starts_with('-') && !host.ends_with('-') {
+            Ok(())
+        } else {
+            Err(AddrError::InvalidHostname)
+        }
+    }
+}
+
 /// Copy text to the system clipboard. Returns `Ok(())` or an error message.
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     arboard::Clipboard::new()
@@ -93,5 +183,41 @@ mod tests {
     #[test]
     fn urldecode_passthrough() {
         assert_eq!(urldecode("plain"), "plain");
+    }
+
+    #[test]
+    fn validate_addr_accepts_common_shapes() {
+        assert!(validate_device_addr("192.168.1.10").is_ok());
+        assert!(validate_device_addr("192.168.1.10:8080").is_ok());
+        assert!(validate_device_addr("192.168.1.10/onvif/device").is_ok());
+        assert!(validate_device_addr("http://192.168.1.10/onvif/device").is_ok());
+        assert!(validate_device_addr("https://camera.local:443/onvif/device").is_ok());
+        assert!(validate_device_addr("cam-01").is_ok());
+    }
+
+    #[test]
+    fn validate_addr_rejects_bad_shapes() {
+        assert_eq!(validate_device_addr(""), Err(AddrError::Empty));
+        assert_eq!(validate_device_addr("   "), Err(AddrError::Empty));
+        assert_eq!(
+            validate_device_addr("999.1.1.1"),
+            Err(AddrError::InvalidIpOctet)
+        );
+        assert_eq!(
+            validate_device_addr("192.168.1.10:99999"),
+            Err(AddrError::InvalidPort)
+        );
+        assert_eq!(
+            validate_device_addr("cam!@#"),
+            Err(AddrError::InvalidHostname)
+        );
+        assert_eq!(
+            validate_device_addr("-cam"),
+            Err(AddrError::InvalidHostname)
+        );
+        assert_eq!(
+            validate_device_addr("http:///onvif"),
+            Err(AddrError::NoHost)
+        );
     }
 }

@@ -28,6 +28,11 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scanning" => "Scanning\u{2026}",
         "btn_scanning_tooltip" => "A scan is already in progress.",
         "btn_retry" => "Retry",
+        "addr_err_empty" => "Address is required.",
+        "addr_err_ip" => "IP octets must be 0–255.",
+        "addr_err_port" => "Port must be between 1 and 65535.",
+        "addr_err_hostname" => "Hostname can only contain letters, digits, hyphens, and dots.",
+        "addr_err_no_host" => "Address has no host.",
         "net_disabled_by_dhcp" => "Disabled while DHCP is on.",
         "btn_add_label" => "Add",
 

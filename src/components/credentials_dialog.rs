@@ -98,6 +98,11 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
     let password = use_signal(String::new);
     let show_creds = use_signal(|| false);
 
+    // Inline validation: each keystroke recomputes. The address is the only
+    // field that can fail in obvious ways before we even try to talk to the
+    // camera, so we validate it here rather than wait for a SOAP fault.
+    let addr_validation = use_memo(move || crate::util::validate_device_addr(&addr.read()));
+
     let is_open = *open.read();
     if !is_open {
         return rsx! {};
@@ -128,13 +133,29 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                     div { class: "form-field",
                         label { class: "form-label", {i18n::t(locale, "add_device_addr")} }
                         input {
-                            class: "form-input",
+                            // Show a red ring on validation failure once
+                            // the user has typed something — empty is the
+                            // initial state, not really an "error" yet.
+                            class: {
+                                let is_err = matches!(
+                                    *addr_validation.read(),
+                                    Err(ref e) if !matches!(e, crate::util::AddrError::Empty)
+                                );
+                                if is_err { "form-input form-input--invalid" } else { "form-input" }
+                            },
                             r#type: "text",
                             placeholder: i18n::t(locale, "add_device_addr_hint"),
                             value: "{addr}",
                             oninput: move |e| addr.set(e.value()),
                         }
-                        p { class: "form-hint", {i18n::t(locale, "add_device_addr_auto")} }
+                        match &*addr_validation.read() {
+                            Err(e) if !matches!(e, crate::util::AddrError::Empty) => rsx! {
+                                p { class: "form-error", {i18n::t(locale, e.i18n_key())} }
+                            },
+                            _ => rsx! {
+                                p { class: "form-hint", {i18n::t(locale, "add_device_addr_auto")} }
+                            },
+                        }
                     }
                     div { class: "form-field",
                         label { class: "form-label", {i18n::t(locale, "add_device_name")} }
@@ -161,7 +182,11 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                     }
                     button {
                         class: "btn btn-md btn-primary",
-                        disabled: addr.read().trim().is_empty(),
+                        disabled: addr_validation.read().is_err(),
+                        title: match &*addr_validation.read() {
+                            Err(e) => i18n::t(locale, e.i18n_key()),
+                            Ok(()) => "",
+                        },
                         onclick: move |_| {
                             let raw = addr.peek().trim().to_string();
                             let addr_val = normalize_onvif_addr(&raw);

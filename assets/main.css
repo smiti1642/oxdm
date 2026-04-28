@@ -1117,6 +1117,14 @@ a      { color: var(--blue); text-decoration: none; }
 .form-input::placeholder { color: var(--overlay0); }
 .form-input:focus { border-color: var(--blue); }
 .form-input--flex { flex: 1; }
+.form-input--invalid { border-color: var(--red); }
+.form-input--invalid:focus { border-color: var(--red); }
+.form-error {
+  font-size: 11px;
+  color: var(--red);
+  line-height: 1.4;
+  margin-top: 2px;
+}
 
 .form-input-row {
   display: flex;

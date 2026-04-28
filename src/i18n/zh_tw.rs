@@ -28,6 +28,11 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scanning" => "\u{6383}\u{63CF}\u{4E2D}\u{2026}",
         "btn_scanning_tooltip" => "已有一個掃描進行中。",
         "btn_retry" => "重試",
+        "addr_err_empty" => "請輸入位址。",
+        "addr_err_ip" => "IP 各段必須在 0–255 之間。",
+        "addr_err_port" => "Port 必須在 1 到 65535 之間。",
+        "addr_err_hostname" => "主機名只能包含英數字、連字號與點。",
+        "addr_err_no_host" => "位址中沒有 host。",
         "net_disabled_by_dhcp" => "DHCP 開啟時無法手動設定。",
         "btn_add_label" => "\u{65B0}\u{589E}",
 

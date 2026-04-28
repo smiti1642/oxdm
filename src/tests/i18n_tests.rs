@@ -31,6 +31,11 @@ const ALL_KEYS: &[&str] = &[
     "btn_scanning",
     "btn_scanning_tooltip",
     "btn_retry",
+    "addr_err_empty",
+    "addr_err_ip",
+    "addr_err_port",
+    "addr_err_hostname",
+    "addr_err_no_host",
     "net_disabled_by_dhcp",
     "btn_add_label",
     // Device Panel

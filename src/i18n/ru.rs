@@ -28,6 +28,11 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_scanning" => "\u{0421}\u{043A}\u{0430}\u{043D}.\u{2026}",
         "btn_scanning_tooltip" => "Сканирование уже выполняется.",
         "btn_retry" => "Повторить",
+        "addr_err_empty" => "Введите адрес.",
+        "addr_err_ip" => "Октеты IP должны быть 0–255.",
+        "addr_err_port" => "Порт должен быть от 1 до 65535.",
+        "addr_err_hostname" => "Имя хоста: буквы, цифры, дефис, точка.",
+        "addr_err_no_host" => "В адресе нет хоста.",
         "net_disabled_by_dhcp" => "Недоступно при включённом DHCP.",
         "btn_add_label" => "\u{0414}\u{043E}\u{0431}.",
 
