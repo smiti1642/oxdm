@@ -143,6 +143,10 @@ const ALL_KEYS: &[&str] = &[
     "scan_found",
     // Live Video
     "live_video_no_device",
+    "live_mode_snapshot",
+    "live_mode_snapshot_hint",
+    "live_mode_rtsp",
+    "live_mode_rtsp_hint",
     "live_video_no_profile",
     "live_video_no_backend",
     "live_video_error",

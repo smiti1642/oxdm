@@ -151,6 +151,10 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Live Video ──────────────────────────────────────────────────────
         "live_video_no_device" => "\u{8ACB}\u{9078}\u{53D6}\u{4E00}\u{53F0}\u{88DD}\u{7F6E}\u{4EE5}\u{958B}\u{59CB}\u{4E32}\u{6D41}\u{3002}",
+        "live_mode_snapshot" => "快照",
+        "live_mode_snapshot_hint" => "輕量 ~5 fps 快照輪詢，所有攝影機都支援。",
+        "live_mode_rtsp" => "RTSP",
+        "live_mode_rtsp_hint" => "透過 go2rtc 橋接的真實 RTSP，CPU 較高；需要附帶的 go2rtc binary。",
         "live_video_no_profile" => "\u{8ACB}\u{5F9E}\u{88DD}\u{7F6E}\u{9762}\u{677F}\u{9078}\u{53D6}\u{4E00}\u{500B} profile\u{3002}",
         "live_video_no_backend" => "\u{5C1A}\u{672A}\u{5B89}\u{88DD}\u{5F71}\u{50CF}\u{5F8C}\u{7AEF}\u{3002}",
         "live_video_error" => "\u{4E32}\u{6D41}\u{555F}\u{52D5}\u{5931}\u{6557}\u{3002}",

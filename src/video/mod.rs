@@ -90,18 +90,41 @@ pub trait VideoBackend: Send + Sync {
 }
 
 // ── Global registry ──────────────────────────────────────────────────────────
+//
+// Two named slots — Live Video can flip between them per-session via the
+// view's tab strip, and the embedded preview in Imaging can pin to MJPEG
+// (the small thumbnail doesn't need RTSP machinery). Reusing a single
+// `current()` getter would force every consumer through one backend; the
+// pair lets callers express intent at the call site instead.
 
-static BACKEND: OnceLock<Arc<dyn VideoBackend>> = OnceLock::new();
+static MJPEG: OnceLock<Arc<dyn VideoBackend>> = OnceLock::new();
+static GO2RTC: OnceLock<Arc<dyn VideoBackend>> = OnceLock::new();
 
-/// Install the process-wide video backend. Call once at startup.
-/// Subsequent calls are silently ignored (so tests that re-init the app
-/// don't panic).
-pub fn install(backend: Arc<dyn VideoBackend>) {
-    let _ = BACKEND.set(backend);
+/// Install the lightweight snapshot-loop backend. Always available; this
+/// is what `current()` returns by default and what the embedded preview
+/// in Imaging pins to.
+pub fn install_mjpeg(backend: Arc<dyn VideoBackend>) {
+    let _ = MJPEG.set(backend);
 }
 
-/// Currently installed backend, if any. `None` before [`install`] is called
-/// or in code paths (e.g. unit tests) that never wired one up.
+/// Install the go2rtc bridge backend. Optional — depends on whether
+/// `Go2rtcBackend::new` found the bundled binary. Live Video's RTSP tab
+/// surfaces an inline error if this slot is empty at use time.
+pub fn install_go2rtc(backend: Arc<dyn VideoBackend>) {
+    let _ = GO2RTC.set(backend);
+}
+
+/// The default backend (MJPEG). Used by callers that don't care which
+/// backend they get — `LiveVideoStage` defaults to this when its caller
+/// doesn't pass an override.
 pub fn current() -> Option<Arc<dyn VideoBackend>> {
-    BACKEND.get().cloned()
+    MJPEG.get().cloned()
+}
+
+pub fn mjpeg() -> Option<Arc<dyn VideoBackend>> {
+    MJPEG.get().cloned()
+}
+
+pub fn go2rtc() -> Option<Arc<dyn VideoBackend>> {
+    GO2RTC.get().cloned()
 }

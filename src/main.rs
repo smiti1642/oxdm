@@ -106,13 +106,17 @@ fn App() -> Element {
     let (global_creds, creds_map) = use_hook(|| persist::load_all_credentials(&cfg));
     let saved_devices = use_hook(|| persist::load_devices(&creds_map));
 
-    // Install the default video backend (MJPEG snapshot loop). Runs inside
-    // the dioxus tokio runtime so spawning the listener task is safe here.
-    // Failure to bind only logs — the rest of the app keeps working without
-    // live video.
+    // Install both video backends. MJPEG is the always-on default;
+    // go2rtc is optional and lazy — its `new()` only locates the binary,
+    // the subprocess spawns on first stream. Both run inside the dioxus
+    // tokio runtime so spawning is safe here. Failure to bind MJPEG only
+    // logs; the rest of the app keeps working without live video.
     use_hook(|| match video::mjpeg::MjpegBackend::start() {
-        Ok(b) => video::install(std::sync::Arc::new(b)),
+        Ok(b) => video::install_mjpeg(std::sync::Arc::new(b)),
         Err(e) => tracing::error!(error = %e, "failed to start MJPEG backend"),
+    });
+    use_hook(|| {
+        video::install_go2rtc(std::sync::Arc::new(video::go2rtc::Go2rtcBackend::new()));
     });
 
     let ctx = Ctx {

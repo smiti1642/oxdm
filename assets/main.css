@@ -1653,9 +1653,30 @@ a      { color: var(--blue); text-decoration: none; }
   overflow: hidden;
   min-height: 0;
 }
-.live-video-backend {
+.live-video-modes {
   margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface0);
+  border-radius: 6px;
+  padding: 2px;
+}
+.live-video-mode-tab {
+  border: none;
+  background: transparent;
+  color: var(--overlay1);
+  padding: 4px 12px;
+  border-radius: 4px;
   font-size: 12px;
+  cursor: pointer;
+}
+.live-video-mode-tab:hover { color: var(--text); }
+.live-video-mode-tab--active {
+  background: var(--surface1);
+  color: var(--text);
+}
+.live-video-backend {
+  font-size: 11px;
   color: var(--overlay0);
   font-weight: 400;
 }

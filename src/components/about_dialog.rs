@@ -41,6 +41,7 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                     div { class: "about-versions",
                         div { "OxDM v{APP_VERSION}" }
                         div { "oxvif v{OXVIF_VERSION}" }
+                        div { "go2rtc v{crate::video::go2rtc::BUNDLED_VERSION}" }
                     }
                     if !log_path.is_empty() {
                         div { class: "about-logpath",
