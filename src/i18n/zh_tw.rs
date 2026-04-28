@@ -108,6 +108,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "shortcut_close_modal" => "關閉對話框",
         "about_log_to_file" => "將日誌儲存到磁碟",
         "about_log_takes_effect" => "（下次啟動時生效）",
+        "about_tls_strict" => "拒絕自簽 TLS 憑證（HTTPS 快照）",
+        "about_tls_strict_hint" => "多數攝影機使用自簽憑證——若不確定請勿開啟。",
         "btn_save" => "\u{5132}\u{5B58}",
         "btn_confirm" => "\u{78BA}\u{8A8D}",
         "btn_add_short" => "\u{65B0}\u{589E}",

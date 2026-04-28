@@ -27,6 +27,12 @@ pub struct ConfigFile {
     /// most users won't read; the About dialog has the toggle.
     #[serde(default)]
     pub log_to_file: bool,
+    /// When `true`, snapshot HTTPS connections refuse self-signed and
+    /// otherwise-invalid TLS certificates. Default is `false` because
+    /// most IP cameras ship a self-signed cert; flipping this on without
+    /// thinking would break HTTPS snapshots. Toggle in About.
+    #[serde(default)]
+    pub tls_strict: bool,
     // Legacy fields — read for migration, not written
     #[serde(default)]
     pub username: String,
@@ -229,21 +235,23 @@ pub fn load_devices(creds_map: &CredsMap) -> Vec<DeviceEntry> {
 
 // ── Save ────────────────────────────────────────────────────────────────────
 
-pub fn save_config(theme: Theme, locale: Locale, log_to_file: bool) {
+pub fn save_config(theme: Theme, locale: Locale, log_to_file: bool, tls_strict: bool) {
     ensure_dir();
 
-    // Save theme/locale/log preference to config.toml (no credentials)
+    // Save theme/locale/log/tls preference to config.toml (no credentials)
     if let Some(path) = config_path() {
         #[derive(Serialize)]
         struct ConfigOut {
             theme: String,
             locale: String,
             log_to_file: bool,
+            tls_strict: bool,
         }
         let cfg = ConfigOut {
             theme: theme_to_str(theme).to_string(),
             locale: locale_to_str(locale).to_string(),
             log_to_file,
+            tls_strict,
         };
         match toml::to_string_pretty(&cfg) {
             Ok(content) => {

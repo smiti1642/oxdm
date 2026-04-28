@@ -108,6 +108,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "shortcut_close_modal" => "Close the open dialog",
         "about_log_to_file" => "Save logs to disk",
         "about_log_takes_effect" => "(takes effect on next launch)",
+        "about_tls_strict" => "Reject self-signed TLS certs (HTTPS snapshots)",
+        "about_tls_strict_hint" => "Most cameras use self-signed certs — leave off unless you know yours is properly signed.",
         "btn_save" => "Save",
         "btn_confirm" => "Confirm",
         "btn_add_short" => "Add",

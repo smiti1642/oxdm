@@ -9,6 +9,24 @@ use tracing::{debug, error, info, instrument, warn};
 
 pub type ApiError = String;
 
+/// Process-wide TLS strictness for snapshot HTTPS calls. `false` (default)
+/// preserves the legacy `danger_accept_invalid_certs(true)` behaviour
+/// most cameras need; flipping to `true` makes the snapshot fetcher
+/// refuse self-signed and expired certs. Driven from the About dialog
+/// toggle via `set_tls_strict` and persisted in config.toml.
+///
+/// Stored as a static atomic so the synchronous reqwest builder doesn't
+/// need to thread a Dioxus signal through every call site.
+static TLS_STRICT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_tls_strict(strict: bool) {
+    TLS_STRICT.store(strict, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn tls_strict() -> bool {
+    TLS_STRICT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Build a client for a device, optionally with credentials.
 fn build_client(addr: &str, username: Option<&str>, password: Option<&str>) -> OnvifClient {
     let mut client = OnvifClient::new(addr);
@@ -265,7 +283,7 @@ pub async fn fetch_snapshot_data_uri(
     //   - Accept: */*                (added per-request)
     //   - Authorization fields reordered to curl's order in try_digest_auth
     let http = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(!tls_strict())
         .timeout(Duration::from_secs(5))
         .no_gzip()
         .no_brotli()
@@ -306,7 +324,20 @@ pub async fn fetch_snapshot_data_uri(
         // a byte-identical Authorization header — likely a header-ordering
         // or framing quirk we couldn't pin down. Raw TCP gives byte-for-byte
         // control matching curl.
-        if www_auth.to_lowercase().contains("digest") {
+        //
+        // The raw path is plain http only; for https URLs we'd need a TLS
+        // handshake we don't carry, so log and skip — reqwest's Basic-auth
+        // attempt below is the fallback. Visible in logs so HTTPS+Uniview
+        // failures don't look like a silent dead end.
+        let raw_eligible =
+            www_auth.to_lowercase().contains("digest") && snapshot_url.starts_with("http://");
+        if !raw_eligible && www_auth.to_lowercase().contains("digest") {
+            debug!(
+                snapshot_url,
+                "Skipping raw TCP Digest path (https — Basic-auth fallback only)"
+            );
+        }
+        if raw_eligible {
             debug!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
             match try_digest_auth_raw(snapshot_url, u, p, &www_auth).await {
                 Ok((content_type, bytes)) => {
@@ -388,19 +419,31 @@ async fn try_digest_auth_raw(
     let (host, port, path) =
         parse_http_url(url).ok_or_else(|| format!("invalid HTTP URL: {url}"))?;
 
-    // Log credential hint for diagnostics (password length + first/last char)
-    let pass_hint = if password.len() >= 2 {
-        let chars: Vec<char> = password.chars().collect();
-        format!(
-            "{}...{} (len={})",
-            chars[0],
-            chars[chars.len() - 1],
-            password.len()
-        )
-    } else {
-        format!("(len={})", password.len())
-    };
-    debug!(username, pass_hint = %pass_hint, "Digest auth credentials");
+    // Credential diagnostic. Release builds only log the username + password
+    // length to avoid leaking entropy when users share logs with support;
+    // debug builds get the first/last char too which is occasionally
+    // necessary to spot copy-paste invisible characters.
+    #[cfg(debug_assertions)]
+    {
+        let pass_hint = if password.len() >= 2 {
+            let chars: Vec<char> = password.chars().collect();
+            format!(
+                "{}...{} (len={})",
+                chars[0],
+                chars[chars.len() - 1],
+                password.len()
+            )
+        } else {
+            format!("(len={})", password.len())
+        };
+        debug!(username, pass_hint = %pass_hint, "Digest auth credentials");
+    }
+    #[cfg(not(debug_assertions))]
+    debug!(
+        username,
+        pass_len = password.len(),
+        "Digest auth credentials"
+    );
 
     // Compute Digest Authorization header.
     let context = digest_auth::AuthContext::new(username, password, &path);

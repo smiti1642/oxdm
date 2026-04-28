@@ -199,6 +199,10 @@ pub struct Ctx {
     /// Persist tracing output to disk. Toggled in the About dialog,
     /// saved to config.toml, applied on next launch.
     pub log_to_file: Signal<bool>,
+    /// Refuse self-signed / invalid TLS certs on snapshot HTTPS calls.
+    /// Toggled in the About dialog, saved to config.toml, applies
+    /// immediately (next snapshot fetch reads the global atomic).
+    pub tls_strict: Signal<bool>,
     /// Pending global keyboard shortcut. Producers (root onkeydown) write
     /// here; consumers (DeviceList, etc.) react via use_effect and clear
     /// the slot back to None. `Esc` is handled by individual modals via

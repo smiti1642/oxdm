@@ -105,6 +105,8 @@ const ALL_KEYS: &[&str] = &[
     "shortcut_close_modal",
     "about_log_to_file",
     "about_log_takes_effect",
+    "about_tls_strict",
+    "about_tls_strict_hint",
     "btn_save",
     "btn_confirm",
     "btn_add_short",

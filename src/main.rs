@@ -130,15 +130,23 @@ fn App() -> Element {
         selected_profile: use_signal(|| None),
         keyboard_action: use_signal(|| None),
         log_to_file: use_signal(|| cfg.log_to_file),
+        tls_strict: use_signal(|| cfg.tls_strict),
     };
+    // Seed the TLS-strict atomic from config so the first snapshot fetch
+    // after launch already honours the saved preference.
+    api::set_tls_strict(cfg.tls_strict);
     use_context_provider(|| ctx);
 
-    // Auto-save when theme / locale / log preference change
+    // Auto-save when theme / locale / log / tls preference change.
+    // Also pushes tls_strict into the api atomic so a toggle takes effect
+    // on the next snapshot without a restart (unlike log_to_file).
     use_effect(move || {
         let theme = *ctx.theme.read();
         let locale = *ctx.locale.read();
         let log_to_file = *ctx.log_to_file.read();
-        persist::save_config(theme, locale, log_to_file);
+        let tls_strict = *ctx.tls_strict.read();
+        api::set_tls_strict(tls_strict);
+        persist::save_config(theme, locale, log_to_file, tls_strict);
     });
 
     // Re-verify auth when credentials change
