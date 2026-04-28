@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::Icon;
+use crate::components::{DialogOverlay, Icon};
 use crate::i18n;
 use crate::state::Ctx;
 use dioxus::prelude::*;
@@ -24,29 +24,16 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
         .unwrap_or_default();
 
     rsx! {
-        div {
-            class: "dialog-overlay",
-            tabindex: "-1",
-            onmousedown: {
+        DialogOverlay {
+            on_close: {
                 let mut open = open;
                 move |_| open.set(false)
             },
-            onkeydown: {
-                let mut open = open;
-                move |evt: KeyboardEvent| {
-                    if evt.key() == Key::Escape {
-                        open.set(false);
-                    }
-                }
-            },
+            inner_class: "dialog about-dialog".to_string(),
 
-            div {
-                class: "dialog about-dialog",
-                onmousedown: |e| e.stop_propagation(),
-
-                div { class: "dialog-header",
-                    span { class: "dialog-title", "About OxDM" }
-                }
+            div { class: "dialog-header",
+                span { class: "dialog-title", "About OxDM" }
+            }
                 div { class: "dialog-body",
                     div { class: "about-icon", Icon { name: "hexagon", size: 48 } }
                     div { class: "about-name", "OxDM" }
@@ -148,7 +135,6 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                         {i18n::t(locale, "btn_close")}
                     }
                 }
-            }
         }
     }
 }

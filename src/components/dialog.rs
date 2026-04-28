@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::components::DialogOverlay;
 use crate::state::Ctx;
 use dioxus::prelude::*;
 
@@ -26,40 +27,28 @@ pub fn ConfirmDialogModal() -> Element {
     };
 
     rsx! {
-        div {
-            class: "dialog-overlay",
-            tabindex: "-1",
-            onmousedown: move |_| dialog_sig.set(None),
-            onkeydown: move |evt: KeyboardEvent| {
-                if evt.key() == Key::Escape {
-                    dialog_sig.set(None);
+        DialogOverlay {
+            on_close: move |_| dialog_sig.set(None),
+            inner_class: "dialog".to_string(),
+            div { class: "dialog-header",
+                span { class: "dialog-title", "{title}" }
+            }
+            div { class: "dialog-body",
+                p { class: "dialog-message", "{message}" }
+            }
+            div { class: "dialog-footer",
+                button {
+                    class: "btn btn-md btn-ghost",
+                    onclick: move |_| dialog_sig.set(None),
+                    "{cancel_label}"
                 }
-            },
-
-            div {
-                class: "dialog",
-                onmousedown: |e| e.stop_propagation(),
-
-                div { class: "dialog-header",
-                    span { class: "dialog-title", "{title}" }
-                }
-                div { class: "dialog-body",
-                    p { class: "dialog-message", "{message}" }
-                }
-                div { class: "dialog-footer",
-                    button {
-                        class: "btn btn-md btn-ghost",
-                        onclick: move |_| dialog_sig.set(None),
-                        "{cancel_label}"
-                    }
-                    button {
-                        class: confirm_class,
-                        onclick: move |_| {
-                            on_confirm.call(());
-                            dialog_sig.set(None);
-                        },
-                        "{confirm_label}"
-                    }
+                button {
+                    class: confirm_class,
+                    onclick: move |_| {
+                        on_confirm.call(());
+                        dialog_sig.set(None);
+                    },
+                    "{confirm_label}"
                 }
             }
         }

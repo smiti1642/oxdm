@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::PasswordField;
+use crate::components::{DialogOverlay, PasswordField};
 use crate::i18n;
 use crate::state::{Credentials, Ctx, ToastLevel, View};
 use crate::util;
@@ -26,21 +26,12 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
     let mut global_creds = ctx.global_credentials;
 
     rsx! {
-        div {
-            class: "dialog-overlay",
-            tabindex: "-1",
-            onmousedown: move |_| open_sig.set(false),
-            onkeydown: move |evt: KeyboardEvent| {
-                if evt.key() == Key::Escape {
-                    open_sig.set(false);
-                }
-            },
-            div {
-                class: "dialog",
-                onmousedown: |e| e.stop_propagation(),
-                div { class: "dialog-header",
-                    span { class: "dialog-title", {i18n::t(locale, "cred_global_title")} }
-                }
+        DialogOverlay {
+            on_close: move |_| open_sig.set(false),
+            inner_class: "dialog".to_string(),
+            div { class: "dialog-header",
+                span { class: "dialog-title", {i18n::t(locale, "cred_global_title")} }
+            }
                 div { class: "dialog-body",
                     p { class: "dialog-hint", {i18n::t(locale, "cred_global_hint")} }
                     div { class: "form-field",
@@ -80,7 +71,6 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
                         {i18n::t(locale, "btn_save")}
                     }
                 }
-            }
         }
     }
 }
@@ -114,21 +104,12 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
     let mut view = ctx.view;
 
     rsx! {
-        div {
-            class: "dialog-overlay",
-            tabindex: "-1",
-            onmousedown: move |_| open_sig.set(false),
-            onkeydown: move |evt: KeyboardEvent| {
-                if evt.key() == Key::Escape {
-                    open_sig.set(false);
-                }
-            },
-            div {
-                class: "dialog dialog--wide",
-                onmousedown: |e| e.stop_propagation(),
-                div { class: "dialog-header",
-                    span { class: "dialog-title", {i18n::t(locale, "add_device_title")} }
-                }
+        DialogOverlay {
+            on_close: move |_| open_sig.set(false),
+            inner_class: "dialog dialog--wide".to_string(),
+            div { class: "dialog-header",
+                span { class: "dialog-title", {i18n::t(locale, "add_device_title")} }
+            }
                 div { class: "dialog-body",
                     div { class: "form-field",
                         label { class: "form-label", {i18n::t(locale, "add_device_addr")} }
@@ -225,7 +206,6 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                         {i18n::t(locale, "btn_add_short")}
                     }
                 }
-            }
         }
     }
 }

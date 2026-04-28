@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::PasswordField;
+use crate::components::{DialogOverlay, PasswordField};
 use crate::i18n;
 use crate::state::{Credentials, Ctx, ToastLevel};
 use dioxus::prelude::*;
@@ -49,25 +49,15 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
     let mut devices = ctx.devices;
 
     rsx! {
-        div {
-            class: "dialog-overlay",
-            tabindex: "-1",
-            onmousedown: move |_| {
+        DialogOverlay {
+            on_close: move |_| {
                 name.set(String::new());
                 open_sig.set(false);
             },
-            onkeydown: move |evt: KeyboardEvent| {
-                if evt.key() == Key::Escape {
-                    name.set(String::new());
-                    open_sig.set(false);
-                }
-            },
-            div {
-                class: "dialog dialog--wide",
-                onmousedown: |e| e.stop_propagation(),
-                div { class: "dialog-header",
-                    span { class: "dialog-title", {i18n::t(locale, "edit_device_title")} }
-                }
+            inner_class: "dialog dialog--wide".to_string(),
+            div { class: "dialog-header",
+                span { class: "dialog-title", {i18n::t(locale, "edit_device_title")} }
+            }
                 div { class: "dialog-body",
                     div { class: "form-field",
                         label { class: "form-label", {i18n::t(locale, "add_device_name")} }
@@ -127,7 +117,6 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                         {i18n::t(locale, "btn_save")}
                     }
                 }
-            }
         }
     }
 }
