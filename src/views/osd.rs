@@ -231,6 +231,20 @@ fn OsdEditor(
             .unwrap_or_default()
     });
     let initial_for_seed = initial.clone();
+    let mut date_format = use_signal(move || {
+        initial_for_seed
+            .as_ref()
+            .and_then(|i| i.text_string.as_ref().and_then(|t| t.date_format.clone()))
+            .unwrap_or_else(|| "yyyy-MM-dd".to_string())
+    });
+    let initial_for_seed = initial.clone();
+    let mut time_format = use_signal(move || {
+        initial_for_seed
+            .as_ref()
+            .and_then(|i| i.text_string.as_ref().and_then(|t| t.time_format.clone()))
+            .unwrap_or_else(|| "HH:mm:ss".to_string())
+    });
+    let initial_for_seed = initial.clone();
     let mut position = use_signal(move || {
         initial_for_seed
             .as_ref()
@@ -276,6 +290,28 @@ fn OsdEditor(
                     }
                 }
 
+                if matches!(text_type.read().as_str(), "Date" | "DateAndTime") {
+                    label { class: "osd-editor-label", {i18n::t(locale, "osd_field_date_format")} }
+                    input {
+                        class: "form-input",
+                        r#type: "text",
+                        placeholder: "yyyy-MM-dd",
+                        value: "{date_format}",
+                        oninput: move |evt: Event<FormData>| date_format.set(evt.value()),
+                    }
+                }
+
+                if matches!(text_type.read().as_str(), "Time" | "DateAndTime") {
+                    label { class: "osd-editor-label", {i18n::t(locale, "osd_field_time_format")} }
+                    input {
+                        class: "form-input",
+                        r#type: "text",
+                        placeholder: "HH:mm:ss",
+                        value: "{time_format}",
+                        oninput: move |evt: Event<FormData>| time_format.set(evt.value()),
+                    }
+                }
+
                 label { class: "osd-editor-label", {i18n::t(locale, "osd_field_position")} }
                 select {
                     class: "form-input",
@@ -313,6 +349,8 @@ fn OsdEditor(
                         let creds_s = creds.read().clone();
                         let text_type_v = text_type.read().clone();
                         let plain_text_v = plain_text.read().clone();
+                        let date_format_v = date_format.read().clone();
+                        let time_format_v = time_format.read().clone();
                         let position_v = position.read().clone();
                         let font_size_v: Option<u32> = font_size.read().parse().ok();
                         let on_close = on_close;
@@ -347,6 +385,20 @@ fn OsdEditor(
                                 }
                             };
 
+                            // Only set the field that matches the chosen
+                            // text type. Cameras reject e.g. PlainText
+                            // when type=Date with a schema validation
+                            // fault — the spec only allows the matching
+                            // field to be present.
+                            let (plain, date_fmt, time_fmt) = match text_type_v.as_str() {
+                                "Plain" => (Some(plain_text_v), None, None),
+                                "Date" => (None, Some(date_format_v), None),
+                                "Time" => (None, None, Some(time_format_v)),
+                                "DateAndTime" => {
+                                    (None, Some(date_format_v), Some(time_format_v))
+                                }
+                                _ => (Some(plain_text_v), None, None),
+                            };
                             let osd = OsdConfiguration {
                                 token: initial.as_ref().map(|i| i.token.clone()).unwrap_or_default(),
                                 video_source_config_token: vsc_token,
@@ -358,7 +410,9 @@ fn OsdEditor(
                                 },
                                 text_string: Some(OsdTextString {
                                     type_: text_type_v,
-                                    plain_text: Some(plain_text_v),
+                                    plain_text: plain,
+                                    date_format: date_fmt,
+                                    time_format: time_fmt,
                                     font_size: font_size_v,
                                     ..Default::default()
                                 }),

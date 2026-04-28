@@ -1369,10 +1369,11 @@ pub async fn get_osds(
     let client = build_client(addr, username, password);
     let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
     let media_url = caps.media.url.ok_or("No media service URL")?;
-    // Resolve the video source config token from the selected profile so
-    // the GetOSDs call only returns OSDs attached to *this* video stream.
-    // Without the filter the camera returns every OSD across every
-    // configuration, which the UI would have to filter anyway.
+    // Resolve the video source config token. Prefer the requested profile,
+    // fall back to the first profile that has one — handles the case where
+    // selected_profile signal is stale from another device, or where the
+    // current profile is metadata-only without a video source. Mirrors
+    // the Imaging tab's "use first viable" behaviour.
     let profiles = client
         .get_profiles(&media_url)
         .await
@@ -1381,7 +1382,12 @@ pub async fn get_osds(
         .iter()
         .find(|p| p.token == profile_token)
         .and_then(|p| p.video_source_config_token.clone())
-        .ok_or("Profile has no video source configuration")?;
+        .or_else(|| {
+            profiles
+                .iter()
+                .find_map(|p| p.video_source_config_token.clone())
+        })
+        .ok_or("No profile with a video source configuration")?;
     trace_result(
         "GetOSDs",
         addr,
@@ -1434,7 +1440,9 @@ pub async fn delete_osd(
 
 /// Resolve the video source configuration token for a profile.
 /// Used by the OSD UI when CREATING a new OSD — the new entry needs
-/// to know which video source it attaches to.
+/// to know which video source it attaches to. Same fallback logic as
+/// `get_osds`: try the requested profile, otherwise pick any profile
+/// that actually has a video source.
 #[instrument(skip(username, password), fields(addr, profile_token))]
 pub async fn get_video_source_config_token(
     addr: &str,
@@ -1453,7 +1461,12 @@ pub async fn get_video_source_config_token(
         .iter()
         .find(|p| p.token == profile_token)
         .and_then(|p| p.video_source_config_token.clone())
-        .ok_or_else(|| "Profile has no video source configuration".to_string())
+        .or_else(|| {
+            profiles
+                .iter()
+                .find_map(|p| p.video_source_config_token.clone())
+        })
+        .ok_or_else(|| "No profile with a video source configuration".to_string())
 }
 
 // ── Profile management ──────────────────────────────────────────────────────

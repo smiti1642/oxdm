@@ -51,6 +51,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "osd_col_content" => "內容",
         "osd_field_text_type" => "文字類型",
         "osd_field_text" => "文字",
+        "osd_field_date_format" => "日期格式",
+        "osd_field_time_format" => "時間格式",
         "osd_field_position" => "位置",
         "osd_field_font_size" => "字體大小",
         "osd_saved" => "OSD 已儲存",

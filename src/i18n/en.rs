@@ -51,6 +51,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "osd_col_content" => "Content",
         "osd_field_text_type" => "Text type",
         "osd_field_text" => "Text",
+        "osd_field_date_format" => "Date format",
+        "osd_field_time_format" => "Time format",
         "osd_field_position" => "Position",
         "osd_field_font_size" => "Font size",
         "osd_saved" => "OSD saved",

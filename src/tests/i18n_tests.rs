@@ -53,6 +53,8 @@ const ALL_KEYS: &[&str] = &[
     "osd_col_content",
     "osd_field_text_type",
     "osd_field_text",
+    "osd_field_date_format",
+    "osd_field_time_format",
     "osd_field_position",
     "osd_field_font_size",
     "osd_saved",
