@@ -68,7 +68,16 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                 }
             }
 
-            LiveVideoStage { addr, creds, backend_id: Some(backend_id) }
+            // `key` forces the Stage to fully remount when the tab
+            // changes. Otherwise `use_resource` inside the Stage
+            // captures `backend_id` as a value, not a signal, so it
+            // never re-fetches when the user flips Snapshot ↔ RTSP.
+            LiveVideoStage {
+                key: "{backend_id}",
+                addr,
+                creds,
+                backend_id: Some(backend_id),
+            }
         }
     }
 }
