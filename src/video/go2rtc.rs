@@ -259,6 +259,34 @@ impl VideoBackend for Go2rtcBackend {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+/// Detect whether `ffmpeg(.exe)` is reachable. go2rtc spawns ffmpeg
+/// to transcode HEVC → H.264; without it, H.265 cameras connect over
+/// WebRTC but the WebView's media engine renders nothing because
+/// WebView2 ships no HEVC decoder by default. This check feeds the
+/// "H.265 needs ffmpeg" banner in the Live Video RTSP tab.
+pub fn ffmpeg_available() -> bool {
+    let bin_name = if cfg!(windows) {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join(bin_name).is_file() {
+                return true;
+            }
+        }
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if dir.join(bin_name).is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn discover_binary() -> Option<PathBuf> {
     let bin_name = if cfg!(windows) {
         "go2rtc.exe"

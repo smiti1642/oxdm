@@ -155,6 +155,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "live_mode_snapshot_hint" => "Lightweight ~5 fps snapshot loop. Works on every camera.",
         "live_mode_rtsp" => "RTSP",
         "live_mode_rtsp_hint" => "Real-fps RTSP via go2rtc bridge. Higher CPU; needs the bundled go2rtc binary.",
+        "live_h265_tip" => "H.265 camera? Install ffmpeg (so go2rtc can transcode) or the Microsoft Store HEVC Video Extensions. H.264 cameras need neither.",
         "live_video_no_profile" => "Select a profile from the device panel.",
         "live_video_no_backend" => "No video backend installed.",
         "live_video_error" => "Failed to start the stream.",

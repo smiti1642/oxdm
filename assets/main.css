@@ -1680,6 +1680,20 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--overlay0);
   font-weight: 400;
 }
+.live-video-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 24px;
+  padding: 8px 12px;
+  background: var(--surface0);
+  border-left: 3px solid var(--yellow);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.live-video-tip-body { flex: 1; }
 .live-video-stage {
   flex: 1;
   display: flex;

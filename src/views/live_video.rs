@@ -47,6 +47,13 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
     }
     .map(|b| b.display_name());
 
+    // Surface a tip when on the RTSP tab without ffmpeg available —
+    // H.265 cameras silently fail to render in WebView2 without an
+    // HEVC decoder or transcoder. Computed once per render; the result
+    // doesn't change at runtime because PATH doesn't change.
+    let show_h265_tip =
+        matches!(*mode.read(), LiveVideoMode::Rtsp) && !video::go2rtc::ffmpeg_available();
+
     rsx! {
         div { class: "live-video-view",
             div { class: "content-header",
@@ -69,6 +76,15 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                 if let Some(name) = backend_display {
                     span { class: "live-video-backend",
                         " · {name}"
+                    }
+                }
+            }
+
+            if show_h265_tip {
+                div { class: "live-video-tip",
+                    Icon { name: "info", size: 14 }
+                    span { class: "live-video-tip-body",
+                        {i18n::t(locale, "live_h265_tip")}
                     }
                 }
             }
