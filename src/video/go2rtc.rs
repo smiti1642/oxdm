@@ -200,6 +200,15 @@ impl VideoBackend for Go2rtcBackend {
         let rtsp_url =
             inject_credentials(&stream.uri, device_addr, &creds.username, &creds.password);
 
+        // Append `#video=h264#audio=copy` so go2rtc transcodes the
+        // video to H.264 when the camera is H.265 — WebView2 doesn't
+        // ship the HEVC decoder by default, and a successful WebRTC
+        // negotiation will tick its clock without rendering frames if
+        // the codec lands on something the WebView can't decode. For
+        // H.264 cameras this is a no-op (codec already matches), so
+        // the CPU cost only kicks in when actually needed.
+        let src_with_codec = format!("{rtsp_url}#video=h264#audio=copy");
+
         let stream_name = stream_name_for(device_addr, profile_token);
 
         // Always re-PUT in case the camera URL or credentials changed
@@ -208,7 +217,7 @@ impl VideoBackend for Go2rtcBackend {
         let put = format!(
             "http://{API_HOST}:{API_PORT}/api/streams?name={}&src={}",
             urlencode(&stream_name),
-            urlencode(&rtsp_url)
+            urlencode(&src_with_codec)
         );
         let resp = self
             .http
@@ -220,11 +229,13 @@ impl VideoBackend for Go2rtcBackend {
             return Err(format!("register stream HTTP {}", resp.status()));
         }
 
-        // mode=webrtc preferred — sub-second latency, codec negotiation
-        // handled by browser. go2rtc transparently transcodes H.265 →
-        // H.264 when the WebView refuses HEVC, at the cost of CPU.
+        // mode=webrtc,mse — try WebRTC first (sub-second latency), fall
+        // back to MSE (fragmented MP4) if WebRTC's video track lands on
+        // a codec WebView2 can decode for negotiation but not render.
+        // The transcode-to-H.264 hint on the source above keeps both
+        // paths inside what WebView2's media engine actually handles.
         let url = format!(
-            "http://{API_HOST}:{API_PORT}/stream.html?src={}&mode=webrtc",
+            "http://{API_HOST}:{API_PORT}/stream.html?src={}&mode=webrtc,mse",
             urlencode(&stream_name)
         );
 
