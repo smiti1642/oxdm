@@ -36,6 +36,12 @@ struct EventRow {
     fields: String,
     source: Vec<(String, String)>,
     data: Vec<(String, String)>,
+    /// Concatenated `topic + operation + fields + utc_time`, lowercased
+    /// once at construction time so the search filter can do
+    /// `contains(needle)` without re-formatting per render. With the
+    /// 500-row log cap this saves N allocations per keystroke / per
+    /// status change / per any signal that re-runs the render closure.
+    searchable_lower: String,
 }
 
 #[component]
@@ -144,15 +150,22 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                             for msg in msgs {
                                 let mut seq = next_seq.write();
                                 *seq += 1;
+                                let fields = format_fields(&msg.source, &msg.data);
+                                let searchable_lower = format!(
+                                    "{} {} {} {}",
+                                    msg.topic, msg.property_operation, fields, msg.utc_time
+                                )
+                                .to_lowercase();
                                 log.push_back(EventRow {
                                     seq: *seq,
                                     received_at: format_now(),
                                     utc_time: msg.utc_time,
                                     topic: msg.topic,
                                     operation: msg.property_operation,
-                                    fields: format_fields(&msg.source, &msg.data),
+                                    fields,
                                     source: sorted_pairs(&msg.source),
                                     data: sorted_pairs(&msg.data),
+                                    searchable_lower,
                                 });
                                 while log.len() > MAX_EVENTS {
                                     log.pop_front();
@@ -208,7 +221,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let mut v: Vec<EventRow> = events
             .read()
             .iter()
-            .filter(|r| needle.is_empty() || searchable_text(r).contains(&needle))
+            .filter(|r| needle.is_empty() || r.searchable_lower.contains(&needle))
             .cloned()
             .collect();
         sort_rows(&mut v, col, dir);
@@ -599,18 +612,6 @@ fn sort_rows(rows: &mut [EventRow], col: SortColumn, dir: SortDir) {
     if matches!(dir, SortDir::Desc) {
         rows.reverse();
     }
-}
-
-fn searchable_text(row: &EventRow) -> String {
-    // Build one lowercase blob per row so the hot-loop contains needle
-    // check stays O(n) instead of re-formatting per keystroke per row.
-    // The fields string already flattens source+data for the compact
-    // view, so we don't need to iterate them separately.
-    format!(
-        "{} {} {} {}",
-        row.topic, row.operation, row.fields, row.utc_time
-    )
-    .to_lowercase()
 }
 
 fn operation_class(op: &str) -> &'static str {
