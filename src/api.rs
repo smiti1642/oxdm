@@ -5,7 +5,7 @@ use oxvif::{
     StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 pub type ApiError = String;
 
@@ -338,12 +338,15 @@ pub async fn fetch_snapshot_data_uri(
             );
         }
         if raw_eligible {
-            debug!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
+            trace!(snapshot_url, www_authenticate = %www_auth, "Attempting Digest auth (raw TCP)");
             match try_digest_auth_raw(snapshot_url, u, p, &www_auth).await {
                 Ok((content_type, bytes)) => {
                     use base64::Engine;
                     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                    debug!(
+                    // Snapshot success fires once per profile per ~3s
+                    // tick; trace level keeps `oxdm=debug` quiet so
+                    // SOAP/event traces stay readable.
+                    trace!(
                         snapshot_url,
                         content_type = %content_type,
                         size_bytes = bytes.len(),
@@ -358,7 +361,7 @@ pub async fn fetch_snapshot_data_uri(
         }
 
         // Try Basic auth (works for many cameras, also covers non-401 cases)
-        debug!(snapshot_url, "Attempting Basic auth");
+        trace!(snapshot_url, "Attempting Basic auth");
         let resp = http
             .get(snapshot_url)
             .basic_auth(u, Some(p))
@@ -436,7 +439,7 @@ async fn try_digest_auth_raw(
         } else {
             format!("(len={})", password.len())
         };
-        debug!(username, pass_hint = %pass_hint, "Digest auth credentials");
+        trace!(username, pass_hint = %pass_hint, "Digest auth credentials");
     }
     #[cfg(not(debug_assertions))]
     debug!(
@@ -477,7 +480,7 @@ async fn try_digest_auth_raw(
          Accept: */*\r\n\
          \r\n"
     );
-    debug!(uri_path = %path, "Sending raw Digest request");
+    trace!(uri_path = %path, "Sending raw Digest request");
 
     let connect = TcpStream::connect((host.as_str(), port));
     let mut stream = tokio::time::timeout(Duration::from_secs(5), connect)
@@ -653,7 +656,7 @@ async fn snapshot_response_to_data_uri(
         .to_string();
 
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    debug!(
+    trace!(
         snapshot_url,
         content_type = %content_type,
         size_bytes = bytes.len(),
