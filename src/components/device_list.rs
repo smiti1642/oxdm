@@ -688,7 +688,11 @@ fn DeviceCard(
                                 cancel_label: i18n::t(locale, "btn_cancel").to_string(),
                                 dangerous: true,
                                 on_confirm: EventHandler::new(move |_| {
-                                    devices.write().remove(index);
+                                    let removed = devices.write().remove(index);
+                                    // Drop any cached session for this addr
+                                    // so we don't keep dead sessions around
+                                    // for a device the user just deleted.
+                                    crate::sessions::invalidate(&removed.addr);
                                     let current_sel = *ctx.selected.peek();
                                     if current_sel == Some(index) {
                                         ctx.selected.clone().set(None);

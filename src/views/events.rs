@@ -75,8 +75,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let creds_now = creds.read().clone();
         async move {
             let (u, p) = creds_now.as_options();
-            let events_url = api::get_events_url(&addr_now, u, p).await?;
-            api::get_event_properties(&addr_now, u, p, &events_url).await
+            api::get_event_properties(&addr_now, u, p).await
         }
     });
 
@@ -92,19 +91,10 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
             let user_owned = u.map(str::to_string);
             let pass_owned = p.map(str::to_string);
 
-            let events_url = match api::get_events_url(&addr_now, u, p).await {
-                Ok(url) => url,
-                Err(e) => {
-                    status.set(StatusKind::Error(format!("Capabilities: {e}")));
-                    return;
-                }
-            };
-
             let sub = match api::create_pull_subscription(
                 &addr_now,
                 u,
                 p,
-                &events_url,
                 filter.as_deref(),
                 Some(SUBSCRIPTION_LIFETIME),
             )

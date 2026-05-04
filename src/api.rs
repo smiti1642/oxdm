@@ -1,11 +1,35 @@
+//! Application-layer wrappers around `oxvif` for the Dioxus UI.
+//!
+//! Every wrapper here funnels through [`crate::sessions`], the
+//! per-`(addr, creds)` cache of [`oxvif::OnvifSession`]. The session
+//! caches `Capabilities` after `build()`, so once a device has been
+//! touched in this process, every subsequent SOAP call is a single
+//! round-trip (no `GetCapabilities` retry, no service-URL juggling
+//! at the call site) and reuses the underlying `reqwest` connection
+//! pool.
+//!
+//! Only two functions in this file *don't* use `OnvifSession`:
+//! [`fetch_snapshot_data_uri`] (raw HTTP + custom Digest, because
+//! Hikvision/Uniview snapshot endpoints reject anything that isn't
+//! byte-identical to curl) and [`discover_one_round`] (WS-Discovery
+//! is its own protocol).
+//!
+//! Error policy: every fallible function returns
+//! [`ApiError`]`= String`. The UI displays it as a toast; richer
+//! error types would be wasted because Dioxus event handlers
+//! ultimately render strings anyway.
+
 use oxvif::{
     Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
-    NtpInfo, OnvifClient, OnvifSession, OsdConfiguration, OsdOptions, PtzPreset,
-    PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime, User,
+    NtpInfo, OnvifSession, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription,
+    SnapshotUri, StreamUri, SystemDateTime, User,
 };
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, trace, warn};
+
+use crate::sessions;
 
 pub type ApiError = String;
 
@@ -27,13 +51,21 @@ fn tls_strict() -> bool {
     TLS_STRICT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Build a client for a device, optionally with credentials.
-fn build_client(addr: &str, username: Option<&str>, password: Option<&str>) -> OnvifClient {
-    let mut client = OnvifClient::new(addr);
-    if let (Some(u), Some(p)) = (username, password) {
-        client = client.with_credentials(u, p);
-    }
-    client
+/// Fetch (or build-and-cache) the `OnvifSession` for `(addr, creds)`,
+/// converting `OnvifError` to the string-flavoured [`ApiError`] the
+/// UI consumes.
+///
+/// First call for an `(addr, creds)` pair pays one
+/// `GetCapabilities` round-trip; every subsequent call returns a
+/// cheap `Arc` clone of the already-built session.
+async fn session_for(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<Arc<OnvifSession>, ApiError> {
+    sessions::get(addr, username, password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Log the result of an API call and convert error to String.
@@ -78,13 +110,8 @@ pub async fn get_device_info(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<DeviceInfo, ApiError> {
-    trace_result(
-        "GetDeviceInformation",
-        addr,
-        build_client(addr, username, password)
-            .get_device_info()
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetDeviceInformation", addr, s.get_device_info().await)
 }
 
 /// Replace the device's configurable scopes (typically `name` and `location`).
@@ -102,13 +129,8 @@ pub async fn set_scopes(
     scopes: &[String],
 ) -> Result<(), ApiError> {
     let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
-    trace_result(
-        "SetScopes",
-        addr,
-        build_client(addr, username, password)
-            .set_scopes(&scope_refs)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("SetScopes", addr, s.set_scopes(&scope_refs).await)
 }
 
 #[instrument(skip(username, password), fields(addr))]
@@ -117,13 +139,12 @@ pub async fn get_scopes(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Vec<String>, ApiError> {
-    trace_result(
-        "GetScopes",
-        addr,
-        build_client(addr, username, password).get_scopes().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetScopes", addr, s.get_scopes().await)
 }
 
+/// Returns the device capabilities snapshot cached inside the
+/// session. No network call when the session is already built.
 #[allow(dead_code)]
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_capabilities(
@@ -131,13 +152,8 @@ pub async fn get_capabilities(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Capabilities, ApiError> {
-    trace_result(
-        "GetCapabilities",
-        addr,
-        build_client(addr, username, password)
-            .get_capabilities()
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    Ok(s.capabilities().clone())
 }
 
 // ── Imaging ─────────────────────────────────────────────────────────────────
@@ -149,13 +165,11 @@ pub async fn get_imaging_settings(
     password: Option<&str>,
     source_token: &str,
 ) -> Result<oxvif::ImagingSettings, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetImagingSettings",
         addr,
-        client.get_imaging_settings(&url, source_token).await,
+        s.get_imaging_settings(source_token).await,
     )
 }
 
@@ -166,13 +180,11 @@ pub async fn get_imaging_options(
     password: Option<&str>,
     source_token: &str,
 ) -> Result<oxvif::ImagingOptions, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetImagingOptions",
         addr,
-        client.get_imaging_options(&url, source_token).await,
+        s.get_imaging_options(source_token).await,
     )
 }
 
@@ -184,31 +196,25 @@ pub async fn set_imaging_settings(
     source_token: &str,
     settings: &oxvif::ImagingSettings,
 ) -> Result<(), ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let url = caps.imaging.url.ok_or("No imaging service URL")?;
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetImagingSettings",
         addr,
-        client
-            .set_imaging_settings(&url, source_token, settings)
-            .await,
+        s.set_imaging_settings(source_token, settings).await,
     )
 }
 
 // ── Media ───────────────────────────────────────────────────────────────────
 
-/// Fetch all media profiles. Requires the media service URL from GetCapabilities.
+/// Fetch all media profiles.
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_profiles(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Vec<MediaProfile>, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result("GetProfiles", addr, client.get_profiles(&media_url).await)
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetProfiles", addr, s.get_profiles().await)
 }
 
 /// Fetch snapshot URI for a specific profile.
@@ -219,13 +225,11 @@ pub async fn get_snapshot_uri(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<SnapshotUri, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetSnapshotUri",
         addr,
-        client.get_snapshot_uri(&media_url, profile_token).await,
+        s.get_snapshot_uri(profile_token).await,
     )
 }
 
@@ -675,14 +679,8 @@ pub async fn get_stream_uri(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<StreamUri, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result(
-        "GetStreamUri",
-        addr,
-        client.get_stream_uri(&media_url, profile_token).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetStreamUri", addr, s.get_stream_uri(profile_token).await)
 }
 
 // ── Focus (Imaging service) ─────────────────────────────────────────────────
@@ -692,20 +690,6 @@ pub async fn get_stream_uri(
 // mode (AUTO / MANUAL) is in `ImagingSettings.focus_mode`, edited via
 // the Imaging Settings tab.
 
-/// Fetch the device's Imaging service URL. Errors if not advertised.
-#[instrument(skip(username, password), fields(addr))]
-pub async fn get_imaging_url(
-    addr: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> Result<String, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    caps.imaging
-        .url
-        .ok_or_else(|| "Imaging service not advertised by this device".to_string())
-}
-
 /// Start continuous focus movement. `speed > 0` focuses farther,
 /// `speed < 0` focuses nearer. Call [`imaging_focus_stop`] to halt.
 #[instrument(skip(username, password), fields(addr, source_token, speed))]
@@ -713,15 +697,14 @@ pub async fn imaging_focus_continuous(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    imaging_url: &str,
     source_token: &str,
     speed: f32,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "Imaging Move (Focus)",
         addr,
-        build_client(addr, username, password)
-            .imaging_move(imaging_url, source_token, &FocusMove::Continuous { speed })
+        s.imaging_move(source_token, &FocusMove::Continuous { speed })
             .await,
     )
 }
@@ -731,60 +714,52 @@ pub async fn imaging_focus_stop(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    imaging_url: &str,
     source_token: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "Imaging Stop (Focus)",
         addr,
-        build_client(addr, username, password)
-            .imaging_stop(imaging_url, source_token)
-            .await,
+        s.imaging_stop(source_token).await,
     )
 }
 
 // ── PTZ ─────────────────────────────────────────────────────────────────────
 //
-// PTZ operations re-use the device's PTZ service URL. Callers should fetch
-// it once (via [`get_ptz_url`]) and cache it — joystick UX needs sub-100ms
-// response, and re-querying GetCapabilities on every mousedown would add
-// 200–400 ms of round-trip latency. The other api wrappers in this file
-// re-fetch capabilities each call because their callers are tab-rate, not
-// joystick-rate.
+// PTZ operations were historically gated by an externally-cached
+// PTZ service URL because re-fetching `GetCapabilities` on every
+// joystick mousedown added 200–400 ms of latency. With the per-
+// `(addr, creds)` `OnvifSession` cache in `crate::sessions`, the
+// PTZ URL is already in `session.capabilities()` and the session
+// itself is cheap to fetch — joystick paths now just call these
+// wrappers directly with no pre-fetch dance.
 
-/// Fetch the device's PTZ service URL. Errors if the device doesn't expose
-/// a PTZ service in its capabilities.
+/// Whether the device advertises a PTZ service.
 #[instrument(skip(username, password), fields(addr))]
-pub async fn get_ptz_url(
+pub async fn has_ptz_service(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-) -> Result<String, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    caps.ptz
-        .url
-        .ok_or_else(|| "PTZ service not advertised by this device".to_string())
+) -> Result<bool, ApiError> {
+    let s = session_for(addr, username, password).await?;
+    Ok(s.capabilities().ptz.url.is_some())
 }
 
-#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
 #[instrument(skip(username, password), fields(addr, profile_token, pan, tilt, zoom))]
 pub async fn ptz_continuous_move(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
     pan: f32,
     tilt: f32,
     zoom: f32,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ ContinuousMove",
         addr,
-        build_client(addr, username, password)
-            .ptz_continuous_move(ptz_url, profile_token, pan, tilt, zoom)
-            .await,
+        s.ptz_continuous_move(profile_token, pan, tilt, zoom).await,
     )
 }
 
@@ -793,16 +768,10 @@ pub async fn ptz_stop(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
 ) -> Result<(), ApiError> {
-    trace_result(
-        "PTZ Stop",
-        addr,
-        build_client(addr, username, password)
-            .ptz_stop(ptz_url, profile_token)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("PTZ Stop", addr, s.ptz_stop(profile_token).await)
 }
 
 #[instrument(skip(username, password), fields(addr, profile_token))]
@@ -810,15 +779,13 @@ pub async fn ptz_get_presets(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
 ) -> Result<Vec<PtzPreset>, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ GetPresets",
         addr,
-        build_client(addr, username, password)
-            .ptz_get_presets(ptz_url, profile_token)
-            .await,
+        s.ptz_get_presets(profile_token).await,
     )
 }
 
@@ -828,22 +795,20 @@ pub async fn ptz_get_presets(
 /// pass `None` to create a new preset, or `Some(token)` to overwrite an
 /// existing one. Returns the token of the saved preset (camera-assigned
 /// for new ones, same as input for updates).
-#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
 #[instrument(skip(username, password), fields(addr, profile_token, preset_name))]
 pub async fn ptz_set_preset(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
     preset_name: Option<&str>,
     preset_token: Option<&str>,
 ) -> Result<String, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ SetPreset",
         addr,
-        build_client(addr, username, password)
-            .ptz_set_preset(ptz_url, profile_token, preset_name, preset_token)
+        s.ptz_set_preset(profile_token, preset_name, preset_token)
             .await,
     )
 }
@@ -853,16 +818,14 @@ pub async fn ptz_remove_preset(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
     preset_token: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ RemovePreset",
         addr,
-        build_client(addr, username, password)
-            .ptz_remove_preset(ptz_url, profile_token, preset_token)
-            .await,
+        s.ptz_remove_preset(profile_token, preset_token).await,
     )
 }
 
@@ -871,16 +834,14 @@ pub async fn ptz_goto_preset(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
     preset_token: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ GotoPreset",
         addr,
-        build_client(addr, username, password)
-            .ptz_goto_preset(ptz_url, profile_token, preset_token)
-            .await,
+        s.ptz_goto_preset(profile_token, preset_token).await,
     )
 }
 
@@ -889,15 +850,13 @@ pub async fn ptz_goto_home_position(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    ptz_url: &str,
     profile_token: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PTZ GotoHomePosition",
         addr,
-        build_client(addr, username, password)
-            .ptz_goto_home_position(ptz_url, profile_token, None)
-            .await,
+        s.ptz_goto_home_position(profile_token, None).await,
     )
 }
 
@@ -915,12 +874,11 @@ pub async fn set_system_date_and_time(
     password: Option<&str>,
     req: &oxvif::SetDateTimeRequest,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetSystemDateAndTime",
         addr,
-        build_client(addr, username, password)
-            .set_system_date_and_time(req)
-            .await,
+        s.set_system_date_and_time(req).await,
     )
 }
 
@@ -930,12 +888,11 @@ pub async fn get_system_date_and_time(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<SystemDateTime, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetSystemDateAndTime",
         addr,
-        build_client(addr, username, password)
-            .get_system_date_and_time()
-            .await,
+        s.get_system_date_and_time().await,
     )
 }
 
@@ -949,13 +906,8 @@ pub async fn set_hostname(
     password: Option<&str>,
     name: &str,
 ) -> Result<(), ApiError> {
-    trace_result(
-        "SetHostname",
-        addr,
-        build_client(addr, username, password)
-            .set_hostname(name)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("SetHostname", addr, s.set_hostname(name).await)
 }
 
 /// Update the IPv4 configuration of a network interface. Returns `true`
@@ -973,11 +925,11 @@ pub async fn set_network_interfaces(
     prefix_length: u32,
     from_dhcp: bool,
 ) -> Result<bool, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetNetworkInterfaces",
         addr,
-        build_client(addr, username, password)
-            .set_network_interfaces(token, enabled, ipv4_address, prefix_length, from_dhcp)
+        s.set_network_interfaces(token, enabled, ipv4_address, prefix_length, from_dhcp)
             .await,
     )
 }
@@ -992,13 +944,8 @@ pub async fn set_dns(
     servers: &[String],
 ) -> Result<(), ApiError> {
     let refs: Vec<&str> = servers.iter().map(String::as_str).collect();
-    trace_result(
-        "SetDNS",
-        addr,
-        build_client(addr, username, password)
-            .set_dns(from_dhcp, &refs)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("SetDNS", addr, s.set_dns(from_dhcp, &refs).await)
 }
 
 /// Set the NTP servers. If `from_dhcp` is true, `servers` is ignored.
@@ -1011,13 +958,8 @@ pub async fn set_ntp(
     servers: &[String],
 ) -> Result<(), ApiError> {
     let refs: Vec<&str> = servers.iter().map(String::as_str).collect();
-    trace_result(
-        "SetNTP",
-        addr,
-        build_client(addr, username, password)
-            .set_ntp(from_dhcp, &refs)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("SetNTP", addr, s.set_ntp(from_dhcp, &refs).await)
 }
 
 /// Replace the default IPv4 gateway list.
@@ -1029,12 +971,11 @@ pub async fn set_network_default_gateway(
     ipv4_addresses: &[String],
 ) -> Result<(), ApiError> {
     let refs: Vec<&str> = ipv4_addresses.iter().map(String::as_str).collect();
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetNetworkDefaultGateway",
         addr,
-        build_client(addr, username, password)
-            .set_network_default_gateway(&refs)
-            .await,
+        s.set_network_default_gateway(&refs).await,
     )
 }
 
@@ -1053,12 +994,11 @@ pub async fn set_network_protocols(
         .iter()
         .map(|(n, e, p)| (n.as_str(), *e, p.as_slice()))
         .collect();
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetNetworkProtocols",
         addr,
-        build_client(addr, username, password)
-            .set_network_protocols(&refs)
-            .await,
+        s.set_network_protocols(&refs).await,
     )
 }
 
@@ -1068,11 +1008,8 @@ pub async fn get_hostname(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Hostname, ApiError> {
-    trace_result(
-        "GetHostname",
-        addr,
-        build_client(addr, username, password).get_hostname().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetHostname", addr, s.get_hostname().await)
 }
 
 #[instrument(skip(username, password), fields(addr))]
@@ -1081,12 +1018,11 @@ pub async fn get_network_interfaces(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Vec<NetworkInterface>, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetNetworkInterfaces",
         addr,
-        build_client(addr, username, password)
-            .get_network_interfaces()
-            .await,
+        s.get_network_interfaces().await,
     )
 }
 
@@ -1096,11 +1032,8 @@ pub async fn get_dns(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<DnsInformation, ApiError> {
-    trace_result(
-        "GetDNS",
-        addr,
-        build_client(addr, username, password).get_dns().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetDNS", addr, s.get_dns().await)
 }
 
 #[instrument(skip(username, password), fields(addr))]
@@ -1109,11 +1042,8 @@ pub async fn get_ntp(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<NtpInfo, ApiError> {
-    trace_result(
-        "GetNTP",
-        addr,
-        build_client(addr, username, password).get_ntp().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetNTP", addr, s.get_ntp().await)
 }
 
 #[instrument(skip(username, password), fields(addr))]
@@ -1122,12 +1052,11 @@ pub async fn get_network_default_gateway(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<NetworkGateway, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "GetNetworkDefaultGateway",
         addr,
-        build_client(addr, username, password)
-            .get_network_default_gateway()
-            .await,
+        s.get_network_default_gateway().await,
     )
 }
 
@@ -1137,13 +1066,8 @@ pub async fn get_network_protocols(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Vec<NetworkProtocol>, ApiError> {
-    trace_result(
-        "GetNetworkProtocols",
-        addr,
-        build_client(addr, username, password)
-            .get_network_protocols()
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetNetworkProtocols", addr, s.get_network_protocols().await)
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────
@@ -1154,11 +1078,8 @@ pub async fn get_users(
     username: Option<&str>,
     password: Option<&str>,
 ) -> Result<Vec<User>, ApiError> {
-    trace_result(
-        "GetUsers",
-        addr,
-        build_client(addr, username, password).get_users().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetUsers", addr, s.get_users().await)
 }
 
 #[instrument(skip(username, password, new_password), fields(addr, new_username))]
@@ -1170,11 +1091,11 @@ pub async fn create_user(
     new_password: &str,
     user_level: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "CreateUsers",
         addr,
-        build_client(addr, username, password)
-            .create_users(&[(new_username, new_password, user_level)])
+        s.create_users(&[(new_username, new_password, user_level)])
             .await,
     )
 }
@@ -1186,12 +1107,11 @@ pub async fn delete_user(
     password: Option<&str>,
     target_username: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "DeleteUsers",
         addr,
-        build_client(addr, username, password)
-            .delete_users(&[target_username])
-            .await,
+        s.delete_users(&[target_username]).await,
     )
 }
 
@@ -1212,12 +1132,11 @@ pub async fn set_user(
     new_password: Option<&str>,
     user_level: &str,
 ) -> Result<(), ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetUser",
         addr,
-        build_client(addr, username, password)
-            .set_user(target_username, new_password, user_level)
-            .await,
+        s.set_user(target_username, new_password, user_level).await,
     )
 }
 
@@ -1230,11 +1149,8 @@ pub async fn system_reboot(
     password: Option<&str>,
 ) -> Result<String, ApiError> {
     info!(addr, "Requesting system reboot");
-    trace_result(
-        "SystemReboot",
-        addr,
-        build_client(addr, username, password).system_reboot().await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("SystemReboot", addr, s.system_reboot().await)
 }
 
 #[instrument(skip(username, password), fields(addr, default_type))]
@@ -1245,61 +1161,49 @@ pub async fn set_system_factory_default(
     default_type: &str,
 ) -> Result<(), ApiError> {
     info!(addr, default_type, "Requesting factory reset");
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "SetSystemFactoryDefault",
         addr,
-        build_client(addr, username, password)
-            .set_system_factory_default(default_type)
-            .await,
+        s.set_system_factory_default(default_type).await,
     )
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
-
-#[instrument(skip(username, password), fields(addr))]
-pub async fn get_events_url(
-    addr: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> Result<String, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    caps.events
-        .url
-        .ok_or_else(|| "Events service not advertised by this device".to_string())
-}
+//
+// Pull-point subscriptions need two distinct URLs:
+//   * the **events service URL** (`events_url`) — where to POST
+//     `CreatePullPointSubscription`. The session reads this from
+//     `capabilities()`, so callers don't pass it.
+//   * the **subscription reference URL** — returned by the camera
+//     in `CreatePullPointSubscriptionResponse.SubscriptionReference`,
+//     used as the endpoint for subsequent `PullMessages` /
+//     `Renew` / `Unsubscribe`. This *must* be passed by the caller
+//     because it's per-subscription, not per-device.
 
 #[instrument(skip(username, password), fields(addr))]
 pub async fn get_event_properties(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    events_url: &str,
 ) -> Result<EventProperties, ApiError> {
-    trace_result(
-        "GetEventProperties",
-        addr,
-        build_client(addr, username, password)
-            .get_event_properties(events_url)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("GetEventProperties", addr, s.get_event_properties().await)
 }
 
-#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
 #[instrument(skip(username, password), fields(addr))]
 pub async fn create_pull_subscription(
     addr: &str,
     username: Option<&str>,
     password: Option<&str>,
-    events_url: &str,
     filter: Option<&str>,
     initial_termination_time: Option<&str>,
 ) -> Result<PullPointSubscription, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "CreatePullPointSubscription",
         addr,
-        build_client(addr, username, password)
-            .create_pull_point_subscription(events_url, filter, initial_termination_time)
+        s.create_pull_point_subscription(filter, initial_termination_time)
             .await,
     )
 }
@@ -1313,11 +1217,11 @@ pub async fn pull_event_messages(
     timeout: &str,
     max_messages: u32,
 ) -> Result<Vec<NotificationMessage>, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "PullMessages",
         addr,
-        build_client(addr, username, password)
-            .pull_messages(subscription_url, timeout, max_messages)
+        s.pull_messages(subscription_url, timeout, max_messages)
             .await,
     )
 }
@@ -1330,11 +1234,11 @@ pub async fn renew_event_subscription(
     subscription_url: &str,
     termination_time: &str,
 ) -> Result<String, ApiError> {
+    let s = session_for(addr, username, password).await?;
     trace_result(
         "RenewSubscription",
         addr,
-        build_client(addr, username, password)
-            .renew_subscription(subscription_url, termination_time)
+        s.renew_subscription(subscription_url, termination_time)
             .await,
     )
 }
@@ -1346,21 +1250,11 @@ pub async fn unsubscribe_events(
     password: Option<&str>,
     subscription_url: &str,
 ) -> Result<(), ApiError> {
-    trace_result(
-        "Unsubscribe",
-        addr,
-        build_client(addr, username, password)
-            .unsubscribe(subscription_url)
-            .await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("Unsubscribe", addr, s.unsubscribe(subscription_url).await)
 }
 
 // ── OSD ─────────────────────────────────────────────────────────────────────
-//
-// Two-call pattern in every wrapper: GetCapabilities → media_url, then
-// the OSD operation. The cost is one extra round-trip per call which
-// matters less here than for hot paths (snapshot loop) — the OSD UI is
-// click-driven, not auto-refreshed.
 
 #[instrument(skip(username, password), fields(addr, profile_token))]
 pub async fn get_osds(
@@ -1369,33 +1263,9 @@ pub async fn get_osds(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<Vec<OsdConfiguration>, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    // Resolve the video source config token. Prefer the requested profile,
-    // fall back to the first profile that has one — handles the case where
-    // selected_profile signal is stale from another device, or where the
-    // current profile is metadata-only without a video source. Mirrors
-    // the Imaging tab's "use first viable" behaviour.
-    let profiles = client
-        .get_profiles(&media_url)
-        .await
-        .map_err(|e| e.to_string())?;
-    let vsc_token = profiles
-        .iter()
-        .find(|p| p.token == profile_token)
-        .and_then(|p| p.video_source_config_token.clone())
-        .or_else(|| {
-            profiles
-                .iter()
-                .find_map(|p| p.video_source_config_token.clone())
-        })
-        .ok_or("No profile with a video source configuration")?;
-    trace_result(
-        "GetOSDs",
-        addr,
-        client.get_osds(&media_url, Some(&vsc_token)).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    let vsc_token = resolve_vsc_token(&s, profile_token).await?;
+    trace_result("GetOSDs", addr, s.get_osds(Some(&vsc_token)).await)
 }
 
 #[instrument(skip(username, password, osd), fields(addr, token = %osd.token))]
@@ -1405,10 +1275,8 @@ pub async fn set_osd(
     password: Option<&str>,
     osd: &OsdConfiguration,
 ) -> Result<(), ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result("SetOSD", addr, client.set_osd(&media_url, osd).await)
+    let s = session_for(addr, username, password).await?;
+    trace_result("SetOSD", addr, s.set_osd(osd).await)
 }
 
 #[instrument(skip(username, password, osd), fields(addr))]
@@ -1418,10 +1286,8 @@ pub async fn create_osd(
     password: Option<&str>,
     osd: &OsdConfiguration,
 ) -> Result<String, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result("CreateOSD", addr, client.create_osd(&media_url, osd).await)
+    let s = session_for(addr, username, password).await?;
+    trace_result("CreateOSD", addr, s.create_osd(osd).await)
 }
 
 #[instrument(skip(username, password), fields(addr, osd_token))]
@@ -1431,27 +1297,20 @@ pub async fn delete_osd(
     password: Option<&str>,
     osd_token: &str,
 ) -> Result<(), ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result(
-        "DeleteOSD",
-        addr,
-        client.delete_osd(&media_url, osd_token).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("DeleteOSD", addr, s.delete_osd(osd_token).await)
 }
 
-/// Fetch the camera's allowed OSD configuration options for the
-/// selected profile's video source. Same fallback logic as
-/// `get_osds`: try the requested profile, otherwise pick any with a
-/// video source. The returned `OsdOptions` lists supported text
-/// types, position types, date/time formats, font size range — and,
-/// because we route through `OnvifSession` rather than `OnvifClient`,
-/// the per-text-type quotas some cameras stash in non-spec
-/// attributes (Genetec, late Hikvision). The OSD editor needs those
-/// quotas to disable the type dropdown when the camera is full;
-/// `OnvifClient::get_osd_options` deliberately leaves them empty
-/// since they aren't in the WSDL.
+/// Fetch the camera's allowed OSD configuration options.
+///
+/// The returned `OsdOptions` lists supported text types, position
+/// types, date/time formats, font size range — and the per-text-type
+/// quotas some cameras stash in non-spec XML attributes (Genetec,
+/// late Hikvision). The quotas are only populated by
+/// `OnvifSession::get_osd_options`, not `OnvifClient::get_osd_options`
+/// — that's the spec-strict-vs-vendor-tolerant split discussed in
+/// oxvif's CHANGELOG. The OSD editor uses them to disable the type
+/// dropdown when the camera is full.
 #[instrument(skip(username, password), fields(addr, profile_token))]
 pub async fn get_osd_options(
     addr: &str,
@@ -1459,34 +1318,14 @@ pub async fn get_osd_options(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<OsdOptions, ApiError> {
-    let mut builder = OnvifSession::builder(addr);
-    if let (Some(u), Some(p)) = (username, password) {
-        builder = builder.with_credentials(u, p);
-    }
-    let session = builder.build().await.map_err(|e| e.to_string())?;
-    let profiles = session.get_profiles().await.map_err(|e| e.to_string())?;
-    let vsc_token = profiles
-        .iter()
-        .find(|p| p.token == profile_token)
-        .and_then(|p| p.video_source_config_token.clone())
-        .or_else(|| {
-            profiles
-                .iter()
-                .find_map(|p| p.video_source_config_token.clone())
-        })
-        .ok_or("No profile with a video source configuration")?;
-    trace_result(
-        "GetOSDOptions",
-        addr,
-        session.get_osd_options(&vsc_token).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    let vsc_token = resolve_vsc_token(&s, profile_token).await?;
+    trace_result("GetOSDOptions", addr, s.get_osd_options(&vsc_token).await)
 }
 
 /// Resolve the video source configuration token for a profile.
 /// Used by the OSD UI when CREATING a new OSD — the new entry needs
-/// to know which video source it attaches to. Same fallback logic as
-/// `get_osds`: try the requested profile, otherwise pick any profile
-/// that actually has a video source.
+/// to know which video source it attaches to.
 #[instrument(skip(username, password), fields(addr, profile_token))]
 pub async fn get_video_source_config_token(
     addr: &str,
@@ -1494,13 +1333,20 @@ pub async fn get_video_source_config_token(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<String, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    let profiles = client
-        .get_profiles(&media_url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let s = session_for(addr, username, password).await?;
+    resolve_vsc_token(&s, profile_token).await
+}
+
+/// Pick the most-appropriate video source configuration token for
+/// `profile_token`. Tries the requested profile first; falls back to
+/// the first profile that has any video source — covers the case
+/// where `selected_profile` is stale from another device, or where
+/// the current profile is metadata-only.
+async fn resolve_vsc_token(
+    session: &OnvifSession,
+    profile_token: &str,
+) -> Result<String, ApiError> {
+    let profiles = session.get_profiles().await.map_err(|e| e.to_string())?;
     profiles
         .iter()
         .find(|p| p.token == profile_token)
@@ -1522,14 +1368,8 @@ pub async fn create_profile(
     password: Option<&str>,
     name: &str,
 ) -> Result<MediaProfile, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result(
-        "CreateProfile",
-        addr,
-        client.create_profile(&media_url, name, None).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("CreateProfile", addr, s.create_profile(name, None).await)
 }
 
 #[instrument(skip(username, password), fields(addr, profile_token))]
@@ -1539,12 +1379,6 @@ pub async fn delete_profile(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<(), ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    trace_result(
-        "DeleteProfile",
-        addr,
-        client.delete_profile(&media_url, profile_token).await,
-    )
+    let s = session_for(addr, username, password).await?;
+    trace_result("DeleteProfile", addr, s.delete_profile(profile_token).await)
 }

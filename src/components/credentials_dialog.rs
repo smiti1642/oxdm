@@ -65,6 +65,10 @@ pub fn GlobalCredentialsDialog(open: Signal<bool>) -> Element {
                                 username: username.peek().clone(),
                                 password: password.peek().clone(),
                             });
+                            // Global creds changed: every cached session built
+                            // under the old creds is now stale. Drop them all
+                            // so the next API call rebuilds with the new creds.
+                            crate::sessions::invalidate_all();
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "cred_saved"));
                             open_sig.set(false);
                         },

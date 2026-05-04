@@ -25,9 +25,11 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     let preview_mode = use_signal(|| LiveVideoMode::Snapshot);
     let preview_backend_id = use_memo(move || preview_mode.read().backend_id());
 
-    // Resolve the PTZ service URL once per (addr, creds). This is the slow
-    // call (GetCapabilities round-trip); cache it so joystick mousedowns
-    // dispatch in one SOAP call instead of two.
+    // Feature-detect PTZ on this camera. Just a capabilities probe —
+    // the underlying `OnvifSession` caches the GetCapabilities response,
+    // so this is one round-trip per (addr, creds) for the lifetime of
+    // the process and free after that. Drives the "PTZ unavailable"
+    // empty-state below.
     let ptz_state = use_resource(move || {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
@@ -36,31 +38,32 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                 return Err("no_device".to_string());
             }
             let (u, p) = creds_s.as_options();
-            api::get_ptz_url(&addr_s, u, p).await
+            match api::has_ptz_service(&addr_s, u, p).await {
+                Ok(true) => Ok(()),
+                Ok(false) => Err("ptz_unavailable".to_string()),
+                Err(e) => Err(e),
+            }
         }
     });
 
-    // Re-fetch presets when profile or PTZ URL changes.
+    // Re-fetch presets when profile changes. Joystick latency used to
+    // require pre-caching the PTZ URL; the session pool makes that
+    // unnecessary — every `api::ptz_*` call hits a cached session and
+    // costs exactly one SOAP round-trip.
     let mut presets_state = use_resource(move || {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
-        let url_opt = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => Some(u.clone()),
-            _ => None,
-        };
         let token_opt = profile_sig.read().clone();
         async move {
-            let url = url_opt.ok_or_else(|| "ptz_unavailable".to_string())?;
             let token = token_opt.ok_or_else(|| "no_profile".to_string())?;
             let (u, p) = creds_s.as_options();
-            api::ptz_get_presets(&addr_s, u, p, &url, &token).await
+            api::ptz_get_presets(&addr_s, u, p, &token).await
         }
     });
 
-    // Resolve the Imaging URL + the selected profile's video_source_token.
-    // Both are needed for focus motor control (a separate ONVIF service from
-    // PTZ that addresses the camera by source token, not profile token).
-    // Cached together so the focus buttons stay reactive to profile change.
+    // Resolve the selected profile's video_source_token. Focus motor
+    // control lives on the Imaging service (separate from PTZ) and
+    // addresses the camera by source token, not profile token.
     let focus_state = use_resource(move || {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
@@ -70,7 +73,6 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                 return Err("no_device".to_string());
             }
             let (u, p) = creds_s.as_options();
-            let imaging_url = api::get_imaging_url(&addr_s, u, p).await?;
             let profiles = api::get_profiles(&addr_s, u, p).await?;
             let source_token = token_opt
                 .as_ref()
@@ -78,22 +80,18 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                 .or_else(|| profiles.first())
                 .and_then(|p| p.video_source_token.clone())
                 .ok_or_else(|| "no_video_source".to_string())?;
-            Ok::<_, String>((imaging_url, source_token))
+            Ok::<_, String>(source_token)
         }
     });
 
     // ── Action callbacks ───────────────────────────────────────────────────
     // Wrapped with `use_callback` so they're `Copy` and can be passed as
     // props to child components (DirButton, ZoomButton, PresetRow). Each
-    // resolves the (ptz_url, profile_token) pair on every invocation —
-    // stale cached values would silently fire moves at the wrong device
-    // when the user switches profile while holding a button.
+    // re-reads `profile_sig` at invocation — stale cached values would
+    // silently fire moves at the wrong device when the user switches
+    // profile while holding a button.
     let do_move = use_callback(move |args: (f32, f32, f32)| {
         let (pan, tilt, zoom) = args;
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -101,19 +99,13 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            if let Err(e) =
-                api::ptz_continuous_move(&addr_s, u, p, &url, &token, pan, tilt, zoom).await
-            {
+            if let Err(e) = api::ptz_continuous_move(&addr_s, u, p, &token, pan, tilt, zoom).await {
                 tracing::warn!(error = %e, "PTZ continuous_move failed");
             }
         });
     });
 
     let do_stop = use_callback(move |_: ()| {
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -121,17 +113,13 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            if let Err(e) = api::ptz_stop(&addr_s, u, p, &url, &token).await {
+            if let Err(e) = api::ptz_stop(&addr_s, u, p, &token).await {
                 tracing::warn!(error = %e, "PTZ stop failed");
             }
         });
     });
 
     let goto_home = use_callback(move |_: ()| {
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -139,7 +127,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            match api::ptz_goto_home_position(&addr_s, u, p, &url, &token).await {
+            match api::ptz_goto_home_position(&addr_s, u, p, &token).await {
                 Ok(()) => ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ptz_home_ok")),
                 Err(e) => ctx.push_toast(ToastLevel::Error, e),
             }
@@ -174,8 +162,8 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     // unrelated ImagingSettings fields. Restarts focus_mode_state so the
     // segmented control reflects the new value within one round-trip.
     let set_focus_mode_cb = use_callback(move |auto: bool| {
-        let (_imaging_url, source_token) = match &*focus_state.read_unchecked() {
-            Some(Ok(pair)) => pair.clone(),
+        let source_token = match &*focus_state.read_unchecked() {
+            Some(Ok(t)) => t.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
@@ -202,17 +190,15 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     // Focus motor — speed sign carries direction (+ far / − near), so
     // FocusButton encodes the dir at construction time the same way ZoomButton does.
     let focus_move = use_callback(move |speed: f32| {
-        let (imaging_url, source_token) = match &*focus_state.read_unchecked() {
-            Some(Ok(pair)) => pair.clone(),
+        let source_token = match &*focus_state.read_unchecked() {
+            Some(Ok(t)) => t.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            if let Err(e) =
-                api::imaging_focus_continuous(&addr_s, u, p, &imaging_url, &source_token, speed)
-                    .await
+            if let Err(e) = api::imaging_focus_continuous(&addr_s, u, p, &source_token, speed).await
             {
                 tracing::warn!(error = %e, "focus continuous failed");
             }
@@ -220,17 +206,15 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     });
 
     let focus_stop = use_callback(move |_: ()| {
-        let (imaging_url, source_token) = match &*focus_state.read_unchecked() {
-            Some(Ok(pair)) => pair.clone(),
+        let source_token = match &*focus_state.read_unchecked() {
+            Some(Ok(t)) => t.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            if let Err(e) =
-                api::imaging_focus_stop(&addr_s, u, p, &imaging_url, &source_token).await
-            {
+            if let Err(e) = api::imaging_focus_stop(&addr_s, u, p, &source_token).await {
                 tracing::warn!(error = %e, "focus stop failed");
             }
         });
@@ -244,10 +228,6 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         if name.trim().is_empty() {
             return;
         }
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -255,7 +235,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            match api::ptz_set_preset(&addr_s, u, p, &url, &token, Some(name.trim()), None).await {
+            match api::ptz_set_preset(&addr_s, u, p, &token, Some(name.trim()), None).await {
                 Ok(_) => {
                     new_preset_name.set(String::new());
                     presets_state.restart();
@@ -267,10 +247,6 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     });
 
     let remove_preset = use_callback(move |preset_token: String| {
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -278,7 +254,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            match api::ptz_remove_preset(&addr_s, u, p, &url, &token, &preset_token).await {
+            match api::ptz_remove_preset(&addr_s, u, p, &token, &preset_token).await {
                 Ok(()) => {
                     presets_state.restart();
                     ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ptz_preset_removed"));
@@ -289,10 +265,6 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     });
 
     let goto_preset = use_callback(move |preset_token: String| {
-        let url = match &*ptz_state.read_unchecked() {
-            Some(Ok(u)) => u.clone(),
-            _ => return,
-        };
         let Some(token) = profile_sig.read().clone() else {
             return;
         };
@@ -300,7 +272,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let creds_s = creds.read().clone();
         spawn(async move {
             let (u, p) = creds_s.as_options();
-            if let Err(e) = api::ptz_goto_preset(&addr_s, u, p, &url, &token, &preset_token).await {
+            if let Err(e) = api::ptz_goto_preset(&addr_s, u, p, &token, &preset_token).await {
                 ctx.push_toast(ToastLevel::Error, e);
             }
         });

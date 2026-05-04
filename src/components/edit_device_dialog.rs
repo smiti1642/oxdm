@@ -99,6 +99,7 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                     button {
                         class: "btn btn-md btn-primary",
                         onclick: move |_| {
+                            let mut addr_to_invalidate: Option<String> = None;
                             if let Some(d) = devices.write().get_mut(idx) {
                                 d.name = name.peek().trim().to_string();
                                 let u = username.peek().clone();
@@ -108,6 +109,14 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                                 } else {
                                     Some(Credentials { username: u, password: p })
                                 };
+                                // Per-device creds may have changed —
+                                // capture the addr so we can drop any
+                                // sessions cached under the old creds
+                                // after we release the devices lock.
+                                addr_to_invalidate = Some(d.addr.clone());
+                            }
+                            if let Some(addr) = addr_to_invalidate {
+                                crate::sessions::invalidate(&addr);
                             }
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "edit_device_saved"));
                             crate::device_ops::reverify_device(ctx, devices, idx);

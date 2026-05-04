@@ -6,6 +6,7 @@ mod components;
 mod device_ops;
 mod i18n;
 mod persist;
+mod sessions;
 mod state;
 #[cfg(test)]
 mod tests;

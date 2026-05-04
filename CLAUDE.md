@@ -54,8 +54,16 @@ src/
   api.rs            Async wrappers around oxvif (discovery, device info,
                     media, imaging, network, users, maintenance) +
                     snapshot fetch with Digest/Basic auth fallback.
+                    Every wrapper funnels through `crate::sessions` for
+                    session reuse — see "Session reuse" below.
                     Delegates WS-Discovery to oxvif::discovery::probe_rounds
                     (multi-NIC + IP_MULTICAST_IF pinning handled upstream).
+  sessions.rs       Process-wide cache of `oxvif::OnvifSession` keyed by
+                    `(addr, creds)`. First call per (addr, creds) builds
+                    the session (one GetCapabilities round-trip); every
+                    subsequent call returns a cheap Arc clone. Cred change
+                    or device removal calls `sessions::invalidate(addr)` /
+                    `invalidate_all()` to drop stale entries.
   persist.rs        ~/.oxdm/config.toml (theme/locale),
                     ~/.oxdm/devices.toml (manual devices),
                     + single JSON blob in system keychain for ALL
@@ -125,6 +133,26 @@ tailwind.css               Tailwind input (source of truth)
   `theme-classic`) — never `prefers-color-scheme`.
 - Credentials: always use `ctx.credentials_for(&device)` so per-device
   overrides (manual devices only) beat the global default.
+
+## Session reuse
+
+`api::*` never builds an `OnvifClient`/`OnvifSession` directly — every
+wrapper goes through `crate::sessions::get(addr, u, p)` which returns
+the cached `Arc<OnvifSession>` (or builds + caches a new one on first
+call for that key). The session caches `Capabilities` and reuses the
+underlying reqwest connection pool, so once a device is touched in
+the process, every subsequent SOAP call costs exactly one round-trip.
+
+When credentials change (global creds dialog or per-device edit) or a
+device is removed, the corresponding `sessions::invalidate(addr)` /
+`invalidate_all()` call drops the stale entries so the next API call
+rebuilds with the new creds. Adding a new write-path that mutates
+creds means adding the matching `invalidate` call.
+
+The two functions in `api.rs` that don't go through `sessions::` are
+`fetch_snapshot_data_uri` (custom HTTP + Digest, byte-identical to
+curl for Hikvision/Uniview compat) and `discover_one_round`
+(WS-Discovery is its own protocol).
 
 ## Adding a new view
 
