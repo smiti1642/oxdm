@@ -1,8 +1,8 @@
 use oxvif::{
     Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
-    NtpInfo, OnvifClient, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription,
-    SnapshotUri, StreamUri, SystemDateTime, User,
+    NtpInfo, OnvifClient, OnvifSession, OsdConfiguration, OsdOptions, PtzPreset,
+    PullPointSubscription, SnapshotUri, StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -1445,9 +1445,13 @@ pub async fn delete_osd(
 /// selected profile's video source. Same fallback logic as
 /// `get_osds`: try the requested profile, otherwise pick any with a
 /// video source. The returned `OsdOptions` lists supported text
-/// types, position types, date/time formats, and font size range —
-/// driving the OSD editor's dropdowns to values the camera will
-/// actually accept.
+/// types, position types, date/time formats, font size range — and,
+/// because we route through `OnvifSession` rather than `OnvifClient`,
+/// the per-text-type quotas some cameras stash in non-spec
+/// attributes (Genetec, late Hikvision). The OSD editor needs those
+/// quotas to disable the type dropdown when the camera is full;
+/// `OnvifClient::get_osd_options` deliberately leaves them empty
+/// since they aren't in the WSDL.
 #[instrument(skip(username, password), fields(addr, profile_token))]
 pub async fn get_osd_options(
     addr: &str,
@@ -1455,13 +1459,12 @@ pub async fn get_osd_options(
     password: Option<&str>,
     profile_token: &str,
 ) -> Result<OsdOptions, ApiError> {
-    let client = build_client(addr, username, password);
-    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
-    let media_url = caps.media.url.ok_or("No media service URL")?;
-    let profiles = client
-        .get_profiles(&media_url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut builder = OnvifSession::builder(addr);
+    if let (Some(u), Some(p)) = (username, password) {
+        builder = builder.with_credentials(u, p);
+    }
+    let session = builder.build().await.map_err(|e| e.to_string())?;
+    let profiles = session.get_profiles().await.map_err(|e| e.to_string())?;
     let vsc_token = profiles
         .iter()
         .find(|p| p.token == profile_token)
@@ -1475,7 +1478,7 @@ pub async fn get_osd_options(
     trace_result(
         "GetOSDOptions",
         addr,
-        client.get_osd_options(&media_url, &vsc_token).await,
+        session.get_osd_options(&vsc_token).await,
     )
 }
 
