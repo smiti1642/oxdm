@@ -26,15 +26,14 @@ pub fn NetworkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move {
-            let (u, p) = creds.as_options();
-            let hostname = api::get_hostname(&addr, u, p).await.ok();
-            let ifaces = api::get_network_interfaces(&addr, u, p)
+            let hostname = api::get_hostname(&addr, &creds).await.ok();
+            let ifaces = api::get_network_interfaces(&addr, &creds)
                 .await
                 .unwrap_or_default();
-            let dns = api::get_dns(&addr, u, p).await.ok();
-            let ntp = api::get_ntp(&addr, u, p).await.ok();
-            let gw = api::get_network_default_gateway(&addr, u, p).await.ok();
-            let protocols = api::get_network_protocols(&addr, u, p)
+            let dns = api::get_dns(&addr, &creds).await.ok();
+            let ntp = api::get_ntp(&addr, &creds).await.ok();
+            let gw = api::get_network_default_gateway(&addr, &creds).await.ok();
+            let protocols = api::get_network_protocols(&addr, &creds)
                 .await
                 .unwrap_or_default();
             Ok::<_, String>(NetworkData {
@@ -164,8 +163,7 @@ fn HostnameSection(
                         let creds_s = creds.read().clone();
                         let name = name_in.peek().clone();
                         spawn(async move {
-                            let (u, p) = creds_s.as_options();
-                            match api::set_hostname(&addr_s, u, p, &name).await {
+                            match api::set_hostname(&addr_s, &creds_s, &name).await {
                                 Ok(()) => {
                                     ctx.push_toast(ToastLevel::Success, i18n::t(locale, "net_saved"));
                                     refresh.call(());
@@ -287,9 +285,8 @@ fn InterfaceSection(
                                 let addr_s = addr.read().clone();
                                 let creds_s = creds.read().clone();
                                 spawn(async move {
-                                    let (u, p) = creds_s.as_options();
-                                    match api::set_network_interfaces(
-                                        &addr_s, u, p, &tok,
+                                            match api::set_network_interfaces(
+                                        &addr_s, &creds_s, &tok,
                                         enabled, &ip, prefix, dhcp,
                                     ).await {
                                         Ok(reboot) => {
@@ -344,8 +341,7 @@ fn GatewaySection(
                         .cloned()
                         .collect();
                     spawn(async move {
-                        let (u, p) = creds_s.as_options();
-                        match api::set_network_default_gateway(&addr_s, u, p, &list).await {
+                        match api::set_network_default_gateway(&addr_s, &creds_s, &list).await {
                             Ok(()) => {
                                 ctx.push_toast(ToastLevel::Success, i18n::t(locale, "net_saved"));
                                 refresh.call(());
@@ -418,10 +414,9 @@ fn ServerGroupSection(
                     let addr_s = addr.read().clone();
                     let creds_s = creds.read().clone();
                     spawn(async move {
-                        let (u, p) = creds_s.as_options();
                         let result = match kind {
-                            ServerKind::Dns => api::set_dns(&addr_s, u, p, dhcp, &list).await,
-                            ServerKind::Ntp => api::set_ntp(&addr_s, u, p, dhcp, &list).await,
+                            ServerKind::Dns => api::set_dns(&addr_s, &creds_s, dhcp, &list).await,
+                            ServerKind::Ntp => api::set_ntp(&addr_s, &creds_s, dhcp, &list).await,
                         };
                         match result {
                             Ok(()) => {
@@ -552,8 +547,7 @@ fn ProtocolsSection(
                             })
                             .collect();
                         spawn(async move {
-                            let (u, p) = creds_s.as_options();
-                            match api::set_network_protocols(&addr_s, u, p, &payload).await {
+                            match api::set_network_protocols(&addr_s, &creds_s, &payload).await {
                                 Ok(()) => {
                                     ctx.push_toast(ToastLevel::Success, i18n::t(locale, "net_saved"));
                                     refresh.call(());

@@ -57,10 +57,7 @@ pub fn TimeTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let mut info = use_resource(move || {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
-        async move {
-            let (u, p) = creds.as_options();
-            api::get_system_date_and_time(&addr, u, p).await
-        }
+        async move { api::get_system_date_and_time(&addr, &creds).await }
     });
 
     // Editable buffers seeded from the fetched state on first read.
@@ -102,14 +99,13 @@ pub fn TimeTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let tz = tz_in.peek().clone();
         let dst = *dst_in.peek();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
             let req = oxvif::SetDateTimeRequest {
                 datetime_type: datetime_type.to_string(),
                 daylight_savings: dst,
                 timezone: tz,
                 utc_datetime: manual_utc,
             };
-            match api::set_system_date_and_time(&addr_s, u, p, &req).await {
+            match api::set_system_date_and_time(&addr_s, &creds_s, &req).await {
                 Ok(()) => {
                     ctx.push_toast(ToastLevel::Success, i18n::t(locale, "time_saved"));
                     info.restart();

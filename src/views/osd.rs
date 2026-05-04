@@ -50,8 +50,7 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let profile = profile_sig.read().clone();
         async move {
             let token = profile.ok_or_else(|| "no_profile".to_string())?;
-            let (u, p) = creds.as_options();
-            api::get_osds(&addr, u, p, &token).await
+            api::get_osds(&addr, &creds, &token).await
         }
     });
 
@@ -65,8 +64,7 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let profile = profile_sig.read().clone();
         async move {
             let token = profile.ok_or_else(|| "no_profile".to_string())?;
-            let (u, p) = creds.as_options();
-            api::get_osd_options(&addr, u, p, &token).await
+            api::get_osd_options(&addr, &creds, &token).await
         }
     });
 
@@ -238,8 +236,7 @@ fn OsdRow(
                                 let creds_s = creds_s.clone();
                                 let refresh = refresh;
                                 spawn(async move {
-                                    let (u, p) = creds_s.as_options();
-                                    match api::delete_osd(&addr_s, u, p, &token).await {
+                                    match api::delete_osd(&addr_s, &creds_s, &token).await {
                                         Ok(()) => {
                                             ctx.push_toast(
                                                 ToastLevel::Success,
@@ -516,7 +513,6 @@ fn OsdEditor(
                         let profile_sig = ctx.selected_profile;
 
                         spawn(async move {
-                            let (u, p) = creds_s.as_options();
                             // For CREATE we need to know the video source
                             // configuration token to attach the OSD to.
                             // For EDIT we reuse the existing one.
@@ -532,7 +528,7 @@ fn OsdEditor(
                                             return;
                                         }
                                     };
-                                    match api::get_video_source_config_token(&addr_s, u, p, &profile).await {
+                                    match api::get_video_source_config_token(&addr_s, &creds_s, &profile).await {
                                         Ok(t) => t,
                                         Err(e) => {
                                             ctx.push_toast(ToastLevel::Error, e);
@@ -590,9 +586,9 @@ fn OsdEditor(
                             };
 
                             let result = if osd.token.is_empty() {
-                                api::create_osd(&addr_s, u, p, &osd).await.map(|_| ())
+                                api::create_osd(&addr_s, &creds_s, &osd).await.map(|_| ())
                             } else {
-                                api::set_osd(&addr_s, u, p, &osd).await
+                                api::set_osd(&addr_s, &creds_s, &osd).await
                             };
                             match result {
                                 Ok(()) => {

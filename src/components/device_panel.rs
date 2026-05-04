@@ -113,9 +113,8 @@ fn ProfileThumbnails() -> Element {
             if addr.is_empty() {
                 return Ok::<(String, Vec<ProfileInfo>), String>((addr, Vec::new()));
             }
-            let (u, p) = creds.as_options();
 
-            let profiles = api::get_profiles(&addr, u, p).await?;
+            let profiles = api::get_profiles(&addr, &creds).await?;
             debug!(addr = %addr, count = profiles.len(), "GetProfiles OK");
 
             let mut infos = Vec::new();
@@ -141,7 +140,7 @@ fn ProfileThumbnails() -> Element {
                     });
                     continue;
                 }
-                match api::get_snapshot_uri(&addr, u, p, &profile.token).await {
+                match api::get_snapshot_uri(&addr, &creds, &profile.token).await {
                     Ok(snap) => {
                         let snapshot_url = api::resolve_snapshot_url(&addr, &snap.uri);
                         debug!(
@@ -303,7 +302,6 @@ fn ProfileCard(
             if already_broken {
                 return Err("Snapshot endpoint marked broken — skipping retry".to_string());
             }
-            let (u, p) = creds.as_options();
 
             // Resolve the URL — either reuse the cached one or re-fetch.
             // For invalid_after_connect cameras (LPR-style temp-file URLs
@@ -311,7 +309,7 @@ fn ProfileCard(
             // many of those 500s are timing races where the camera serves
             // some frames but not others, so each tick re-tries.
             let url = if needs_refresh {
-                match api::get_snapshot_uri(&device_addr, u, p, &profile_token).await {
+                match api::get_snapshot_uri(&device_addr, &creds, &profile_token).await {
                     Ok(snap) => api::resolve_snapshot_url(&device_addr, &snap.uri),
                     Err(e) => return Err(e),
                 }
@@ -322,7 +320,7 @@ fn ProfileCard(
                 }
             };
 
-            let result = api::fetch_snapshot_data_uri(&url, u, p).await;
+            let result = api::fetch_snapshot_data_uri(&url, &creds).await;
             if result.is_err() && !needs_refresh {
                 broken.set(true);
             }
@@ -450,8 +448,7 @@ fn ProfileCard(
                                 let creds = creds.clone();
                                 let on_changed = on_changed;
                                 spawn(async move {
-                                    let (u, p) = creds.as_options();
-                                    match api::delete_profile(&device_addr, u, p, &token).await {
+                                                            match api::delete_profile(&device_addr, &creds, &token).await {
                                         Ok(()) => {
                                             ctx.push_toast(crate::state::ToastLevel::Success,
                                                 i18n::t(locale, "profile_deleted"));
@@ -571,8 +568,7 @@ fn NewProfileCard(device_addr: String, on_created: EventHandler<()>) -> Element 
                 .and_then(|i| ctx.devices.peek().get(i).cloned())
                 .map(|d| ctx.credentials_for(&d))
                 .unwrap_or_else(|| ctx.global_credentials.peek().clone());
-            let (u, p) = creds.as_options();
-            match api::create_profile(&device_addr, u, p, &n).await {
+            match api::create_profile(&device_addr, &creds, &n).await {
                 Ok(_) => {
                     ctx.push_toast(
                         crate::state::ToastLevel::Success,

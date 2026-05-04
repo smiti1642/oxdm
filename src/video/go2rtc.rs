@@ -193,8 +193,7 @@ impl VideoBackend for Go2rtcBackend {
         // localhost-style URIs (`rtsp://0.0.0.0/stream`) which go2rtc
         // won't connect to — `inject_credentials` also rewrites the
         // host to the device address we already know works.
-        let (u, p) = creds.as_options();
-        let stream = crate::api::get_stream_uri(device_addr, u, p, profile_token)
+        let stream = crate::api::get_stream_uri(device_addr, creds, profile_token)
             .await
             .map_err(|e| format!("GetStreamUri: {e}"))?;
         let rtsp_url =

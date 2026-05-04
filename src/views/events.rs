@@ -73,10 +73,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
     let topics_info = use_resource(move || {
         let addr_now = addr.read().clone();
         let creds_now = creds.read().clone();
-        async move {
-            let (u, p) = creds_now.as_options();
-            api::get_event_properties(&addr_now, u, p).await
-        }
+        async move { api::get_event_properties(&addr_now, &creds_now).await }
     });
 
     // Long-running subscription task. Reads hidden_topics so any toggle
@@ -87,14 +84,9 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let creds_now = creds.read().clone();
         let filter = build_filter_expression(&hidden_topics.read(), topics_info);
         async move {
-            let (u, p) = creds_now.as_options();
-            let user_owned = u.map(str::to_string);
-            let pass_owned = p.map(str::to_string);
-
             let sub = match api::create_pull_subscription(
                 &addr_now,
-                u,
-                p,
+                &creds_now,
                 filter.as_deref(),
                 Some(SUBSCRIPTION_LIFETIME),
             )
@@ -110,8 +102,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
 
             let _guard = SubscriptionGuard {
                 addr: addr_now.clone(),
-                username: user_owned.clone(),
-                password: pass_owned.clone(),
+                creds: creds_now.clone(),
                 sub_url: sub_url.clone(),
             };
 
@@ -126,8 +117,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
 
                 match api::pull_event_messages(
                     &addr_now,
-                    u,
-                    p,
+                    &creds_now,
                     &sub_url,
                     PULL_TIMEOUT,
                     PULL_MAX_MESSAGES,
@@ -176,8 +166,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                     pulls_since_renew = 0;
                     if let Err(e) = api::renew_event_subscription(
                         &addr_now,
-                        u,
-                        p,
+                        &creds_now,
                         &sub_url,
                         SUBSCRIPTION_LIFETIME,
                     )
@@ -638,23 +627,20 @@ impl PartialEq for StatusKind {
 
 struct SubscriptionGuard {
     addr: String,
-    username: Option<String>,
-    password: Option<String>,
+    creds: crate::state::Credentials,
     sub_url: String,
 }
 
 impl Drop for SubscriptionGuard {
     fn drop(&mut self) {
         let addr = std::mem::take(&mut self.addr);
-        let user = self.username.take();
-        let pass = self.password.take();
+        let creds = std::mem::take(&mut self.creds);
         let sub_url = std::mem::take(&mut self.sub_url);
         if sub_url.is_empty() {
             return;
         }
         tokio::spawn(async move {
-            let _ =
-                api::unsubscribe_events(&addr, user.as_deref(), pass.as_deref(), &sub_url).await;
+            let _ = api::unsubscribe_events(&addr, &creds, &sub_url).await;
         });
     }
 }

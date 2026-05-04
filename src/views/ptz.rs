@@ -37,8 +37,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             if addr_s.is_empty() {
                 return Err("no_device".to_string());
             }
-            let (u, p) = creds_s.as_options();
-            match api::has_ptz_service(&addr_s, u, p).await {
+            match api::has_ptz_service(&addr_s, &creds_s).await {
                 Ok(true) => Ok(()),
                 Ok(false) => Err("ptz_unavailable".to_string()),
                 Err(e) => Err(e),
@@ -56,8 +55,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let token_opt = profile_sig.read().clone();
         async move {
             let token = token_opt.ok_or_else(|| "no_profile".to_string())?;
-            let (u, p) = creds_s.as_options();
-            api::ptz_get_presets(&addr_s, u, p, &token).await
+            api::ptz_get_presets(&addr_s, &creds_s, &token).await
         }
     });
 
@@ -72,8 +70,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             if addr_s.is_empty() {
                 return Err("no_device".to_string());
             }
-            let (u, p) = creds_s.as_options();
-            api::get_video_source_token(&addr_s, u, p, token_opt.as_deref()).await
+            api::get_video_source_token(&addr_s, &creds_s, token_opt.as_deref()).await
         }
     });
 
@@ -91,8 +88,9 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            if let Err(e) = api::ptz_continuous_move(&addr_s, u, p, &token, pan, tilt, zoom).await {
+            if let Err(e) =
+                api::ptz_continuous_move(&addr_s, &creds_s, &token, pan, tilt, zoom).await
+            {
                 tracing::warn!(error = %e, "PTZ continuous_move failed");
             }
         });
@@ -105,8 +103,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            if let Err(e) = api::ptz_stop(&addr_s, u, p, &token).await {
+            if let Err(e) = api::ptz_stop(&addr_s, &creds_s, &token).await {
                 tracing::warn!(error = %e, "PTZ stop failed");
             }
         });
@@ -119,8 +116,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            match api::ptz_goto_home_position(&addr_s, u, p, &token).await {
+            match api::ptz_goto_home_position(&addr_s, &creds_s, &token).await {
                 Ok(()) => ctx.push_toast(ToastLevel::Info, i18n::t(locale, "ptz_home_ok")),
                 Err(e) => ctx.push_toast(ToastLevel::Error, e),
             }
@@ -138,10 +134,9 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             if addr_s.is_empty() {
                 return Err::<String, String>("no_device".to_string());
             }
-            let (u, p) = creds_s.as_options();
             let source_token =
-                api::get_video_source_token(&addr_s, u, p, token_opt.as_deref()).await?;
-            let settings = api::get_imaging_settings(&addr_s, u, p, &source_token).await?;
+                api::get_video_source_token(&addr_s, &creds_s, token_opt.as_deref()).await?;
+            let settings = api::get_imaging_settings(&addr_s, &creds_s, &source_token).await?;
             Ok(settings.focus_mode.unwrap_or_else(|| "AUTO".to_string()))
         }
     });
@@ -157,16 +152,16 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            let mut settings = match api::get_imaging_settings(&addr_s, u, p, &source_token).await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!(error = %e, "get_imaging_settings failed");
-                    return;
-                }
-            };
+            let mut settings =
+                match api::get_imaging_settings(&addr_s, &creds_s, &source_token).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "get_imaging_settings failed");
+                        return;
+                    }
+                };
             settings.focus_mode = Some(if auto { "AUTO".into() } else { "MANUAL".into() });
-            match api::set_imaging_settings(&addr_s, u, p, &source_token, &settings).await {
+            match api::set_imaging_settings(&addr_s, &creds_s, &source_token, &settings).await {
                 Ok(()) => focus_mode_state.restart(),
                 Err(e) => {
                     ctx.push_toast(ToastLevel::Error, e);
@@ -185,8 +180,8 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            if let Err(e) = api::imaging_focus_continuous(&addr_s, u, p, &source_token, speed).await
+            if let Err(e) =
+                api::imaging_focus_continuous(&addr_s, &creds_s, &source_token, speed).await
             {
                 tracing::warn!(error = %e, "focus continuous failed");
             }
@@ -201,8 +196,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            if let Err(e) = api::imaging_focus_stop(&addr_s, u, p, &source_token).await {
+            if let Err(e) = api::imaging_focus_stop(&addr_s, &creds_s, &source_token).await {
                 tracing::warn!(error = %e, "focus stop failed");
             }
         });
@@ -222,8 +216,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            match api::ptz_set_preset(&addr_s, u, p, &token, Some(name.trim()), None).await {
+            match api::ptz_set_preset(&addr_s, &creds_s, &token, Some(name.trim()), None).await {
                 Ok(_) => {
                     new_preset_name.set(String::new());
                     presets_state.restart();
@@ -241,8 +234,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            match api::ptz_remove_preset(&addr_s, u, p, &token, &preset_token).await {
+            match api::ptz_remove_preset(&addr_s, &creds_s, &token, &preset_token).await {
                 Ok(()) => {
                     presets_state.restart();
                     ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ptz_preset_removed"));
@@ -259,8 +251,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            if let Err(e) = api::ptz_goto_preset(&addr_s, u, p, &token, &preset_token).await {
+            if let Err(e) = api::ptz_goto_preset(&addr_s, &creds_s, &token, &preset_token).await {
                 ctx.push_toast(ToastLevel::Error, e);
             }
         });

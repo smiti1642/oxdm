@@ -18,9 +18,8 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move {
-            let (u, p) = creds.as_options();
-            let info = api::get_device_info(&addr, u, p).await;
-            let scopes = api::get_scopes(&addr, u, p).await.unwrap_or_default();
+            let info = api::get_device_info(&addr, &creds).await;
+            let scopes = api::get_scopes(&addr, &creds).await.unwrap_or_default();
             info.map(|i| (i, scopes))
         }
     });
@@ -111,8 +110,7 @@ pub fn IdentificationTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> 
                                         new_scopes.push(format!("{LOCATION_PREFIX}{new_loc}"));
                                     }
                                     spawn(async move {
-                                        let (u, p) = creds_s.as_options();
-                                        match api::set_scopes(&addr_s, u, p, &new_scopes).await {
+                                        match api::set_scopes(&addr_s, &creds_s, &new_scopes).await {
                                             Ok(()) => {
                                                 // Reflect new name in the
                                                 // device list immediately

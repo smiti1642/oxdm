@@ -17,10 +17,7 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let mut users = use_resource(move || {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
-        async move {
-            let (u, p) = creds.as_options();
-            api::get_users(&addr, u, p).await
-        }
+        async move { api::get_users(&addr, &creds).await }
     });
 
     // Add-user form buffers.
@@ -50,8 +47,7 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            match api::create_user(&addr_s, u, p, &uname, &pass, &level).await {
+            match api::create_user(&addr_s, &creds_s, &uname, &pass, &level).await {
                 Ok(()) => {
                     new_username.clone().set(String::new());
                     new_password.clone().set(String::new());
@@ -75,8 +71,7 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         let addr_s = addr.read().clone();
         let creds_s = creds.read().clone();
         spawn(async move {
-            let (u, p) = creds_s.as_options();
-            match api::set_user(&addr_s, u, p, &target, pass_opt.as_deref(), &level).await {
+            match api::set_user(&addr_s, &creds_s, &target, pass_opt.as_deref(), &level).await {
                 Ok(()) => {
                     editing.clone().set(None);
                     edit_password.clone().set(String::new());
@@ -104,8 +99,7 @@ pub fn UsersTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                 let creds_s = creds_s.clone();
                 let target = target_for_closure.clone();
                 spawn(async move {
-                    let (u, p) = creds_s.as_options();
-                    match api::delete_user(&addr_s, u, p, &target).await {
+                    match api::delete_user(&addr_s, &creds_s, &target).await {
                         Ok(()) => {
                             users.restart();
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "user_deleted"));

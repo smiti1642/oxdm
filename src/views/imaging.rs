@@ -17,10 +17,10 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
         let creds = creds.read().clone();
         let profile = profile_token.clone();
         async move {
-            let (u, p) = creds.as_options();
-            let source_token = api::get_video_source_token(&addr, u, p, profile.as_deref()).await?;
-            let settings = api::get_imaging_settings(&addr, u, p, &source_token).await?;
-            let options = api::get_imaging_options(&addr, u, p, &source_token).await?;
+            let source_token =
+                api::get_video_source_token(&addr, &creds, profile.as_deref()).await?;
+            let settings = api::get_imaging_settings(&addr, &creds, &source_token).await?;
+            let options = api::get_imaging_options(&addr, &creds, &source_token).await?;
             Ok::<_, String>((source_token, settings, options))
         }
     });
@@ -152,8 +152,7 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                                             ..Default::default()
                                         };
                                         spawn(async move {
-                                            let (u, p) = creds.as_options();
-                                            match api::set_imaging_settings(&addr, u, p, &tk, &new_settings).await {
+                                            match api::set_imaging_settings(&addr, &creds, &tk, &new_settings).await {
                                                 Ok(()) => ctx.push_toast(ToastLevel::Success, i18n::t(locale, "img_saved")),
                                                 Err(e) => ctx.push_toast(ToastLevel::Error, e),
                                             }

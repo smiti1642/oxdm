@@ -271,10 +271,9 @@ async fn handle_connection(
 /// some cameras (GeoVision) embed a per-call timestamp and TTL into the URL,
 /// so caching across frames isn't safe.
 async fn fetch_jpeg(meta: &StreamMeta) -> Result<Vec<u8>, String> {
-    let (u, p) = meta.creds.as_options();
-    let snap = api::get_snapshot_uri(&meta.device_addr, u, p, &meta.profile_token).await?;
+    let snap = api::get_snapshot_uri(&meta.device_addr, &meta.creds, &meta.profile_token).await?;
     let snapshot_url = api::resolve_snapshot_url(&meta.device_addr, &snap.uri);
-    let data_uri = api::fetch_snapshot_data_uri(&snapshot_url, u, p).await?;
+    let data_uri = api::fetch_snapshot_data_uri(&snapshot_url, &meta.creds).await?;
     data_uri_to_bytes(&data_uri).ok_or_else(|| "malformed data URI from snapshot".to_string())
 }
 

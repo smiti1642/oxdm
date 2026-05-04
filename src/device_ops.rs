@@ -16,14 +16,10 @@ use dioxus::prelude::*;
 /// via `GetProfiles` (which requires both `GetCapabilities` and a working
 /// media service). Returned `firmware` is `Some` only when the device-info
 /// call succeeded. Returned `auth_status` reflects the profiles call alone.
-async fn probe_device(
-    addr: &str,
-    u: Option<&str>,
-    p: Option<&str>,
-) -> (AuthStatus, Option<String>) {
+async fn probe_device(addr: &str, creds: &Credentials) -> (AuthStatus, Option<String>) {
     let (info_res, profiles_res) = tokio::join!(
-        api::get_device_info(addr, u, p),
-        api::get_profiles(addr, u, p),
+        api::get_device_info(addr, creds),
+        api::get_profiles(addr, creds),
     );
     let firmware = info_res.ok().map(|i| i.firmware_version);
     let auth_status = if profiles_res.is_ok() {
@@ -70,8 +66,7 @@ pub fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
     for addr in addrs {
         let creds = creds.clone();
         spawn(async move {
-            let (u, p) = creds.as_options();
-            let (auth_status, firmware) = probe_device(&addr, u, p).await;
+            let (auth_status, firmware) = probe_device(&addr, &creds).await;
             apply_probe(&mut devices, &addr, auth_status, firmware, false);
         });
     }
@@ -84,8 +79,7 @@ pub fn fetch_firmware_for_all(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
 pub fn fetch_firmware_for_addr(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>, addr: String) {
     let creds = ctx.global_credentials.peek().clone();
     spawn(async move {
-        let (u, p) = creds.as_options();
-        let (auth_status, firmware) = probe_device(&addr, u, p).await;
+        let (auth_status, firmware) = probe_device(&addr, &creds).await;
         // Discovered devices are non-manual by definition, so firmware is written.
         apply_probe(&mut devices, &addr, auth_status, firmware, false);
     });
@@ -101,8 +95,7 @@ pub fn reverify_auth(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>) {
 
     for (addr, is_manual, creds) in snapshot {
         spawn(async move {
-            let (u, p) = creds.as_options();
-            let (auth_status, firmware) = probe_device(&addr, u, p).await;
+            let (auth_status, firmware) = probe_device(&addr, &creds).await;
             apply_probe(&mut devices, &addr, auth_status, firmware, is_manual);
         });
     }
@@ -117,8 +110,7 @@ pub fn reverify_device(ctx: Ctx, mut devices: Signal<Vec<DeviceEntry>>, idx: usi
     let addr = dev.addr.clone();
     let is_manual = dev.manual;
     spawn(async move {
-        let (u, p) = creds.as_options();
-        let (auth_status, firmware) = probe_device(&addr, u, p).await;
+        let (auth_status, firmware) = probe_device(&addr, &creds).await;
         apply_probe(&mut devices, &addr, auth_status, firmware, is_manual);
     });
 }
