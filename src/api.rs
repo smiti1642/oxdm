@@ -20,10 +20,10 @@
 //! ultimately render strings anyway.
 
 use oxvif::{
-    Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
-    Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
-    NtpInfo, OnvifSession, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription,
-    SnapshotUri, StreamUri, SystemDateTime, User,
+    DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove, Hostname,
+    MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage, NtpInfo,
+    OnvifSession, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, SnapshotUri,
+    StreamUri, SystemDateTime, User,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -143,19 +143,6 @@ pub async fn get_scopes(
     trace_result("GetScopes", addr, s.get_scopes().await)
 }
 
-/// Returns the device capabilities snapshot cached inside the
-/// session. No network call when the session is already built.
-#[allow(dead_code)]
-#[instrument(skip(username, password), fields(addr))]
-pub async fn get_capabilities(
-    addr: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> Result<Capabilities, ApiError> {
-    let s = session_for(addr, username, password).await?;
-    Ok(s.capabilities().clone())
-}
-
 // ── Imaging ─────────────────────────────────────────────────────────────────
 
 #[instrument(skip(username, password), fields(addr, source_token))]
@@ -202,6 +189,35 @@ pub async fn set_imaging_settings(
         addr,
         s.set_imaging_settings(source_token, settings).await,
     )
+}
+
+/// Resolve the `video_source_token` for `profile_token`.
+///
+/// Used by views that drive the Imaging service (image quality
+/// settings, focus motor) — the Imaging service addresses cameras
+/// by video source, not by profile. Prefers the requested profile;
+/// falls back to the first profile that has any video source so
+/// the UI doesn't bail when `selected_profile` is stale from
+/// another device or points at a metadata-only profile. Pass
+/// `None` for "no preference, just give me one that works".
+///
+/// Distinct from [`get_video_source_config_token`], which resolves
+/// the *configuration* token used by OSD attach.
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_video_source_token(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: Option<&str>,
+) -> Result<String, ApiError> {
+    let s = session_for(addr, username, password).await?;
+    let profiles = s.get_profiles().await.map_err(|e| e.to_string())?;
+    profiles
+        .iter()
+        .find(|p| profile_token.is_some_and(|t| p.token == t))
+        .or_else(|| profiles.first())
+        .and_then(|p| p.video_source_token.clone())
+        .ok_or_else(|| "No video source found".to_string())
 }
 
 // ── Media ───────────────────────────────────────────────────────────────────

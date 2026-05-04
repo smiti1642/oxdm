@@ -73,14 +73,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                 return Err("no_device".to_string());
             }
             let (u, p) = creds_s.as_options();
-            let profiles = api::get_profiles(&addr_s, u, p).await?;
-            let source_token = token_opt
-                .as_ref()
-                .and_then(|pt| profiles.iter().find(|p| p.token == *pt))
-                .or_else(|| profiles.first())
-                .and_then(|p| p.video_source_token.clone())
-                .ok_or_else(|| "no_video_source".to_string())?;
-            Ok::<_, String>(source_token)
+            api::get_video_source_token(&addr_s, u, p, token_opt.as_deref()).await
         }
     });
 
@@ -146,13 +139,8 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                 return Err::<String, String>("no_device".to_string());
             }
             let (u, p) = creds_s.as_options();
-            let profiles = api::get_profiles(&addr_s, u, p).await?;
-            let source_token = token_opt
-                .as_ref()
-                .and_then(|pt| profiles.iter().find(|p| p.token == *pt))
-                .or_else(|| profiles.first())
-                .and_then(|p| p.video_source_token.clone())
-                .ok_or_else(|| "no_video_source".to_string())?;
+            let source_token =
+                api::get_video_source_token(&addr_s, u, p, token_opt.as_deref()).await?;
             let settings = api::get_imaging_settings(&addr_s, u, p, &source_token).await?;
             Ok(settings.focus_mode.unwrap_or_else(|| "AUTO".to_string()))
         }

@@ -18,14 +18,7 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
         let profile = profile_token.clone();
         async move {
             let (u, p) = creds.as_options();
-            let profiles = api::get_profiles(&addr, u, p).await?;
-            let source_token = profile
-                .as_ref()
-                .and_then(|pt| profiles.iter().find(|pr| pr.token == *pt))
-                .or_else(|| profiles.first())
-                .and_then(|pr| pr.video_source_token.clone())
-                .ok_or_else(|| "No video source found".to_string())?;
-
+            let source_token = api::get_video_source_token(&addr, u, p, profile.as_deref()).await?;
             let settings = api::get_imaging_settings(&addr, u, p, &source_token).await?;
             let options = api::get_imaging_options(&addr, u, p, &source_token).await?;
             Ok::<_, String>((source_token, settings, options))
