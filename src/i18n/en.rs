@@ -59,6 +59,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "osd_deleted" => "OSD deleted",
         "osd_delete_title" => "Delete OSD",
         "osd_delete_confirm" => "Delete this on-screen display element?",
+        "osd_quota_full" => "This OSD type has reached the camera's per-type limit.",
         "profile_create" => "New profile",
         "profile_name_placeholder" => "Profile name",
         "profile_created" => "Profile created",

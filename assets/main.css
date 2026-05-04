@@ -1801,6 +1801,20 @@ a      { color: var(--blue); text-decoration: none; }
   gap: 8px;
   margin-top: 16px;
 }
+.osd-editor-type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.osd-editor-quota {
+  font-size: 11px;
+  color: var(--overlay1);
+  font-variant-numeric: tabular-nums;
+}
+.osd-editor-quota--full {
+  color: var(--red, #f38ba8);
+  font-weight: 600;
+}
 .live-video-stage {
   flex: 1;
   display: flex;

@@ -59,6 +59,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "osd_deleted" => "OSD 已刪除",
         "osd_delete_title" => "刪除 OSD",
         "osd_delete_confirm" => "確定要刪除這個 OSD 元素嗎？",
+        "osd_quota_full" => "此 OSD 類型已達到攝影機允許的數量上限。",
         "profile_create" => "新增 profile",
         "profile_name_placeholder" => "Profile 名稱",
         "profile_created" => "Profile 已建立",

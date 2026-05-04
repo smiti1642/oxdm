@@ -160,11 +160,11 @@ tailwind.css               Tailwind input (source of truth)
 
 ## oxvif version
 
-Currently `oxvif = "0.9.3"` (pulled from crates.io). When iterating on
+Currently `oxvif = "0.9.5"` (pulled from crates.io). When iterating on
 oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.9.3", path = "../oxvif" }
+oxvif = { version = "0.9.5", path = "../oxvif" }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to

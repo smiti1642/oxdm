@@ -3,7 +3,22 @@ use crate::components::{Icon, TabError};
 use crate::state::{ConfirmDialog, Credentials, Ctx, ToastLevel};
 use crate::{api, i18n};
 use dioxus::prelude::*;
-use oxvif::{OsdConfiguration, OsdOptions, OsdPosition, OsdTextString};
+use oxvif::{OsdColor, OsdConfiguration, OsdOptions, OsdPosition, OsdTextString};
+
+/// Default font color sent on CreateOSD when the camera doesn't have
+/// an existing one to copy from. White in the standard YCbCr 8-bit
+/// limited range (luma 16–235, chroma 16–240): X=235 max luma,
+/// Y/Z=128 neutral chroma. Matches what every observed camera ships
+/// as the factory-default OSD color.
+fn default_font_color() -> OsdColor {
+    OsdColor {
+        x: 235.0,
+        y: 128.0,
+        z: 128.0,
+        colorspace: Some("http://www.onvif.org/ver10/colorspace/YCbCr".to_string()),
+        transparent: None,
+    }
+}
 
 /// Fallback values used when the camera doesn't advertise OSDOptions
 /// (or advertises an empty list). The four standard corners + the
@@ -58,6 +73,25 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     // Edit drawer state — Some(token) edits an existing OSD by token,
     // None means hidden, Some("") means "create new".
     let editing: Signal<Option<String>> = use_signal(|| None);
+
+    // Pre-count existing OSDs by text type. Used together with
+    // options.max_per_text_type so the editor can mark a type
+    // exhausted when the camera enforces per-type quotas (Genetec
+    // observed: DateAndTime max 1).
+    let existing_counts: std::collections::HashMap<String, u32> = osds
+        .read_unchecked()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|list| {
+            let mut m: std::collections::HashMap<String, u32> = Default::default();
+            for o in list {
+                if let Some(t) = o.text_string.as_ref() {
+                    *m.entry(t.type_.clone()).or_insert(0) += 1;
+                }
+            }
+            m
+        })
+        .unwrap_or_default();
 
     rsx! {
         div { class: "osd-view",
@@ -117,6 +151,7 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                     creds,
                     initial: editing_initial(&token, &osds.read_unchecked()),
                     options: options.read_unchecked().as_ref().and_then(|r| r.as_ref().ok()).cloned(),
+                    existing_counts: existing_counts.clone(),
                     on_close: {
                         let mut editing = editing;
                         move |_| editing.set(None)
@@ -234,6 +269,11 @@ fn OsdEditor(
     /// or hasn't loaded yet — editor falls back to safe defaults
     /// (four-corner positions, free-text date/time formats).
     options: Option<OsdOptions>,
+    /// Count of existing OSDs grouped by text type. Used together
+    /// with `options.max_per_text_type` to grey out dropdown choices
+    /// whose quota is exhausted (e.g. Genetec only allows one
+    /// DateAndTime OSD).
+    existing_counts: std::collections::HashMap<String, u32>,
     on_close: EventHandler<()>,
     on_saved: EventHandler<()>,
 ) -> Element {
@@ -263,6 +303,10 @@ fn OsdEditor(
         .map(|o| o.time_formats.clone())
         .unwrap_or_default();
     let font_size_range = options.as_ref().and_then(|o| o.font_size_range);
+    let max_per_type = options
+        .as_ref()
+        .map(|o| o.max_per_text_type.clone())
+        .unwrap_or_default();
 
     // Seed form state once from `initial` (or first allowed option
     // when creating) — subsequent re-renders keep whatever the user
@@ -330,6 +374,20 @@ fn OsdEditor(
     let initial_for_save = initial.clone();
     let saving = use_signal(|| false);
 
+    // Quota gate: when creating, the chosen text type can't exceed
+    // its per-type max. Editing an existing OSD doesn't add to the
+    // count, so the gate is skipped there.
+    let current_type = text_type.read().clone();
+    let used_for_type = existing_counts.get(&current_type).copied().unwrap_or(0);
+    let max_for_type = max_per_type.get(&current_type).copied();
+    let quota_full = is_create
+        && max_for_type
+            .map(|max| used_for_type >= max)
+            .unwrap_or(false);
+    let quota_label = max_for_type
+        .map(|max| format!("{used_for_type}/{max}"))
+        .unwrap_or_default();
+
     rsx! {
         div { class: "osd-editor",
             div { class: "osd-editor-title",
@@ -337,12 +395,20 @@ fn OsdEditor(
             }
             div { class: "osd-editor-grid",
                 label { class: "osd-editor-label", {i18n::t(locale, "osd_field_text_type")} }
-                select {
-                    class: "form-input",
-                    value: "{text_type}",
-                    onchange: move |evt: Event<FormData>| text_type.set(evt.value()),
-                    for t in text_types.iter().cloned() {
-                        option { value: "{t}", "{t}" }
+                div { class: "osd-editor-type",
+                    select {
+                        class: "form-input",
+                        value: "{text_type}",
+                        onchange: move |evt: Event<FormData>| text_type.set(evt.value()),
+                        for t in text_types.iter().cloned() {
+                            option { value: "{t}", "{t}" }
+                        }
+                    }
+                    if !quota_label.is_empty() {
+                        span {
+                            class: if quota_full { "osd-editor-quota osd-editor-quota--full" } else { "osd-editor-quota" },
+                            "{quota_label}"
+                        }
                     }
                 }
 
@@ -430,10 +496,11 @@ fn OsdEditor(
                 }
                 button {
                     class: "btn btn-md btn-primary",
-                    disabled: *saving.read(),
+                    disabled: *saving.read() || quota_full,
+                    title: if quota_full { i18n::t(locale, "osd_quota_full") } else { "" },
                     onclick: move |_| {
                         let mut saving = saving;
-                        if *saving.read() { return; }
+                        if *saving.read() || quota_full { return; }
                         saving.set(true);
                         let initial = initial_for_save.clone();
                         let addr_s = addr.read().clone();
@@ -490,6 +557,17 @@ fn OsdEditor(
                                 }
                                 _ => (Some(plain_text_v), None, None),
                             };
+                            // Preserve the existing FontColor when
+                            // editing; otherwise send a default white
+                            // (X=235 luma, Y=Z=128 = neutral chroma in
+                            // the standard YCbCr space). Some cameras
+                            // (Genetec observed, Hikvision suspected)
+                            // require FontColor on Create, returning a
+                            // generic ter:InvalidArgs without it.
+                            let font_color = initial
+                                .as_ref()
+                                .and_then(|i| i.text_string.as_ref().and_then(|t| t.font_color.clone()))
+                                .or_else(|| Some(default_font_color()));
                             let osd = OsdConfiguration {
                                 token: initial.as_ref().map(|i| i.token.clone()).unwrap_or_default(),
                                 video_source_config_token: vsc_token,
@@ -505,6 +583,7 @@ fn OsdEditor(
                                     date_format: date_fmt,
                                     time_format: time_fmt,
                                     font_size: font_size_v,
+                                    font_color,
                                     ..Default::default()
                                 }),
                                 image_path: None,

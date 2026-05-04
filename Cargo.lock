@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "oxvif"
-version = "0.9.3"
+version = "0.9.5"
 dependencies = [
  "async-stream",
  "async-trait",
