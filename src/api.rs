@@ -1,8 +1,8 @@
 use oxvif::{
     Capabilities, DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage,
-    NtpInfo, OnvifClient, OsdConfiguration, PtzPreset, PullPointSubscription, SnapshotUri,
-    StreamUri, SystemDateTime, User,
+    NtpInfo, OnvifClient, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription,
+    SnapshotUri, StreamUri, SystemDateTime, User,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -1438,6 +1438,44 @@ pub async fn delete_osd(
         "DeleteOSD",
         addr,
         client.delete_osd(&media_url, osd_token).await,
+    )
+}
+
+/// Fetch the camera's allowed OSD configuration options for the
+/// selected profile's video source. Same fallback logic as
+/// `get_osds`: try the requested profile, otherwise pick any with a
+/// video source. The returned `OsdOptions` lists supported text
+/// types, position types, date/time formats, and font size range —
+/// driving the OSD editor's dropdowns to values the camera will
+/// actually accept.
+#[instrument(skip(username, password), fields(addr, profile_token))]
+pub async fn get_osd_options(
+    addr: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+    profile_token: &str,
+) -> Result<OsdOptions, ApiError> {
+    let client = build_client(addr, username, password);
+    let caps = client.get_capabilities().await.map_err(|e| e.to_string())?;
+    let media_url = caps.media.url.ok_or("No media service URL")?;
+    let profiles = client
+        .get_profiles(&media_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    let vsc_token = profiles
+        .iter()
+        .find(|p| p.token == profile_token)
+        .and_then(|p| p.video_source_config_token.clone())
+        .or_else(|| {
+            profiles
+                .iter()
+                .find_map(|p| p.video_source_config_token.clone())
+        })
+        .ok_or("No profile with a video source configuration")?;
+    trace_result(
+        "GetOSDOptions",
+        addr,
+        client.get_osd_options(&media_url, &vsc_token).await,
     )
 }
 

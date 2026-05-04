@@ -3,8 +3,15 @@ use crate::components::{Icon, TabError};
 use crate::state::{ConfirmDialog, Credentials, Ctx, ToastLevel};
 use crate::{api, i18n};
 use dioxus::prelude::*;
-use oxvif::{OsdConfiguration, OsdPosition, OsdTextString};
+use oxvif::{OsdConfiguration, OsdOptions, OsdPosition, OsdTextString};
 
+/// Fallback values used when the camera doesn't advertise OSDOptions
+/// (or advertises an empty list). The four standard corners + the
+/// four canonical text types are universally supported by the spec
+/// even if the camera doesn't itemise them. Date/time formats and
+/// font size have NO sensible fallback — different cameras really do
+/// require specific strings, so we leave those empty when unknown
+/// and fall back to a free-text input.
 const POSITION_TYPES: &[&str] = &["UpperLeft", "UpperRight", "LowerLeft", "LowerRight"];
 const TEXT_TYPES: &[&str] = &["Plain", "Date", "Time", "DateAndTime"];
 
@@ -30,6 +37,21 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
             let token = profile.ok_or_else(|| "no_profile".to_string())?;
             let (u, p) = creds.as_options();
             api::get_osds(&addr, u, p, &token).await
+        }
+    });
+
+    // Fetch the camera's OSDOptions in parallel — used to populate
+    // dropdowns in the editor with values the camera will accept.
+    // Failures here are non-fatal (editor falls back to free-text
+    // inputs) so don't block the OSD list rendering.
+    let options = use_resource(move || {
+        let addr = addr.read().clone();
+        let creds = creds.read().clone();
+        let profile = profile_sig.read().clone();
+        async move {
+            let token = profile.ok_or_else(|| "no_profile".to_string())?;
+            let (u, p) = creds.as_options();
+            api::get_osd_options(&addr, u, p, &token).await
         }
     });
 
@@ -94,6 +116,7 @@ pub fn OsdView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                     addr,
                     creds,
                     initial: editing_initial(&token, &osds.read_unchecked()),
+                    options: options.read_unchecked().as_ref().and_then(|r| r.as_ref().ok()).cloned(),
                     on_close: {
                         let mut editing = editing;
                         move |_| editing.set(None)
@@ -207,6 +230,10 @@ fn OsdEditor(
     addr: ReadSignal<String>,
     creds: Memo<Credentials>,
     initial: Option<OsdConfiguration>,
+    /// Camera-advertised OSD options. `None` if GetOSDOptions failed
+    /// or hasn't loaded yet — editor falls back to safe defaults
+    /// (four-corner positions, free-text date/time formats).
+    options: Option<OsdOptions>,
     on_close: EventHandler<()>,
     on_saved: EventHandler<()>,
 ) -> Element {
@@ -214,14 +241,42 @@ fn OsdEditor(
     let locale = *ctx.locale.read();
     let is_create = initial.is_none();
 
-    // Seed form state once from `initial` — subsequent re-renders keep
-    // whatever the user typed.
+    // Build the lists the form will offer. Prefer what the camera
+    // told us; fall back to safe spec defaults if the camera didn't
+    // advertise specifics.
+    let text_types: Vec<String> = options
+        .as_ref()
+        .filter(|o| !o.text_types.is_empty())
+        .map(|o| o.text_types.clone())
+        .unwrap_or_else(|| TEXT_TYPES.iter().map(|s| s.to_string()).collect());
+    let position_types: Vec<String> = options
+        .as_ref()
+        .filter(|o| !o.position_types.is_empty())
+        .map(|o| o.position_types.clone())
+        .unwrap_or_else(|| POSITION_TYPES.iter().map(|s| s.to_string()).collect());
+    let date_formats: Vec<String> = options
+        .as_ref()
+        .map(|o| o.date_formats.clone())
+        .unwrap_or_default();
+    let time_formats: Vec<String> = options
+        .as_ref()
+        .map(|o| o.time_formats.clone())
+        .unwrap_or_default();
+    let font_size_range = options.as_ref().and_then(|o| o.font_size_range);
+
+    // Seed form state once from `initial` (or first allowed option
+    // when creating) — subsequent re-renders keep whatever the user
+    // typed.
+    let first_text_type = text_types
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "Plain".to_string());
     let initial_for_seed = initial.clone();
     let mut text_type = use_signal(move || {
         initial_for_seed
             .as_ref()
             .and_then(|i| i.text_string.as_ref().map(|t| t.type_.clone()))
-            .unwrap_or_else(|| "Plain".to_string())
+            .unwrap_or(first_text_type)
     });
     let initial_for_seed = initial.clone();
     let mut plain_text = use_signal(move || {
@@ -230,34 +285,45 @@ fn OsdEditor(
             .and_then(|i| i.text_string.as_ref().and_then(|t| t.plain_text.clone()))
             .unwrap_or_default()
     });
+    // For date/time format default to the camera's first allowed
+    // value — picking yyyy-MM-dd by guess was the bug that caused
+    // every CreateOSD to fail with `Argument Value`.
+    let first_date = date_formats.first().cloned().unwrap_or_default();
     let initial_for_seed = initial.clone();
     let mut date_format = use_signal(move || {
         initial_for_seed
             .as_ref()
             .and_then(|i| i.text_string.as_ref().and_then(|t| t.date_format.clone()))
-            .unwrap_or_else(|| "yyyy-MM-dd".to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(first_date)
     });
+    let first_time = time_formats.first().cloned().unwrap_or_default();
     let initial_for_seed = initial.clone();
     let mut time_format = use_signal(move || {
         initial_for_seed
             .as_ref()
             .and_then(|i| i.text_string.as_ref().and_then(|t| t.time_format.clone()))
-            .unwrap_or_else(|| "HH:mm:ss".to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(first_time)
     });
+    let first_position = position_types
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "UpperLeft".to_string());
     let initial_for_seed = initial.clone();
     let mut position = use_signal(move || {
         initial_for_seed
             .as_ref()
             .map(|i| i.position.type_.clone())
-            .filter(|t| POSITION_TYPES.contains(&t.as_str()))
-            .unwrap_or_else(|| "UpperLeft".to_string())
+            .unwrap_or(first_position)
     });
+    let default_font = font_size_range.map(|(min, _)| min).unwrap_or(20);
     let initial_for_seed = initial.clone();
     let mut font_size = use_signal(move || {
         initial_for_seed
             .as_ref()
             .and_then(|i| i.text_string.as_ref().and_then(|t| t.font_size))
-            .unwrap_or(20)
+            .unwrap_or(default_font)
             .to_string()
     });
 
@@ -275,7 +341,7 @@ fn OsdEditor(
                     class: "form-input",
                     value: "{text_type}",
                     onchange: move |evt: Event<FormData>| text_type.set(evt.value()),
-                    for t in TEXT_TYPES {
+                    for t in text_types.iter().cloned() {
                         option { value: "{t}", "{t}" }
                     }
                 }
@@ -292,23 +358,47 @@ fn OsdEditor(
 
                 if matches!(text_type.read().as_str(), "Date" | "DateAndTime") {
                     label { class: "osd-editor-label", {i18n::t(locale, "osd_field_date_format")} }
-                    input {
-                        class: "form-input",
-                        r#type: "text",
-                        placeholder: "yyyy-MM-dd",
-                        value: "{date_format}",
-                        oninput: move |evt: Event<FormData>| date_format.set(evt.value()),
+                    if date_formats.is_empty() {
+                        // Camera didn't advertise allowed formats —
+                        // free-text input, user is on their own.
+                        input {
+                            class: "form-input",
+                            r#type: "text",
+                            placeholder: "yyyy-MM-dd",
+                            value: "{date_format}",
+                            oninput: move |evt: Event<FormData>| date_format.set(evt.value()),
+                        }
+                    } else {
+                        select {
+                            class: "form-input",
+                            value: "{date_format}",
+                            onchange: move |evt: Event<FormData>| date_format.set(evt.value()),
+                            for f in date_formats.iter().cloned() {
+                                option { value: "{f}", "{f}" }
+                            }
+                        }
                     }
                 }
 
                 if matches!(text_type.read().as_str(), "Time" | "DateAndTime") {
                     label { class: "osd-editor-label", {i18n::t(locale, "osd_field_time_format")} }
-                    input {
-                        class: "form-input",
-                        r#type: "text",
-                        placeholder: "HH:mm:ss",
-                        value: "{time_format}",
-                        oninput: move |evt: Event<FormData>| time_format.set(evt.value()),
+                    if time_formats.is_empty() {
+                        input {
+                            class: "form-input",
+                            r#type: "text",
+                            placeholder: "HH:mm:ss",
+                            value: "{time_format}",
+                            oninput: move |evt: Event<FormData>| time_format.set(evt.value()),
+                        }
+                    } else {
+                        select {
+                            class: "form-input",
+                            value: "{time_format}",
+                            onchange: move |evt: Event<FormData>| time_format.set(evt.value()),
+                            for f in time_formats.iter().cloned() {
+                                option { value: "{f}", "{f}" }
+                            }
+                        }
                     }
                 }
 
@@ -317,7 +407,7 @@ fn OsdEditor(
                     class: "form-input",
                     value: "{position}",
                     onchange: move |evt: Event<FormData>| position.set(evt.value()),
-                    for p in POSITION_TYPES {
+                    for p in position_types.iter().cloned() {
                         option { value: "{p}", "{p}" }
                     }
                 }
@@ -326,7 +416,8 @@ fn OsdEditor(
                 input {
                     class: "form-input",
                     r#type: "number",
-                    min: "8", max: "72",
+                    min: font_size_range.map(|(min, _)| min.to_string()).unwrap_or_else(|| "8".to_string()),
+                    max: font_size_range.map(|(_, max)| max.to_string()).unwrap_or_else(|| "72".to_string()),
                     value: "{font_size}",
                     oninput: move |evt: Event<FormData>| font_size.set(evt.value()),
                 }
