@@ -9,20 +9,23 @@ Scope, priorities, and the ONVIF API coverage map live in [`ODM.md`](./ODM.md).
 
 ## Working principles
 
-These bias toward caution over speed. For trivial tasks, use judgment.
+Behavioral guidelines to reduce common LLM coding mistakes, merged with this
+project's specifics. **Tradeoff:** these bias toward caution over speed — for
+trivial tasks, use judgment.
 
-### Think before coding
+### 1. Think before coding
 
-Don't assume, don't hide confusion, surface tradeoffs.
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-- State assumptions explicitly. If uncertain, ask.
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
 
-### Simplicity first
+### 2. Simplicity first
 
-Minimum code that solves the problem. Nothing speculative.
+**Minimum code that solves the problem. Nothing speculative.**
 
 - No features beyond what was asked.
 - No abstractions for single-use code.
@@ -30,33 +33,50 @@ Minimum code that solves the problem. Nothing speculative.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
 
-Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes,
+simplify.
 
-### Surgical changes
+### 3. Surgical changes
 
-Touch only what you must. Clean up only your own mess. Every changed line
-should trace directly to the request.
+**Touch only what you must. Clean up only your own mess.** Every changed line
+should trace directly to the user's request.
 
+When editing existing code:
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style (the "Coding rules" below are the source of truth),
   even if you'd do it differently.
-- Remove imports/variables/functions that *your* changes made unused; leave
-  pre-existing dead code alone — mention it, don't delete it.
+- If you notice unrelated dead code, mention it — don't delete it.
 
-### Goal-driven execution
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
 
-Define success criteria, then loop until verified. The "Before every commit"
+### 4. Goal-driven execution
+
+**Define success criteria. Loop until verified.** The "Before every commit"
 gate below (`cargo fmt` / `clippy` / `build` / `test`, including the i18n
 parity check) is the default verification loop — run it, don't assume.
 
+Transform tasks into verifiable goals:
 - "Add validation" → "Write tests for invalid inputs, then make them pass."
 - "Fix the bug" → "Write a test that reproduces it, then make it pass."
 - "Refactor X" → "Ensure tests pass before and after."
 
-For multi-step work, state a brief plan with a verify step per item. Strong
-success criteria let you loop independently; weak ones ("make it work")
-force constant clarification.
+For multi-step tasks, state a brief plan with a verify step per item:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it
+work") require constant clarification.
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer
+rewrites due to overcomplication, and clarifying questions come before
+implementation rather than after mistakes.
 
 ## Before every commit
 

@@ -652,53 +652,69 @@ ODM 使用者的肌肉記憶：
 
 ---
 
-## 附錄：ODM 對標缺口（2026-04-21 快照）
+## 附錄：ODM 對標缺口（2026-05-29 快照）
 
-目前 Tier 1（管理基礎）已大致完成：
+> 自 2026-04-21 快照以來，Tier 1 全數完成，Tier 2 的功能項也大致清空。
+> 目前距離「正式發布」的真正阻擋已不在功能面，而在**發行 / 封裝基礎建設**
+> （見最下方「發布前阻擋項」）。
+
+### Tier 1 — 管理基礎 ✅ 完成
+
 - ✅ Identification 讀寫（Set Scopes：裝置名稱 + 位置）
 - ✅ Time 讀寫（SetSystemDateAndTime + 從 PC 同步 + 時區下拉 / 自訂 + DST + 活動秒針）
 - ✅ PTZ Preset CRUD（Set / Goto / Remove）
-- ⬜ **Users CRUD**（Create / SetUser / Delete 對話框；oxvif 端齊全，缺 UI）
-- ⬜ **Network 寫入**（Set Hostname / NetworkInterfaces / DNS / NTP / DefaultGateway / NetworkProtocols；UI 欄位多、有誤設變磚風險，最好配 confirm 警告）
+- ✅ **Users CRUD**（Create / SetUser / Delete 對話框，`views/settings/users.rs`）
+- ✅ **Network 寫入**（Hostname / Interfaces / DNS / NTP / DefaultGateway /
+  NetworkProtocols，`views/settings/network.rs`）
+- ✅ **Maintenance**（重開機 + 出廠重設，皆 confirm-gated）
+- ✅ **帳密進系統 keychain**（原 P0 的「TODO: 整合 keychain」已解決，單一 JSON blob）
+- ✅ **OSD CRUD**（讀 / 建立 / 更新 / 刪除，依相機 OSDOptions 配額，`views/osd.rs`）
+- ✅ **Profile 建立 / 刪除**（`device_panel.rs`）
 
-其餘工作按影響度分層記錄，之後依需要回來撿：
+### Tier 2 — 操作體驗 ✅ 大致完成
 
-### Tier 2 — 操作體驗（讓 oxdm 從「可用」變「順手」）
+- ✅ **真正 RTSP H.264 / H.265 影像** — go2rtc bridge 已落地（`video/go2rtc.rs`），
+  可在 session 內以 Snapshot / RTSP 分頁切換；H.265 強制轉 H.264 + MSE fallback。
+  MJPEG snapshot loop（`video/mjpeg.rs`）仍是 always-on 預設 backend。
+- ✅ **Events 即時監看** — PullPoint 訂閱 + 滾動事件日誌 + 搜尋過濾（`views/events.rs`）。
+- ✅ **About 對話框** — 版本 / oxvif 版本 / GitHub 連結 + log-to-file / TLS-strict 開關
+  （`components/about_dialog.rs`，Topbar help 按鈕入口）。
+- ✅ **檔案日誌** — `~/.oxdm/logs/` daily-rolling file appender（`main.rs`，About 內可開關）。
+- ✅ **鍵盤快捷鍵** — `Ctrl/Cmd+F` 搜尋、`F5` 掃描、`↑↓` 切 device、`Esc` 關 modal
+  （`GlobalKey` bus，原列在 Tier 4）。
+- ⬜ **Snapshot 存檔** — 縮圖 / live view 上右鍵「另存為 .jpg」，尚未做。
+- ⬜ **Logs GUI viewer** — file appender 已有，缺檢視介面（讀檔 + 過濾 + tail）。
 
-- **真正 RTSP H.264 / H.265 影像** — 目前 `video/mjpeg.rs` 用 snapshot loop，
-  ~5 fps。升級路徑兩條：
-  - `gstreamer-rs` pipeline + native child window（跨平台、硬解、安裝 runtime 成本高）
-  - subprocess `mpv` 另開視窗（最快，但脫離 Dioxus 主窗）
-  架構上 `video::VideoBackend` trait 已經設計成 swap-able，`go2rtc.rs` skeleton 也在；
-  新 backend 只要實作 trait + 在 main 掛上去。
-- **Events 即時監看** — placeholder，待做。對應 ONVIF 是 PullPoint 訂閱
-  （oxvif `events.rs` 完整）。UI 要設計 live log 面板 + 過濾器。
-- **Snapshot 存檔** — 縮圖 / live view 上右鍵「另存為 .jpg」。
-- **Logs viewer** — `~/.oxdm/logs/` 目前沒實際落檔（只 console）。
-  先加 file appender，再做 GUI viewer。
-- **About 對話框** — 版本 / oxvif 版本 / license / GitHub 連結。
-  Topbar 的 help 按鈕現在是空 no-op，自然入口。
+### Tier 3 — NVR / 進階（oxvif 端齊全，缺 oxdm UI）
 
-### Tier 3 — NVR / 進階（少用但差異化）
-
-- **Recording / Search / Replay** — oxvif 端完整（`recording.rs` / `search.rs` /
+- ⬜ **Recording / Search / Replay** — oxvif 端完整（`recording.rs` / `search.rs` /
   `replay.rs`）。需要整個新的 View，UI 設計類似 ODM Replay 視圖。
-- **Analytics** — 動偵 / 越線等規則引擎（oxvif `GetAnalyticsModules` 等齊全）。
+- ⬜ **Analytics** — 動偵 / 越線等規則引擎（oxvif `GetAnalyticsModules` 等齊全）。
   UI 需 rule builder，相當於一個子應用。
-- **Firmware upgrade** — `StartFirmwareUpgrade` / `UpgradeSystemFirmware`。
+- ⬜ **Firmware upgrade** — `StartFirmwareUpgrade` / `UpgradeSystemFirmware`。
   寫 UI 簡單，但失敗會變磚，要配二次確認 + 進度條 + 失敗回報。
-- **GetSystemLog 下載** — 維護頁補一個「下載日誌」按鈕。
-- **憑證管理** — HTTPS client cert 管理（ONVIF 14 系列 API）。
-  少數部署會用。
-- **IO / Relay 控制** — `GetRelayOutputs` / `SetRelayOutputState`。
+- ⬜ **GetSystemLog 下載** — 維護頁補一個「下載日誌」按鈕。
+- ⬜ **憑證管理** — HTTPS client cert 管理（ONVIF 14 系列 API）。少數部署會用。
+- ⬜ **IO / Relay 控制** — `GetRelayOutputs` / `SetRelayOutputState`。
   部分 camera 支援繼電器輸出控制門鎖 / 警示燈。
 
 ### Tier 4 — Polish
 
-- 多 camera 網格 / 監控牆視圖（2×2、3×3 等）
-- 鍵盤快捷鍵：`Ctrl+F` 搜尋、`F5` 掃描、`Esc` 關閉、`↑↓` 切 device
-- 裝置匯出 / 匯入（備份 `~/.oxdm/devices.toml` 到其他機器）
-- 啟動時檢查 GitHub Releases 新版
-- 安裝包簽章：macOS notarize、Windows code sign、Linux AppImage / deb
+- ⬜ 多 camera 網格 / 監控牆視圖（2×2、3×3 等）
+- ⬜ 裝置匯出 / 匯入（備份 `~/.oxdm/devices.toml` 到其他機器）
+- 🧹 死碼：`views/main_content.rs` 的 `PlaceholderView`（"coming soon"）現在七個
+  View 全有實作、已無人呼叫，可刪。
 
-*更新：2026-04-21*
+### 發布前阻擋項（release blocker — 功能面之外的真正門檻）
+
+這些一個都還沒做，是「能交到使用者手上」的關卡：
+
+- ⬜ **安裝包與簽章** — macOS `.dmg` + notarize、Windows `.msi` / `.exe` + code sign、
+  Linux AppImage / `.deb`。
+- ⬜ **應用程式圖示**（目前無自訂 icon）。
+- ⬜ **Release CI** — `.github/workflows/ci.yml` 目前只在 Linux 跑 fmt / clippy /
+  build / test，沒有跨平台 release build matrix、沒有產物上傳。
+- ⬜ **自動更新 / 版本檢查** — 啟動時檢查 GitHub Releases 新版。
+- ⬜ **oxdm 自身的版本與 tag 發行流程**。
+
+*更新：2026-05-29*
