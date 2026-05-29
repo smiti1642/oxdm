@@ -114,21 +114,3 @@ fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
         }
     }
 }
-
-// ── Generic placeholder for non-settings views ─────────────────────────────
-
-#[component]
-fn PlaceholderView(title: &'static str, icon: &'static str) -> Element {
-    let ctx = use_context::<Ctx>();
-    let locale = *ctx.locale.read();
-
-    rsx! {
-        div { class: "placeholder-view",
-            div { class: "content-header",
-                Icon { name: icon, size: 20 }
-                span { class: "content-title", "{title}" }
-            }
-            p { class: "placeholder-hint", {i18n::t(locale, "coming_soon")} }
-        }
-    }
-}

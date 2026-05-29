@@ -2,6 +2,7 @@
 use crate::components::Icon;
 use crate::state::{Credentials, Ctx, ToastLevel};
 use crate::views::live_video::{LiveH265Tip, LiveModeTabs, LiveVideoMode, LiveVideoStage};
+use crate::views::video_encoder::VideoEncoderSection;
 use crate::{api, i18n};
 use dioxus::prelude::*;
 
@@ -166,6 +167,7 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                         }
                     },
                 }
+                VideoEncoderSection { addr, creds }
             }
         }
     }

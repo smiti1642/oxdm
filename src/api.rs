@@ -23,7 +23,7 @@ use oxvif::{
     DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove, Hostname,
     MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage, NtpInfo,
     OnvifSession, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, SnapshotUri,
-    StreamUri, SystemDateTime, User,
+    StreamUri, SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfigurationOptions,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1279,6 +1279,51 @@ async fn resolve_vsc_token(
                 .find_map(|p| p.video_source_config_token.clone())
         })
         .ok_or_else(|| "No profile with a video source configuration".to_string())
+}
+
+// ── Video encoder ─────────────────────────────────────────────────────────
+
+#[instrument(skip(creds), fields(addr, token))]
+pub async fn get_video_encoder_configuration(
+    addr: &str,
+    creds: &Credentials,
+    token: &str,
+) -> Result<VideoEncoderConfiguration, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "GetVideoEncoderConfiguration",
+        addr,
+        s.get_video_encoder_configuration(token).await,
+    )
+}
+
+#[instrument(skip(creds), fields(addr, config_token))]
+pub async fn get_video_encoder_configuration_options(
+    addr: &str,
+    creds: &Credentials,
+    config_token: Option<&str>,
+) -> Result<VideoEncoderConfigurationOptions, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "GetVideoEncoderConfigurationOptions",
+        addr,
+        s.get_video_encoder_configuration_options(config_token)
+            .await,
+    )
+}
+
+#[instrument(skip(creds, cfg), fields(addr, token = %cfg.token))]
+pub async fn set_video_encoder_configuration(
+    addr: &str,
+    creds: &Credentials,
+    cfg: &VideoEncoderConfiguration,
+) -> Result<(), ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "SetVideoEncoderConfiguration",
+        addr,
+        s.set_video_encoder_configuration(cfg).await,
+    )
 }
 
 // ── Profile management ──────────────────────────────────────────────────────
