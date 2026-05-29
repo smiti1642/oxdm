@@ -7,6 +7,57 @@
 
 Scope, priorities, and the ONVIF API coverage map live in [`ODM.md`](./ODM.md).
 
+## Working principles
+
+These bias toward caution over speed. For trivial tasks, use judgment.
+
+### Think before coding
+
+Don't assume, don't hide confusion, surface tradeoffs.
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### Simplicity first
+
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### Surgical changes
+
+Touch only what you must. Clean up only your own mess. Every changed line
+should trace directly to the request.
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style (the "Coding rules" below are the source of truth),
+  even if you'd do it differently.
+- Remove imports/variables/functions that *your* changes made unused; leave
+  pre-existing dead code alone — mention it, don't delete it.
+
+### Goal-driven execution
+
+Define success criteria, then loop until verified. The "Before every commit"
+gate below (`cargo fmt` / `clippy` / `build` / `test`, including the i18n
+parity check) is the default verification loop — run it, don't assume.
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass."
+- "Fix the bug" → "Write a test that reproduces it, then make it pass."
+- "Refactor X" → "Ensure tests pass before and after."
+
+For multi-step work, state a brief plan with a verify step per item. Strong
+success criteria let you loop independently; weak ones ("make it work")
+force constant clarification.
+
 ## Before every commit
 
 ```
@@ -16,9 +67,9 @@ cargo build
 cargo test
 ```
 
-All four must pass cleanly. `tests.rs` includes an exhaustive i18n-key
-parity check — adding a string to `i18n/en.rs` without the other locales
-will fail the suite.
+All four must pass cleanly. `tests/i18n_tests.rs` includes an exhaustive
+i18n-key parity check — adding a string to `i18n/en.rs` without the other
+locales will fail the suite.
 
 ## Running locally
 
@@ -48,40 +99,60 @@ DeviceList + DevicePanel + MainContent), and `MainContent` switches on the
 
 ```
 src/
-  main.rs           Entry point; App component + window config
-  state.rs          Ctx (global signals), View, SettingsTab, DeviceEntry,
-                    Credentials, Theme, Locale, Toast/ConfirmDialog
+  main.rs           Entry point; App component + window config + tracing
+                    setup (optional daily-rolling file log) + one-time
+                    install of both video backends.
+  state.rs          Ctx (global signals), View, SettingsTab, DeviceListTab,
+                    DeviceEntry, Credentials, AuthStatus, Theme, Locale,
+                    Toast/ConfirmDialog, GlobalKey (keyboard-shortcut bus).
   api.rs            Async wrappers around oxvif (discovery, device info,
-                    media, imaging, network, users, maintenance) +
-                    snapshot fetch with Digest/Basic auth fallback.
-                    Every wrapper funnels through `crate::sessions` for
-                    session reuse — see "Session reuse" below.
-                    Delegates WS-Discovery to oxvif::discovery::probe_rounds
-                    (multi-NIC + IP_MULTICAST_IF pinning handled upstream).
+                    media, imaging, PTZ, network, users, maintenance,
+                    events, OSD, profiles) + snapshot fetch with
+                    Digest/Basic auth fallback. Every wrapper funnels
+                    through `crate::sessions` for session reuse — see
+                    "Session reuse" below. Discovery delegates a single
+                    round to oxvif::discovery::probe (multi-NIC +
+                    IP_MULTICAST_IF pinning handled upstream); the
+                    multi-round scan loop lives in device_list.rs.
   sessions.rs       Process-wide cache of `oxvif::OnvifSession` keyed by
                     `(addr, creds)`. First call per (addr, creds) builds
                     the session (one GetCapabilities round-trip); every
                     subsequent call returns a cheap Arc clone. Cred change
                     or device removal calls `sessions::invalidate(addr)` /
                     `invalidate_all()` to drop stale entries.
-  persist.rs        ~/.oxdm/config.toml (theme/locale),
+  persist.rs        ~/.oxdm/config.toml (theme/locale/log/tls),
                     ~/.oxdm/devices.toml (manual devices),
                     + single JSON blob in system keychain for ALL
                     credentials (one keychain prompt, not N)
   device_ops.rs     Background firmware fetch + auth re-verification
   util.rs           extract_ip, urldecode, copy_to_clipboard
-  tests.rs          i18n-key parity tests across en / zh_tw / ru
+
+  video/                   Live-video backends behind the VideoBackend trait
+    mod.rs                 Trait + global registry (MJPEG default + go2rtc);
+                           VideoSource / EmbedKind
+    mjpeg.rs               Pure-Rust 127.0.0.1 HTTP server: polls
+                           GetSnapshotUri per stream, pushes JPEG frames as
+                           multipart/x-mixed-replace. Always-on default.
+    go2rtc.rs              Spawns the go2rtc helper binary for RTSP-grade
+                           playback (H.265 transcode). Optional + lazy.
 
   components/
     mod.rs
-    topbar.rs              Theme + locale toggle + help
+    topbar.rs              Theme + locale toggle + help (opens About)
     device_list.rs         Left sidebar: tabs (Discovered / Manual),
-                           search, scan/add buttons, DeviceCard + context menu
+                           search, scan/add buttons, DeviceCard + context
+                           menu; owns the multi-round discovery scan loop
     device_panel.rs        Middle pane: selected-device nav + NVT
                            profile thumbnails (3 s auto-refresh)
     credentials_dialog.rs  Global creds + Add Device modals
     edit_device_dialog.rs  Edit manual device + per-device creds
-    dialog.rs              Generic confirm modal
+    about_dialog.rs        About modal: versions, repo link, log-to-file +
+                           TLS-strict toggles
+    dialog.rs              Generic confirm modal (ConfirmDialogModal)
+    dialog_overlay.rs      Reusable modal scaffold (click-outside +
+                           Esc-to-close) wrapping every dialog body
+    tab_error.rs           Inline error + Retry block for failed
+                           use_resource fetches
     toast.rs               Toast container + auto-dismiss
     context_menu.rs        Right-click menu primitive
     status_bar.rs
@@ -92,23 +163,38 @@ src/
     mod.rs
     main_content.rs        Switch on View; renders WelcomeView /
                            DeviceSettingsView (with SettingsTab bar) /
-                           ImagingView / Placeholders for LiveVideo,
-                           PtzControl, Events
+                           LiveVideoView / ImagingView / PtzControlView /
+                           EventsView / OsdView
+    live_video.rs          Live preview with Snapshot/RTSP mode tabs; also
+                           exports LiveVideoStage/LiveModeTabs reused by
+                           Imaging + PTZ
     imaging.rs             Imaging service controls (sliders + selects)
+                           over an embedded live preview
+    ptz.rs                 PTZ pad + zoom + preset list over a live preview
+    osd.rs                 OSD text/overlay read + create / update / delete
+    events.rs              PullPoint event subscription + rolling event log
     settings/
       mod.rs
-      identification.rs    GetDeviceInformation + GetScopes
-      network.rs           Hostname / Interfaces / DNS / NTP /
-                           Gateway / Protocols (read-only today)
-      time.rs              GetSystemDateAndTime (read-only)
-      users.rs             GetUsers list
-      maintenance.rs       Reboot + factory reset (both confirm-gated)
+      identification.rs    GetDeviceInformation + GetScopes (IdentificationTab)
+      network.rs           Hostname / Interfaces / DNS / NTP / Gateway /
+                           Protocols — read + write (NetworkTab)
+      time.rs              Get/SetSystemDateAndTime (TimeTab)
+      users.rs             Users list + create / delete / set (UsersTab)
+      maintenance.rs       Reboot + factory reset, both confirm-gated
+                           (MaintenanceTab)
 
   i18n/
     mod.rs                 t(locale, key) with English fallback
     en.rs                  Canonical key set
     zh_tw.rs
     ru.rs
+
+  tests/                   All #[cfg(test)] modules, kept out of src files
+    mod.rs
+    api_tests.rs
+    i18n_tests.rs          Exhaustive i18n-key parity across en / zh_tw / ru
+    state_tests.rs
+    util_tests.rs
 
 assets/
   main.css                 Tailwind output (git-ignored, build locally)
@@ -168,9 +254,10 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 ## Adding a settings tab
 
 1. Add a variant to `SettingsTab` in `state.rs`.
-2. Create `src/views/settings/<name>.rs` with the same `addr + creds`
-   signature as the existing tabs.
-3. Re-export from `src/views/settings/mod.rs`.
+2. Create `src/views/settings/<name>.rs` with a `#[component] pub fn
+   <Name>Tab(...)` (tabs are named `<Name>Tab`, not `<Name>View`) using the
+   same `addr + creds` signature as the existing tabs.
+3. Re-export `<Name>Tab` from `src/views/settings/mod.rs`.
 4. Append to `SETTINGS_TABS` in `src/views/main_content.rs` and add a
    match arm inside `DeviceSettingsView`.
 
@@ -188,11 +275,11 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.9.5"` (pulled from crates.io). When iterating on
-oxvif locally before a release, switch to a path dep:
+Currently `oxvif = "0.9.6"`, used via a local path dep (`../oxvif`). When
+iterating on oxvif locally before a release, keep the path dep:
 
 ```toml
-oxvif = { version = "0.9.5", path = "../oxvif" }
+oxvif = { version = "0.9.6", path = "../oxvif" }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
@@ -205,13 +292,15 @@ in `src/api.rs` still compiles — types like `ImagingSettings`,
 
 ## Known quirks
 
-- WS-Discovery is delegated to `oxvif::discovery::probe_rounds` (3 rounds,
-  2 s timeout, 800 ms interval by default — see `api::discover_devices`).
-  oxvif handles multi-NIC enumeration and `IP_MULTICAST_IF` pinning
-  internally (the latter is critical on Windows — without it, multicast
-  leaks out through Hyper-V / WSL virtual adapters and never reaches the
-  camera subnet). Don't reintroduce a hand-rolled discovery layer in
-  oxdm; if the upstream behaviour needs tweaking, fix it in oxvif.
+- WS-Discovery runs a single round per call via `oxvif::discovery::probe`,
+  wrapped by `api::discover_one_round`. The multi-round scan loop (3 rounds,
+  2 s timeout, 800 ms interval — the `ROUNDS` / `PROBE_TIMEOUT` /
+  `PROBE_INTERVAL` constants) lives in `device_list.rs`. oxvif handles
+  multi-NIC enumeration and `IP_MULTICAST_IF` pinning internally (the latter
+  is critical on Windows — without it, multicast leaks out through Hyper-V /
+  WSL virtual adapters and never reaches the camera subnet). Don't
+  reintroduce a hand-rolled discovery layer in oxdm; if the upstream
+  behaviour needs tweaking, fix it in oxvif.
 - `api::fetch_snapshot_data_uri` patches the `digest_auth` crate output
   for Hikvision compatibility: `qop=auth` → `qop="auth"`, and `, ` → `,`
   between parameters. Removing these patches breaks Hikvision snapshots.
