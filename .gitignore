@@ -3,7 +3,4 @@ target/
 *.pdb
 .env
 .DS_Store
-assets/tailwind.css
-node_modules/
-package-lock.json
 .claude/settings.local.json
