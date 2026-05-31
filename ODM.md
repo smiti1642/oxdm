@@ -682,8 +682,11 @@ ODM 使用者的肌肉記憶：
 - ✅ **檔案日誌** — `~/.oxdm/logs/` daily-rolling file appender（`main.rs`，About 內可開關）。
 - ✅ **鍵盤快捷鍵** — `Ctrl/Cmd+F` 搜尋、`F5` 掃描、`↑↓` 切 device、`Esc` 關 modal
   （`GlobalKey` bus，原列在 Tier 4）。
-- ⬜ **Snapshot 存檔** — 縮圖 / live view 上右鍵「另存為 .jpg」，尚未做。
-- ⬜ **Logs GUI viewer** — file appender 已有，缺檢視介面（讀檔 + 過濾 + tail）。
+- ✅ **Snapshot 存檔** — 縮圖右上下載鈕（`device_panel.rs`）+ Live Video 標題列下載鈕
+  （`views/live_video.rs`，按下時即抓一張新鮮 GetSnapshotUri，Snapshot/RTSP 皆可）。
+  共用 helper `util::sanitize_filename` / `util::decode_jpeg_data_uri`。
+- ✅ **Logs GUI viewer** — Topbar file-text 鈕開 modal，tail 最新 `~/.oxdm/logs/oxdm.log.*`
+  末 800 行 + 子字串過濾 + 重新整理（`components/log_viewer.rs`）。
 
 ### Tier 3 — NVR / 進階（oxvif 端齊全，缺 oxdm UI）
 
@@ -702,8 +705,7 @@ ODM 使用者的肌肉記憶：
 
 - ⬜ 多 camera 網格 / 監控牆視圖（2×2、3×3 等）
 - ⬜ 裝置匯出 / 匯入（備份 `~/.oxdm/devices.toml` 到其他機器）
-- 🧹 死碼：`views/main_content.rs` 的 `PlaceholderView`（"coming soon"）現在七個
-  View 全有實作、已無人呼叫，可刪。
+- ✅ 死碼清理：`views/main_content.rs` 的 `PlaceholderView` 已移除（七個 View 全有實作）。
 
 ### 發布前阻擋項（release blocker — 功能面之外的真正門檻）
 
@@ -717,4 +719,4 @@ ODM 使用者的肌肉記憶：
 - ⬜ **自動更新 / 版本檢查** — 啟動時檢查 GitHub Releases 新版。
 - ⬜ **oxdm 自身的版本與 tag 發行流程**。
 
-*更新：2026-05-29*
+*更新：2026-05-31*
