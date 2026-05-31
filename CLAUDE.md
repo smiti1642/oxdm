@@ -102,14 +102,21 @@ Requires `dioxus-cli` (`cargo install dioxus-cli`).
 Verbose logging: `RUST_LOG=oxdm=debug dx serve --platform desktop`
 (every `api::*` call is `#[instrument]`-ed).
 
-## Rebuilding Tailwind CSS
+## Styling
 
-```
-npx @tailwindcss/cli -i tailwind.css -o assets/main.css --watch
-```
+`assets/main.css` is the single, **hand-authored** stylesheet (Catppuccin
+Mocha theme + semantic component classes like `.icon-btn`,
+`.content-header`). It is `include_str!`'d into the binary at
+`src/main.rs` and is git-tracked — edit it directly, no build step.
 
-`assets/main.css` is in `.gitignore` — always rebuild before testing or
-committing UI changes.
+There is **no live Tailwind pipeline** despite the leftover scaffolding
+(`tailwind.css`, `assets/tailwind.css`, the `@tailwindcss/cli` dep in
+`package.json`). Those are vestigial from project init: the root
+`tailwind.css` hasn't changed since the first commit, `assets/tailwind.css`
+is git-ignored, and the app loads neither. **Do not** run
+`npx @tailwindcss/cli -o assets/main.css` — it would overwrite the whole
+hand-written stylesheet. Components use semantic class names, not Tailwind
+utilities.
 
 ## Architecture
 
@@ -217,8 +224,10 @@ src/
     util_tests.rs
 
 assets/
-  main.css                 Tailwind output (git-ignored, build locally)
-tailwind.css               Tailwind input (source of truth)
+  main.css                 Hand-authored stylesheet (git-tracked,
+                           include_str!'d into the binary; edit directly)
+  tailwind.css             Git-ignored Tailwind CLI output — UNUSED
+tailwind.css               Vestigial Tailwind scaffolding — UNUSED (see Styling)
 ```
 
 ## Coding rules
