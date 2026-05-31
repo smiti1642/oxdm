@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::{AboutDialog, Icon};
+use crate::components::{AboutDialog, Icon, LogViewer};
 use crate::i18n;
 use crate::state::{Ctx, Theme};
 use dioxus::prelude::*;
@@ -12,6 +12,7 @@ pub fn Topbar() -> Element {
     let mut theme_sig = ctx.theme;
     let mut locale_sig = ctx.locale;
     let about_open = use_signal(|| false);
+    let logs_open = use_signal(|| false);
 
     let locale_label = locale.label();
     let theme_icon = match theme {
@@ -44,6 +45,15 @@ pub fn Topbar() -> Element {
                 }
                 button {
                     class: "icon-btn",
+                    title: i18n::t(locale, "logs_title"),
+                    onclick: {
+                        let mut logs_open = logs_open;
+                        move |_| logs_open.set(true)
+                    },
+                    Icon { name: "file-text", size: 16 }
+                }
+                button {
+                    class: "icon-btn",
                     title: i18n::t(locale, "tooltip_help"),
                     onclick: {
                         let mut about_open = about_open;
@@ -54,5 +64,6 @@ pub fn Topbar() -> Element {
             }
         }
         AboutDialog { open: about_open }
+        LogViewer { open: logs_open }
     }
 }

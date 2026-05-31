@@ -150,6 +150,15 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_confirm" => "Confirm",
         "btn_add_short" => "Add",
 
+        // ── Log viewer ──────────────────────────────────────────────────────
+        "logs_title" => "Logs",
+        "logs_filter_placeholder" => "Filter\u{2026}",
+        "logs_refresh" => "Refresh",
+        "logs_no_dir" => "Could not locate the log directory.",
+        "logs_empty" => "No log file yet. Enable \"Save logs to disk\" in About, then restart.",
+        "logs_read_failed" => "Could not read the log file.",
+        "logs_no_match" => "No lines match the filter.",
+
         // ── Credentials ─────────────────────────────────────────────────────
         "not_logged_in" => "Not Login",
         "cred_global_title" => "Global Credentials",

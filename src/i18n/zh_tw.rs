@@ -150,6 +150,15 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_confirm" => "\u{78BA}\u{8A8D}",
         "btn_add_short" => "\u{65B0}\u{589E}",
 
+        // ── Log viewer ──────────────────────────────────────────────────────
+        "logs_title" => "日誌",
+        "logs_filter_placeholder" => "篩選…",
+        "logs_refresh" => "重新整理",
+        "logs_no_dir" => "找不到日誌資料夾。",
+        "logs_empty" => "尚無日誌檔。請先在「關於」中開啟「將日誌儲存到磁碟」,然後重新啟動。",
+        "logs_read_failed" => "無法讀取日誌檔。",
+        "logs_no_match" => "沒有符合篩選條件的行。",
+
         // ── Credentials ─────────────────────────────────────────────────────
         "not_logged_in" => "\u{672A}\u{767B}\u{5165}",
         "cred_global_title" => "\u{5168}\u{57DF}\u{6191}\u{8B49}",
