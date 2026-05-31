@@ -380,7 +380,8 @@ fn ProfileCard(
                             Some(Ok(uri)) => uri.clone(),
                             _ => return,
                         };
-                        let default_name = format!("{}.jpg", sanitize_filename(&name_for_save));
+                        let default_name =
+                            format!("{}.jpg", crate::util::sanitize_filename(&name_for_save));
                         let toast_ctx = ctx;
                         let saved_label = i18n::t(locale, "snapshot_saved").to_string();
                         let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
@@ -394,7 +395,7 @@ fn ProfileCard(
                                 return;
                             };
                             let path = handle.path().to_path_buf();
-                            match decode_jpeg_data_uri(&snap) {
+                            match crate::util::decode_jpeg_data_uri(&snap) {
                                 Some(bytes) => match std::fs::write(&path, &bytes) {
                                     Ok(()) => {
                                         tracing::info!(path = %path.display(), bytes = bytes.len(), "snapshot saved");
@@ -500,39 +501,6 @@ fn ProfileCard(
             }
         }
     }
-}
-
-/// Strip non-filesystem-safe characters and collapse whitespace so the
-/// suggested filename in the Save dialog doesn't get rejected on
-/// Windows (which forbids `<>:"/\|?*`).
-fn sanitize_filename(name: &str) -> String {
-    let cleaned: String = name
-        .chars()
-        .map(|c| match c {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect();
-    let trimmed = cleaned.trim();
-    if trimmed.is_empty() {
-        "snapshot".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// Decode a `data:image/jpeg;base64,...` URI into raw JPEG bytes.
-/// Returns `None` if the URI doesn't have the expected prefix or the
-/// base64 payload doesn't decode.
-fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    // We accept both "image/jpeg" and "image/jpg" since some cameras
-    // (and our own snapshot fetcher) have shipped both at various points.
-    let payload = uri
-        .strip_prefix("data:image/jpeg;base64,")
-        .or_else(|| uri.strip_prefix("data:image/jpg;base64,"))?;
-    STANDARD.decode(payload).ok()
 }
 
 /// "+ New profile" tile that toggles into an inline name input. Sits at

@@ -139,6 +139,39 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Strip non-filesystem-safe characters and collapse whitespace so the
+/// suggested filename in a Save dialog doesn't get rejected on Windows
+/// (which forbids `<>:"/\|?*`).
+pub fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "snapshot".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Decode a `data:image/jpeg;base64,...` URI into raw JPEG bytes.
+/// Returns `None` if the URI doesn't have the expected prefix or the
+/// base64 payload doesn't decode.
+pub fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    // We accept both "image/jpeg" and "image/jpg" since some cameras
+    // (and our own snapshot fetcher) have shipped both at various points.
+    let payload = uri
+        .strip_prefix("data:image/jpeg;base64,")
+        .or_else(|| uri.strip_prefix("data:image/jpg;base64,"))?;
+    STANDARD.decode(payload).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

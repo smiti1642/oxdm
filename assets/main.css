@@ -1735,6 +1735,19 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--overlay0);
   font-weight: 400;
 }
+.live-video-save {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.live-video-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.live-video-save:disabled:hover {
+  background: none;
+  color: var(--overlay1);
+}
 .live-video-tip {
   display: flex;
   align-items: flex-start;
