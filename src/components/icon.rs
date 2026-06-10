@@ -1,5 +1,61 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// The full OxDM brand mark — same gradient lens as the OS-level app icon
+/// (`assets/icons/oxdm.svg`). Use for showcase surfaces (Welcome view, About
+/// dialog) where size is large enough to do the detail justice. For inline
+/// contexts under ~24px (Topbar, headers) keep using the monochrome
+/// `Icon { name: "lens", size: N }` — gradients muddy at small sizes and
+/// the line-art version themes via `currentColor`.
+///
+/// Gradient `<defs>` IDs are unique per instance (counter-based) so multiple
+/// LensBrands on the same document (Welcome behind, About on top) don't
+/// collide on `url(#…)` references.
+#[component]
+pub fn LensBrand(#[props(default = 64)] size: u32) -> Element {
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let id = use_hook(|| COUNTER.fetch_add(1, Ordering::Relaxed));
+    let bg_id = format!("oxdm-lens-bg-{id}");
+    let ring_id = format!("oxdm-lens-ring-{id}");
+    let glass_id = format!("oxdm-lens-glass-{id}");
+    let bg_ref = format!("url(#{bg_id})");
+    let ring_ref = format!("url(#{ring_id})");
+    let glass_ref = format!("url(#{glass_id})");
+
+    rsx! {
+        svg {
+            width: "{size}",
+            height: "{size}",
+            view_box: "0 0 512 512",
+            role: "img",
+            "aria-label": "OxDM",
+            defs {
+                linearGradient {
+                    id: "{bg_id}", x1: "0", y1: "0", x2: "1", y2: "1",
+                    stop { offset: "0", stop_color: "#26263f" }
+                    stop { offset: "1", stop_color: "#0c0c16" }
+                }
+                linearGradient {
+                    id: "{ring_id}", x1: "0", y1: "0", x2: "1", y2: "1",
+                    stop { offset: "0", stop_color: "#cdd2ff" }
+                    stop { offset: "1", stop_color: "#8a9bff" }
+                }
+                radialGradient {
+                    id: "{glass_id}", cx: "0.4", cy: "0.35", r: "0.8",
+                    stop { offset: "0", stop_color: "#30304e" }
+                    stop { offset: "1", stop_color: "#0e0e1c" }
+                }
+            }
+            rect { x: "5", y: "5", width: "502", height: "502", rx: "113", fill: "{bg_ref}" }
+            circle { cx: "256", cy: "256", r: "143", fill: "none", stroke: "{ring_ref}", stroke_width: "23" }
+            circle { cx: "256", cy: "256", r: "110", fill: "{glass_ref}" }
+            circle { cx: "256", cy: "256", r: "69", fill: "none", stroke: "#7eb6ff", stroke_width: "13", opacity: "0.9" }
+            circle { cx: "256", cy: "256", r: "26", fill: "#101022" }
+            ellipse { cx: "210", cy: "205", rx: "33", ry: "18", fill: "#ffffff", opacity: "0.45", transform: "rotate(-38 210 205)" }
+        }
+    }
+}
 
 /// Render an inline SVG icon by name. Uses Lucide icon paths (MIT licensed).
 /// Default size is 16px; pass `size` to override.
@@ -181,8 +237,10 @@ fn icon_paths(name: &str) -> Element {
         "chevron-down" => rsx! {
             path { d: "m6 9 6 6 6-6" }
         },
-        "hexagon" => rsx! {
-            path { d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" }
+        "lens" => rsx! {
+            circle { cx: "12", cy: "12", r: "9" }
+            circle { cx: "12", cy: "12", r: "3.5" }
+            circle { cx: "9", cy: "9", r: "1", fill: "currentColor", stroke: "none" }
         },
         "arrow-up" => rsx! {
             path { d: "m5 12 7-7 7 7" }
@@ -236,6 +294,9 @@ fn icon_paths(name: &str) -> Element {
             path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
             polyline { points: "7 10 12 15 17 10" }
             line { x1: "12", x2: "12", y1: "15", y2: "3" }
+        },
+        "activity" => rsx! {
+            polyline { points: "22 12 18 12 15 21 9 3 6 12 2 12" }
         },
         "file-text" => rsx! {
             path { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }

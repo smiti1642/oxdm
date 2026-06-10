@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::Icon;
+use crate::components::{Icon, LensBrand};
 use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::events::EventsView;
@@ -7,7 +7,9 @@ use crate::views::imaging::ImagingView;
 use crate::views::live_video::LiveVideoView;
 use crate::views::osd::OsdView;
 use crate::views::ptz::PtzControlView;
-use crate::views::settings::{IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab};
+use crate::views::settings::{
+    HealthTab, IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab,
+};
 use dioxus::prelude::*;
 
 #[component]
@@ -63,7 +65,7 @@ fn WelcomeView() -> Element {
     rsx! {
         div { class: "welcome",
             div { class: "welcome-icon",
-                Icon { name: "hexagon", size: 52 }
+                LensBrand { size: 128 }
             }
             h1  { class: "welcome-title", {i18n::t(locale, "app_name")} }
             p   { class: "welcome-sub",   {i18n::t(locale, "app_subtitle")} }
@@ -80,6 +82,7 @@ const SETTINGS_TABS: &[(SettingsTab, &str, &str)] = &[
     (SettingsTab::Time, "clock", "tab_time"),
     (SettingsTab::Users, "users", "tab_users"),
     (SettingsTab::Maintenance, "wrench", "tab_maintenance"),
+    (SettingsTab::Health, "activity", "tab_health"),
 ];
 
 #[component]
@@ -109,6 +112,7 @@ fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
                     SettingsTab::Time           => rsx! { TimeTab { addr, creds } },
                     SettingsTab::Users          => rsx! { UsersTab { addr, creds } },
                     SettingsTab::Maintenance    => rsx! { MaintenanceTab { addr, creds } },
+                    SettingsTab::Health         => rsx! { HealthTab { addr, creds } },
                 }
             }
         }

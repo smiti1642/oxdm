@@ -82,6 +82,7 @@ pub enum SettingsTab {
     Time,
     Users,
     Maintenance,
+    Health,
 }
 
 // ── Auth status ─────────────────────────────────────────────────────────────

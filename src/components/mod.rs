@@ -22,7 +22,7 @@ pub use device_panel::DevicePanel;
 pub use dialog::ConfirmDialogModal;
 pub use dialog_overlay::DialogOverlay;
 pub use edit_device_dialog::EditDeviceDialog;
-pub use icon::Icon;
+pub use icon::{Icon, LensBrand};
 pub use log_viewer::LogViewer;
 pub use shared::{PasswordField, PropRow};
 pub use tab_error::TabError;

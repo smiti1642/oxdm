@@ -3,7 +3,7 @@
 ## Project overview
 
 `oxdm` is a Dioxus desktop app for managing ONVIF IP cameras, built on top of
-`oxvif`. Single crate, no workspace. Desktop-only (Dioxus 0.7.4, wry window).
+`oxvif`. Single crate, no workspace. Desktop-only (Dioxus 0.7.5, wry window).
 
 Scope, priorities, and the ONVIF API coverage map live in [`ODM.md`](./ODM.md).
 
@@ -190,20 +190,36 @@ src/
     live_video.rs          Live preview with Snapshot/RTSP mode tabs; also
                            exports LiveVideoStage/LiveModeTabs reused by
                            Imaging + PTZ
-    imaging.rs             Imaging service controls (sliders + selects)
-                           over an embedded live preview
+    imaging.rs             Imaging service controls (auto + manual exposure /
+                           WB gains / focus limits) over an embedded live
+                           preview, plus the embedded VideoEncoderSection
+    video_encoder.rs       VideoEncoderSection — per-profile encoder edit
+                           (resolution / bitrate / gov_length / quality);
+                           embedded inside ImagingView, not a top-level View.
+                           H.265 profiles auto-route through Media2 via
+                           api::set_video_encoder_configuration
     ptz.rs                 PTZ pad + zoom + preset list over a live preview
     osd.rs                 OSD text/overlay read + create / update / delete
     events.rs              PullPoint event subscription + rolling event log
     settings/
       mod.rs
       identification.rs    GetDeviceInformation + GetScopes (IdentificationTab)
-      network.rs           Hostname / Interfaces / DNS / NTP / Gateway /
-                           Protocols — read + write (NetworkTab)
+      network.rs           Hostname / IPv4 + IPv6 manual interfaces / MTU /
+                           DNS / NTP / Gateway / Protocols — read + write
+                           (NetworkTab). IPv6 panel uses
+                           api::set_network_interfaces_full and the oxvif
+                           NetworkInterfaceConfig struct
       time.rs              Get/SetSystemDateAndTime (TimeTab)
       users.rs             Users list + create / delete / set (UsersTab)
       maintenance.rs       Reboot + factory reset, both confirm-gated
                            (MaintenanceTab)
+      health.rs            On-demand oxvif::health::HealthCheck run +
+                           rendered Pass/Warn/Fail/Skip per category +
+                           Profile S/T/G verdict (HealthTab). Save-as-
+                           baseline writes a JSON HealthReport to
+                           ~/.oxdm/baselines/<sanitized-addr>.json;
+                           subsequent runs render report.diff(&baseline)
+                           below the per-check table
 
   i18n/
     mod.rs                 t(locale, key) with English fallback
@@ -217,6 +233,14 @@ src/
     i18n_tests.rs          Exhaustive i18n-key parity across en / zh_tw / ru
     state_tests.rs
     util_tests.rs
+
+tests/                     Top-level integration tests (NOT in src/tests)
+  healthtab_smoke.rs       Boots oxvif::mock::MockServer, runs HealthCheck
+                           against it, asserts JSON round-trips and that
+                           report.diff(&report) is empty. Gated by the
+                           [dev-dependencies] entry that pulls in oxvif's
+                           mock-server feature — release builds don't carry
+                           axum
 
 assets/
   main.css                 Hand-authored stylesheet (git-tracked,
@@ -297,20 +321,43 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.9.6"`, used via a local path dep (`../oxvif`). When
-iterating on oxvif locally before a release, keep the path dep:
+Currently `oxvif = "0.9.8"`, pinned to the crates.io registry, with the
+`health` feature enabled in `[dependencies]` and `mock-server, health` in
+`[dev-dependencies]` (the latter only for `tests/healthtab_smoke.rs`; the
+release binary never pulls axum). Notable surfaces from 0.9.8 that oxdm
+relies on:
+
+- `oxvif::health::{HealthCheck, HealthReport, ReportDiff, SlowedCheck}` —
+  serde-derived report types, used by `views/settings/health.rs` for the
+  baseline diff flow.
+- `oxvif::{NetworkInterfaceConfig, IpStackConfig, ManualAddress}` — the
+  struct-shaped `set_network_interfaces` API (breaking change vs 0.9.7);
+  `api::set_network_interfaces` still exposes the old positional shape to
+  the rest of oxdm, and `api::set_network_interfaces_full` is the
+  struct-passing variant the IPv6 panel calls.
+- `VideoEncoderConfiguration2` / Media2 set path — `api::set_video_encoder_configuration`
+  detects `VideoEncoding::H265` and auto-routes through Media2 (Media1's
+  schema doesn't carry H.265; oxvif now rejects it with `InvalidArgument`
+  at the boundary).
+- `ImagingSettings` gained eight `Option<...>` fields for manual exposure /
+  WB Cr/Cb gains / focus near-far limits — consumed by `views/imaging.rs`.
+
+When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.9.6", path = "../oxvif" }
+oxvif = { version = "0.9.8", path = "../oxvif", features = ["health"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
-pin back to the registry.
+pin back to the registry — CI builds on a runner without `../oxvif`, so a
+path dep makes CI fail to resolve the dependency. Also bump
+`OXVIF_VERSION` in `src/components/about_dialog.rs` to match (shown in the
+About dialog).
 
 To upgrade oxvif further, bump the version and re-verify every call site
 in `src/api.rs` still compiles — types like `ImagingSettings`,
-`ImagingOptions`, `FloatRange`, and the service-URL fields on
-`Capabilities` are the usual breakage points.
+`ImagingOptions`, `FloatRange`, `NetworkInterfaceConfig`, and the
+service-URL fields on `Capabilities` are the usual breakage points.
 
 ## Known quirks
 

@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::components::{DialogOverlay, Icon};
+use crate::components::{DialogOverlay, LensBrand};
 use crate::i18n;
 use crate::state::Ctx;
 use dioxus::prelude::*;
@@ -8,7 +8,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// oxvif version. Bumped manually when the Cargo.toml dependency moves —
 /// `cargo metadata` lookup at runtime would mean shipping cargo, which
 /// the single-binary release explicitly avoids.
-const OXVIF_VERSION: &str = "0.9.6";
+const OXVIF_VERSION: &str = "0.9.8";
 const REPO_URL: &str = "https://github.com/smiti1642/oxdm";
 
 #[component]
@@ -35,9 +35,10 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                 span { class: "dialog-title", "About OxDM" }
             }
                 div { class: "dialog-body",
-                    div { class: "about-icon", Icon { name: "hexagon", size: 48 } }
+                    div { class: "about-icon", LensBrand { size: 72 } }
                     div { class: "about-name", "OxDM" }
                     div { class: "about-sub", {i18n::t(locale, "app_subtitle")} }
+                    div { class: "about-tagline", {i18n::t(locale, "about_tagline")} }
                     div { class: "about-versions",
                         div { "OxDM v{APP_VERSION}" }
                         div { "oxvif v{OXVIF_VERSION}" }

@@ -25,7 +25,7 @@ pub fn Topbar() -> Element {
         header { class: "topbar",
             div { class: "topbar-left",
                 span { class: "topbar-logo",
-                    Icon { name: "hexagon", size: 18 }
+                    Icon { name: "lens", size: 18 }
                     " OxDM"
                 }
             }

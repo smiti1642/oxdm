@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Concept E-oct — Circle rim + 8 curved blades + closed octagon + lens glint -->
+  <defs>
+    <linearGradient id="bgEo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1e2e"/>
+      <stop offset="1" stop-color="#11111b"/>
+    </linearGradient>
+    <clipPath id="lensClip"><circle cx="512" cy="512" r="300"/></clipPath>
+    <radialGradient id="sheen" cx="0.33" cy="0.27" r="0.62">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bgEo)"/>
+
+  <!-- lens rim -->
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#b4befe" stroke-width="30"/>
+
+  <!-- 8 curved aperture blades: from each octagon vertex, arc out to the rim -->
+  <g fill="none" stroke="#89b4fa" stroke-width="26" stroke-linecap="round">
+    <path d="M613.6,554.1 A300,300 0 0,1 626.8,789.2"/>
+    <path d="M554.1,613.6 A300,300 0 0,1 397.2,789.2"/>
+    <path d="M469.9,613.6 A300,300 0 0,1 234.8,626.8"/>
+    <path d="M410.4,554.1 A300,300 0 0,1 234.8,397.2"/>
+    <path d="M410.4,469.9 A300,300 0 0,1 397.2,234.8"/>
+    <path d="M469.9,410.4 A300,300 0 0,1 626.8,234.8"/>
+    <path d="M554.1,410.4 A300,300 0 0,1 789.2,397.2"/>
+    <path d="M613.6,469.9 A300,300 0 0,1 789.2,626.8"/>
+  </g>
+
+  <!-- closed octagon opening in the centre -->
+  <path d="M613.6,554.1 L554.1,613.6 L469.9,613.6 L410.4,554.1 L410.4,469.9 L469.9,410.4 L554.1,410.4 L613.6,469.9 Z"
+        fill="none" stroke="#b4befe" stroke-width="26" stroke-linejoin="round"/>
+
+  <!-- glass reflection: soft sheen (clipped to the lens) + a crisp glint -->
+  <g clip-path="url(#lensClip)">
+    <ellipse cx="430" cy="380" rx="300" ry="250" fill="url(#sheen)" transform="rotate(-30 430 380)"/>
+  </g>
+  <ellipse cx="408" cy="372" rx="42" ry="22" fill="#ffffff" opacity="0.88" transform="rotate(-32 408 372)"/>
+  <circle  cx="462" cy="426" r="10" fill="#ffffff" opacity="0.6"/>
+</svg>

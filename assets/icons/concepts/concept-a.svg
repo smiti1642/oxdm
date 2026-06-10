@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Concept A — Hexagon frame + camera aperture (recommended) -->
+  <defs>
+    <linearGradient id="bgA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1e2e"/>
+      <stop offset="1" stop-color="#11111b"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bgA)"/>
+
+  <!-- hexagon brand frame (flat-top), lavender -->
+  <path d="M842,512 L677,226.2 L347,226.2 L182,512 L347,797.8 L677,797.8 Z"
+        fill="none" stroke="#b4befe" stroke-width="34" stroke-linejoin="round"/>
+
+  <!-- 6-chord camera aperture inside, blue -->
+  <g fill="none" stroke="#89b4fa" stroke-width="26" stroke-linecap="round">
+    <line x1="572.06" y1="408"   x2="721.3" y2="666.4"/>
+    <line x1="451.94" y1="408"   x2="302.7" y2="666.4"/>
+    <line x1="391.9"  y1="512"   x2="695.6" y2="512"/>
+    <line x1="451.94" y1="616"   x2="599.9" y2="357.6"/>
+    <line x1="572.06" y1="616"   x2="268.1" y2="357.6"/>
+    <line x1="632.1"  y1="512"   x2="328.4" y2="512"/>
+  </g>
+</svg>

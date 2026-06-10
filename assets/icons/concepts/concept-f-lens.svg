@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="IP camera lens app icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#26263f"/>
+      <stop offset="1" stop-color="#0c0c16"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cdd2ff"/>
+      <stop offset="1" stop-color="#8a9bff"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#30304e"/>
+      <stop offset="1" stop-color="#0e0e1c"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="5" y="5" width="502" height="502" rx="113" fill="url(#bg)"/>
+
+  <circle cx="256" cy="256" r="143" fill="none" stroke="url(#ring)" stroke-width="23"/>
+  <circle cx="256" cy="256" r="110" fill="url(#glass)"/>
+  <circle cx="256" cy="256" r="69" fill="none" stroke="#7eb6ff" stroke-width="13" opacity="0.9"/>
+  <circle cx="256" cy="256" r="26" fill="#101022"/>
+
+  <ellipse cx="210" cy="205" rx="33" ry="18" fill="#ffffff" opacity="0.45" transform="rotate(-38 210 205)"/>
+</svg>

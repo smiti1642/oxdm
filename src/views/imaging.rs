@@ -38,6 +38,17 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
     let wdr_mode = use_signal(|| "OFF".to_string());
     let ir_mode = use_signal(|| "AUTO".to_string());
     let focus_mode = use_signal(|| "AUTO".to_string());
+    // oxvif 0.9.8 — manual exposure / WB gains / focus limits. Each is
+    // Option<f32> in the wire model; we expose them as f32 with a
+    // present-bit so the caller can opt out.
+    let exposure_priority = use_signal(|| "FrameRate".to_string());
+    let exposure_time = use_signal(|| 0.0f32);
+    let exposure_gain = use_signal(|| 0.0f32);
+    let exposure_iris = use_signal(|| 0.0f32);
+    let wb_cr_gain = use_signal(|| 0.0f32);
+    let wb_cb_gain = use_signal(|| 0.0f32);
+    let focus_near_limit = use_signal(|| 0.0f32);
+    let focus_far_limit = use_signal(|| 0.0f32);
     let initialized = use_signal(|| false);
 
     // Per-view backend choice — same Snapshot/RTSP toggle as Live Video,
@@ -88,6 +99,15 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                             wdr_mode.clone().set(settings.wide_dynamic_range_mode.clone().unwrap_or("OFF".into()));
                             ir_mode.clone().set(settings.ir_cut_filter.clone().unwrap_or("AUTO".into()));
                             focus_mode.clone().set(settings.focus_mode.clone().unwrap_or("AUTO".into()));
+                            // oxvif 0.9.8 manual fields — default to 0.0 if unread.
+                            exposure_priority.clone().set(settings.exposure_priority.clone().unwrap_or("FrameRate".into()));
+                            exposure_time.clone().set(settings.exposure_time.unwrap_or(0.0));
+                            exposure_gain.clone().set(settings.exposure_gain.unwrap_or(0.0));
+                            exposure_iris.clone().set(settings.exposure_iris.unwrap_or(0.0));
+                            wb_cr_gain.clone().set(settings.wb_cr_gain.unwrap_or(0.0));
+                            wb_cb_gain.clone().set(settings.wb_cb_gain.unwrap_or(0.0));
+                            focus_near_limit.clone().set(settings.focus_near_limit.unwrap_or(0.0));
+                            focus_far_limit.clone().set(settings.focus_far_limit.unwrap_or(0.0));
                             initialized.clone().set(true);
                         }
 
@@ -96,6 +116,13 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                         let sa = options.color_saturation.unwrap_or(oxvif::FloatRange { min: 0.0, max: 100.0 });
                         let sh = options.sharpness.unwrap_or(oxvif::FloatRange { min: 0.0, max: 100.0 });
                         let wr = options.wdr_level_range.unwrap_or(oxvif::FloatRange { min: 0.0, max: 100.0 });
+                        // Manual-exposure ranges from oxvif 0.9.8 GetOptions.
+                        let exp_t = options.exposure_time_range.unwrap_or(oxvif::FloatRange { min: 0.0, max: 1.0 });
+                        let exp_g = options.gain_range.unwrap_or(oxvif::FloatRange { min: 0.0, max: 100.0 });
+                        let exp_i = options.iris_range.unwrap_or(oxvif::FloatRange { min: 0.0, max: 22.0 });
+
+                        let exposure_is_manual = exposure_mode.read().eq_ignore_ascii_case("MANUAL");
+                        let wb_is_manual = wb_mode.read().eq_ignore_ascii_case("MANUAL");
 
                         let token = source_token.clone();
 
@@ -130,6 +157,32 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                             div { class: "prop-section-header", {i18n::t(locale, "img_focus")} }
                             SelectRow { label: i18n::t(locale, "img_mode"), value: focus_mode,
                                 options_list: nonempty(&options.focus_af_modes, &["AUTO", "MANUAL"]) }
+                            FloatInputRow { label: i18n::t(locale, "img_focus_near"), value: focus_near_limit, step: 1.0 }
+                            FloatInputRow { label: i18n::t(locale, "img_focus_far"), value: focus_far_limit, step: 1.0 }
+
+                            // Manual exposure / WB gains — visible always so the
+                            // user can prepare values before switching mode.
+                            div { class: "prop-section-header", {i18n::t(locale, "img_manual_group")} }
+                            SelectRow { label: i18n::t(locale, "img_exposure_priority"),
+                                value: exposure_priority,
+                                options_list: vec!["FrameRate".into(), "LowNoise".into()] }
+                            if exposure_is_manual {
+                                FloatInputRow { label: i18n::t(locale, "img_exposure_time"),
+                                    value: exposure_time, step: 0.0001 }
+                                FloatInputRow { label: i18n::t(locale, "img_exposure_gain"),
+                                    value: exposure_gain, step: 0.1 }
+                                FloatInputRow { label: i18n::t(locale, "img_exposure_iris"),
+                                    value: exposure_iris, step: 0.1 }
+                                ManualRangeNote { min_label: "exposure_time", lo: exp_t.min, hi: exp_t.max }
+                                ManualRangeNote { min_label: "gain", lo: exp_g.min, hi: exp_g.max }
+                                ManualRangeNote { min_label: "iris", lo: exp_i.min, hi: exp_i.max }
+                            }
+                            if wb_is_manual {
+                                FloatInputRow { label: i18n::t(locale, "img_wb_cr_gain"),
+                                    value: wb_cr_gain, step: 0.01 }
+                                FloatInputRow { label: i18n::t(locale, "img_wb_cb_gain"),
+                                    value: wb_cb_gain, step: 0.01 }
+                            }
 
                             div { class: "imaging-footer",
                                 button {
@@ -138,6 +191,13 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                                         let addr = addr.read().clone();
                                         let creds = creds.read().clone();
                                         let tk = token.clone();
+                                        // Only send manual-exposure / manual-WB sub-fields when
+                                        // the parent mode is MANUAL — sending them in AUTO mode
+                                        // is at best ignored, at worst rejected by strict devices.
+                                        let exp_manual = exposure_mode.peek().eq_ignore_ascii_case("MANUAL");
+                                        let wb_manual = wb_mode.peek().eq_ignore_ascii_case("MANUAL");
+                                        let near = *focus_near_limit.peek();
+                                        let far = *focus_far_limit.peek();
                                         let new_settings = oxvif::ImagingSettings {
                                             brightness: Some(*brightness.peek()),
                                             color_saturation: Some(*saturation.peek()),
@@ -145,9 +205,17 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                                             sharpness: Some(*sharpness.peek()),
                                             ir_cut_filter: Some(ir_mode.peek().clone()),
                                             white_balance_mode: Some(wb_mode.peek().clone()),
+                                            wb_cr_gain: if wb_manual { Some(*wb_cr_gain.peek()) } else { None },
+                                            wb_cb_gain: if wb_manual { Some(*wb_cb_gain.peek()) } else { None },
                                             exposure_mode: Some(exposure_mode.peek().clone()),
+                                            exposure_priority: Some(exposure_priority.peek().clone()),
+                                            exposure_time: if exp_manual { Some(*exposure_time.peek()) } else { None },
+                                            exposure_gain: if exp_manual { Some(*exposure_gain.peek()) } else { None },
+                                            exposure_iris: if exp_manual { Some(*exposure_iris.peek()) } else { None },
                                             backlight_compensation: Some(blc_mode.peek().clone()),
                                             focus_mode: Some(focus_mode.peek().clone()),
+                                            focus_near_limit: if near > 0.0 { Some(near) } else { None },
+                                            focus_far_limit: if far > 0.0 { Some(far) } else { None },
                                             wide_dynamic_range_mode: Some(wdr_mode.peek().clone()),
                                             wide_dynamic_range_level: Some(*wdr_level.peek()),
                                             ..Default::default()
@@ -201,6 +269,43 @@ fn SliderRow(label: &'static str, value: Signal<f32>, min: f32, max: f32) -> Ele
                 },
             }
             span { class: "imaging-value", "{display}" }
+        }
+    }
+}
+
+/// Free-form numeric input for fields where a slider's coarse step isn't
+/// adequate (exposure time, WB gain, focus limits). Stores into a
+/// `Signal<f32>` so the Apply path reads it uniformly.
+#[component]
+fn FloatInputRow(label: &'static str, value: Signal<f32>, step: f32) -> Element {
+    let display = format!("{:.4}", *value.read());
+    rsx! {
+        div { class: "imaging-row",
+            span { class: "imaging-label", "{label}" }
+            input {
+                class: "imaging-input",
+                r#type: "number",
+                step: "{step}",
+                value: "{display}",
+                oninput: move |e| {
+                    if let Ok(v) = e.value().parse::<f32>() {
+                        value.clone().set(v);
+                    }
+                },
+            }
+        }
+    }
+}
+
+/// Small inline annotation showing the device-advertised valid range for
+/// a manual-exposure field. Helps the user pick a value the camera will
+/// actually accept (and saves a SOAP Fault round-trip).
+#[component]
+fn ManualRangeNote(min_label: &'static str, lo: f32, hi: f32) -> Element {
+    rsx! {
+        div { class: "imaging-row imaging-range-note",
+            span { class: "imaging-label", "{min_label}" }
+            span { class: "imaging-value", "{lo}..{hi}" }
         }
     }
 }

@@ -2,10 +2,19 @@
 name = "oxdm"
 version = "0.1.0"
 edition = "2021"
+description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
+authors = ["smiti1642"]
+license = "MIT"
+repository = "https://github.com/smiti1642/oxdm"
+readme = "README.md"
+keywords = ["onvif", "ip-camera", "dioxus", "desktop", "rtsp"]
+categories = ["multimedia", "gui"]
+# Not published to crates.io — this is a desktop app, not a library.
+publish = false
 
 [dependencies]
-dioxus = { version = "=0.7.4", features = ["desktop", "router"] }
-oxvif = { version = "0.9.6", path = "../oxvif" }
+dioxus = { version = "=0.7.5", features = ["desktop", "router"] }
+oxvif = { version = "0.9.8", features = ["health"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -25,6 +34,25 @@ rfd = "0.15"
 opener = "0.7"
 async-trait = "0.1"
 time = { version = "0.3", features = ["local-offset"] }
+# PNG decode for the runtime window icon — `tao::window::Icon::from_rgba`
+# wants raw RGBA, and we keep the master `assets/icons/icon.png` as the
+# only source of truth so `dx` can also use it for bundling.
+png = "0.17"
+
+[build-dependencies]
+# Build-time only — used by build.rs on Windows to (1) generate a multi-
+# resolution `icon.ico` from `assets/icons/icon.png` and (2) embed that ICO
+# into the .exe via the Windows resource section, so Explorer / shortcuts
+# pick it up without going through MSI. No-op on non-Windows targets.
+image = { version = "0.25", default-features = false, features = ["png"] }
+ico = "0.4"
+winresource = "0.1"
+
+[dev-dependencies]
+# Pull in oxvif's mock-server feature so tests/healthtab_smoke.rs can
+# drive a real bound-port ONVIF mock without needing a camera. Test
+# builds only; the release binary doesn't carry axum.
+oxvif = { version = "0.9.8", features = ["mock-server", "health"] }
 
 [profile.wasm-dev]
 inherits = "dev"

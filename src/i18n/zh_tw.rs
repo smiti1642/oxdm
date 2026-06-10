@@ -106,6 +106,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         // ── Main Content ────────────────────────────────────────────────────
         "app_name" => "OxDM",
         "app_subtitle" => "ONVIF \u{88DD}\u{7F6E}\u{7BA1}\u{7406}\u{5668}",
+        "about_tagline" => "oxvif Device Manager — 經典 ONVIF Device Manager (ODM) 的現代版",
         "welcome_hint" => "\u{5F9E}\u{5DE6}\u{5074}\u{9762}\u{677F}\u{9078}\u{64C7}\u{88DD}\u{7F6E}\u{FF0C}\n\u{6216}\u{9EDE}\u{64CA}  \u{27F3} \u{6383}\u{63CF}  \u{4EE5}\u{63A2}\u{7D22}\u{7DB2}\u{8DEF}\u{4E0A}\u{7684}\u{88DD}\u{7F6E}\u{3002}",
 
         // ── Settings Tabs ───────────────────────────────────────────────────
@@ -114,6 +115,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "tab_time" => "\u{6642}\u{9593}",
         "tab_users" => "\u{4F7F}\u{7528}\u{8005}",
         "tab_maintenance" => "\u{7DAD}\u{8B77}",
+        "tab_health" => "健康檢查",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "\u{53F0}\u{88DD}\u{7F6E}",
@@ -300,6 +302,31 @@ pub fn get(key: &str) -> Option<&'static str> {
         "maint_factory_reset_confirm" => "\u{9019}\u{5C07}\u{6E05}\u{9664}\u{6240}\u{6709}\u{8A2D}\u{5B9A}\u{3002}\u{78BA}\u{5B9A}\u{55CE}\u{FF1F}",
         "maint_factory_reset_ok" => "\u{5DF2}\u{555F}\u{52D5}\u{51FA}\u{5EE0}\u{91CD}\u{8A2D}\u{3002}",
 
+        // ── Health check ────────────────────────────────────────────────────
+        "health_run" => "執行健康檢查",
+        "health_running" => "健康檢查執行中…",
+        "health_empty" => "對此裝置執行唯讀的相容性檢查。",
+        "health_pass" => "通過",
+        "health_warn" => "警告",
+        "health_fail" => "失敗",
+        "health_skip" => "略過",
+        "health_profiles" => "Profile 評估",
+        "health_conformant" => "符合",
+        "health_partial" => "部分符合",
+        "health_unsupported" => "不支援",
+        "health_missing" => "缺少",
+        "health_save_baseline" => "存為基準",
+        "health_baseline_saved" => "基準已儲存。",
+        "health_baseline_save_failed" => "基準儲存失敗",
+        "health_baseline_loaded" => "基準",
+        "health_diff_title" => "與基準的差異",
+        "health_diff_none" => "與基準無差異",
+        "health_diff_flipped_fail" => "翻轉 \u{2192} FAIL",
+        "health_diff_flipped_pass" => "恢復",
+        "health_diff_added" => "新增",
+        "health_diff_removed" => "移除",
+        "health_diff_slowed" => "變慢",
+
         // ── Imaging ─────────────────────────────────────────────────────────
         "img_basic" => "\u{57FA}\u{672C}",
         "img_brightness" => "\u{4EAE}\u{5EA6}",
@@ -315,7 +342,24 @@ pub fn get(key: &str) -> Option<&'static str> {
         "img_mode" => "\u{6A21}\u{5F0F}",
         "img_level" => "\u{7B49}\u{7D1A}",
         "img_saved" => "\u{5F71}\u{50CF}\u{8A2D}\u{5B9A}\u{5DF2}\u{5132}\u{5B58}\u{3002}",
+        "img_manual_group" => "手動曝光與對焦",
+        "img_exposure_priority" => "曝光優先",
+        "img_exposure_time" => "曝光時間 (s)",
+        "img_exposure_gain" => "感光度 (dB)",
+        "img_exposure_iris" => "光圈 (F)",
+        "img_wb_cr_gain" => "白平衡 Cr 增益",
+        "img_wb_cb_gain" => "白平衡 Cb 增益",
+        "img_focus_near" => "對焦近端",
+        "img_focus_far" => "對焦遠端",
         "btn_apply" => "\u{5957}\u{7528}",
+
+        // ── Network IPv6 panel ──────────────────────────────────────────────
+        "net_ipv6" => "IPv6",
+        "net_ipv6_enabled" => "啟用 IPv6",
+        "net_ipv6_dhcp" => "透過 DHCPv6 取得",
+        "net_ipv6_manual" => "手動 IPv6 位址",
+        "net_mtu" => "MTU (bytes)",
+        "net_save_v6" => "儲存 IPv6",
 
         _ => return None,
     })

@@ -106,6 +106,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         // ── Main Content ────────────────────────────────────────────────────
         "app_name" => "OxDM",
         "app_subtitle" => "ONVIF Device Manager",
+        "about_tagline" => "oxvif Device Manager — современный вариант ONVIF Device Manager (ODM)",
         "welcome_hint" => "\u{0412}\u{044B}\u{0431}\u{0435}\u{0440}\u{0438}\u{0442}\u{0435} \u{0443}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{0441}\u{0442}\u{0432}\u{043E} \u{0441}\u{043B}\u{0435}\u{0432}\u{0430},\n\u{0438}\u{043B}\u{0438} \u{043D}\u{0430}\u{0436}\u{043C}\u{0438}\u{0442}\u{0435}  \u{27F3} \u{0421}\u{043A}\u{0430}\u{043D}.  \u{0434}\u{043B}\u{044F} \u{043F}\u{043E}\u{0438}\u{0441}\u{043A}\u{0430} \u{0432} \u{0441}\u{0435}\u{0442}\u{0438}.",
 
         // ── Settings Tabs ───────────────────────────────────────────────────
@@ -114,6 +115,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "tab_time" => "\u{0412}\u{0440}\u{0435}\u{043C}\u{044F}",
         "tab_users" => "\u{041F}\u{043E}\u{043B}\u{044C}\u{0437}\u{043E}\u{0432}\u{0430}\u{0442}\u{0435}\u{043B}\u{0438}",
         "tab_maintenance" => "\u{041E}\u{0431}\u{0441}\u{043B}\u{0443}\u{0436}\u{0438}\u{0432}\u{0430}\u{043D}\u{0438}\u{0435}",
+        "tab_health" => "Здоровье",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "\u{0443}\u{0441}\u{0442}\u{0440}.",
@@ -300,6 +302,31 @@ pub fn get(key: &str) -> Option<&'static str> {
         "maint_factory_reset_confirm" => "\u{0412}\u{0441}\u{0435} \u{043D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438} \u{0431}\u{0443}\u{0434}\u{0443}\u{0442} \u{0443}\u{0434}\u{0430}\u{043B}\u{0435}\u{043D}\u{044B}. \u{041F}\u{0440}\u{043E}\u{0434}\u{043E}\u{043B}\u{0436}\u{0438}\u{0442}\u{044C}?",
         "maint_factory_reset_ok" => "\u{0421}\u{0431}\u{0440}\u{043E}\u{0441} \u{0437}\u{0430}\u{043F}\u{0443}\u{0449}\u{0435}\u{043D}.",
 
+        // ── Health check ────────────────────────────────────────────────────
+        "health_run" => "Запустить проверку",
+        "health_running" => "Выполняется проверка…",
+        "health_empty" => "Запустите проверку соответствия устройства (только чтение).",
+        "health_pass" => "ок",
+        "health_warn" => "предупр.",
+        "health_fail" => "сбой",
+        "health_skip" => "пропуск",
+        "health_profiles" => "Профили",
+        "health_conformant" => "соответствует",
+        "health_partial" => "частично",
+        "health_unsupported" => "не поддерж.",
+        "health_missing" => "отсутствует",
+        "health_save_baseline" => "Сохранить как базовый",
+        "health_baseline_saved" => "Базовый отчёт сохранён.",
+        "health_baseline_save_failed" => "Не удалось сохранить базовый отчёт",
+        "health_baseline_loaded" => "базовый",
+        "health_diff_title" => "Отличия от базового",
+        "health_diff_none" => "без изменений",
+        "health_diff_flipped_fail" => "стало FAIL",
+        "health_diff_flipped_pass" => "восстановлено",
+        "health_diff_added" => "новые",
+        "health_diff_removed" => "удалены",
+        "health_diff_slowed" => "замедлено",
+
         // ── Imaging ─────────────────────────────────────────────────────────
         "img_basic" => "\u{041E}\u{0441}\u{043D}\u{043E}\u{0432}\u{043D}\u{044B}\u{0435}",
         "img_brightness" => "\u{042F}\u{0440}\u{043A}\u{043E}\u{0441}\u{0442}\u{044C}",
@@ -315,7 +342,24 @@ pub fn get(key: &str) -> Option<&'static str> {
         "img_mode" => "\u{0420}\u{0435}\u{0436}\u{0438}\u{043C}",
         "img_level" => "\u{0423}\u{0440}\u{043E}\u{0432}\u{0435}\u{043D}\u{044C}",
         "img_saved" => "\u{041D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438} \u{0441}\u{043E}\u{0445}\u{0440}\u{0430}\u{043D}\u{0435}\u{043D}\u{044B}.",
+        "img_manual_group" => "Ручная экспозиция и фокус",
+        "img_exposure_priority" => "Приоритет экспозиции",
+        "img_exposure_time" => "Выдержка (с)",
+        "img_exposure_gain" => "Усиление (дБ)",
+        "img_exposure_iris" => "Диафрагма (F)",
+        "img_wb_cr_gain" => "Cr-усиление БЦ",
+        "img_wb_cb_gain" => "Cb-усиление БЦ",
+        "img_focus_near" => "Ближний предел фокуса",
+        "img_focus_far" => "Дальний предел фокуса",
         "btn_apply" => "\u{041F}\u{0440}\u{0438}\u{043C}\u{0435}\u{043D}\u{0438}\u{0442}\u{044C}",
+
+        // ── Network IPv6 panel ──────────────────────────────────────────────
+        "net_ipv6" => "IPv6",
+        "net_ipv6_enabled" => "IPv6 включён",
+        "net_ipv6_dhcp" => "Получать через DHCPv6",
+        "net_ipv6_manual" => "Ручной IPv6-адрес",
+        "net_mtu" => "MTU (байт)",
+        "net_save_v6" => "Сохранить IPv6",
 
         _ => return None,
     })

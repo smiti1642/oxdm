@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Concept B — Pure camera aperture (cleanest, drops the hex brand) -->
+  <defs>
+    <linearGradient id="bgB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1e2e"/>
+      <stop offset="1" stop-color="#11111b"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bgB)"/>
+
+  <!-- aperture rim -->
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#b4befe" stroke-width="32"/>
+
+  <!-- 6-chord iris -->
+  <g fill="none" stroke="#b4befe" stroke-width="32" stroke-linecap="round">
+    <line x1="581.3" y1="392"   x2="753.5" y2="690.2"/>
+    <line x1="442.7" y1="392"   x2="270.5" y2="690.2"/>
+    <line x1="373.4" y1="512"   x2="723.8" y2="512"/>
+    <line x1="442.7" y1="632"   x2="613.4" y2="333.8"/>
+    <line x1="581.3" y1="632"   x2="230.6" y2="333.8"/>
+    <line x1="650.6" y1="512"   x2="300.2" y2="512"/>
+  </g>
+</svg>

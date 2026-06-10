@@ -4,6 +4,9 @@ default_platform = "desktop"
 [bundle]
 identifier = "com.smiti1642.oxdm"
 publisher = "smiti1642"
+# App icon: a single PNG (1024); dx generates the platform formats (.icns/.ico)
+# at bundle time. Regenerate from assets/icons/oxdm.svg via scripts/gen-icons.sh.
+icon = ["assets/icons/icon.png"]
 
 [web.app]
 title = "OxDM"

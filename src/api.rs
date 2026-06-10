@@ -21,9 +21,11 @@
 
 use oxvif::{
     DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove, Hostname,
-    MediaProfile, NetworkGateway, NetworkInterface, NetworkProtocol, NotificationMessage, NtpInfo,
-    OnvifSession, OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, SnapshotUri,
-    StreamUri, SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfigurationOptions,
+    IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
+    NetworkInterfaceConfig, NetworkProtocol, NotificationMessage, NtpInfo, OnvifSession,
+    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, SnapshotUri, StreamUri,
+    SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfiguration2,
+    VideoEncoderConfigurationOptions, VideoEncoding, VideoRateControl2,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -885,7 +887,12 @@ pub async fn set_hostname(addr: &str, creds: &Credentials, name: &str) -> Result
 /// Update the IPv4 configuration of a network interface. Returns `true`
 /// if the device needs a reboot to apply the change — we surface this to
 /// the caller so the UI can prompt the user.
-#[allow(clippy::too_many_arguments)] // Mirrors oxvif's signature 1:1
+///
+/// This is the IPv4-only convenience entry retained for existing UI
+/// callers; new code that needs IPv6 or MTU should call
+/// [`set_network_interfaces_full`] directly with a
+/// [`NetworkInterfaceConfig`].
+#[allow(clippy::too_many_arguments)] // Mirrors the historical 0.9.7 signature
 #[instrument(skip(creds), fields(addr, token, ipv4_address, from_dhcp))]
 pub async fn set_network_interfaces(
     addr: &str,
@@ -896,12 +903,36 @@ pub async fn set_network_interfaces(
     prefix_length: u32,
     from_dhcp: bool,
 ) -> Result<bool, ApiError> {
+    let cfg = NetworkInterfaceConfig {
+        enabled,
+        mtu: None,
+        ipv4: Some(IpStackConfig {
+            enabled: true,
+            from_dhcp,
+            manual: vec![ManualAddress {
+                address: ipv4_address.to_string(),
+                prefix_length,
+            }],
+        }),
+        ipv6: None,
+    };
+    set_network_interfaces_full(addr, creds, token, &cfg).await
+}
+
+/// Full-shape `SetNetworkInterfaces` for the new IPv6 / MTU panel.
+/// Mirrors oxvif 0.9.8's struct API directly.
+#[instrument(skip(creds, cfg), fields(addr, token))]
+pub async fn set_network_interfaces_full(
+    addr: &str,
+    creds: &Credentials,
+    token: &str,
+    cfg: &NetworkInterfaceConfig,
+) -> Result<bool, ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result(
         "SetNetworkInterfaces",
         addr,
-        s.set_network_interfaces(token, enabled, ipv4_address, prefix_length, from_dhcp)
-            .await,
+        s.set_network_interfaces(token, cfg).await,
     )
 }
 
@@ -1312,18 +1343,71 @@ pub async fn get_video_encoder_configuration_options(
     )
 }
 
-#[instrument(skip(creds, cfg), fields(addr, token = %cfg.token))]
+#[instrument(skip(creds, cfg), fields(addr, token = %cfg.token, encoding = ?cfg.encoding))]
 pub async fn set_video_encoder_configuration(
     addr: &str,
     creds: &Credentials,
     cfg: &VideoEncoderConfiguration,
 ) -> Result<(), ApiError> {
     let s = session_for(addr, creds).await?;
+    // oxvif 0.9.8 rejects H265 on the Media1 path (schema-correct: Media1
+    // schema is JPEG/MPEG4/H264 only). Reroute H265 through Media2 so the
+    // UI keeps working uniformly. Cameras that advertise Media2 — which
+    // is almost all H265-capable devices — accept this cleanly.
+    if cfg.encoding == VideoEncoding::H265 {
+        if s.capabilities().media2.url.is_none() {
+            warn!(addr, "device advertises H265 but no Media2 service URL");
+            return Err("This camera reports H265 but doesn't advertise Media2; \
+                        H265 encoder edits aren't supported via Media1."
+                .into());
+        }
+        let cfg2 = to_video_encoder_configuration2(cfg);
+        return trace_result(
+            "SetVideoEncoderConfiguration2",
+            addr,
+            s.set_video_encoder_configuration_media2(&cfg2).await,
+        );
+    }
     trace_result(
         "SetVideoEncoderConfiguration",
         addr,
         s.set_video_encoder_configuration(cfg).await,
     )
+}
+
+/// Convert a Media1 `VideoEncoderConfiguration` to the Media2 shape. The
+/// Media2 type folds H264/H265 fields up to the top level (no codec
+/// sub-struct) and drops `encoding_interval` from rate control —
+/// those drop on the wire. Multicast / session-timeout /
+/// guaranteed-frame-rate aren't carried in Media2's struct here either.
+fn to_video_encoder_configuration2(cfg: &VideoEncoderConfiguration) -> VideoEncoderConfiguration2 {
+    let (gov_length, profile) = match cfg.encoding {
+        VideoEncoding::H264 => cfg
+            .h264
+            .as_ref()
+            .map(|h| (Some(h.gov_length), Some(h.profile.clone())))
+            .unwrap_or((None, None)),
+        VideoEncoding::H265 => cfg
+            .h265
+            .as_ref()
+            .map(|h| (Some(h.gov_length), Some(h.profile.clone())))
+            .unwrap_or((None, None)),
+        _ => (None, None),
+    };
+    VideoEncoderConfiguration2 {
+        token: cfg.token.clone(),
+        name: cfg.name.clone(),
+        use_count: cfg.use_count,
+        encoding: cfg.encoding.clone(),
+        resolution: cfg.resolution,
+        quality: cfg.quality,
+        rate_control: cfg.rate_control.as_ref().map(|rc| VideoRateControl2 {
+            frame_rate_limit: rc.frame_rate_limit,
+            bitrate_limit: rc.bitrate_limit,
+        }),
+        gov_length,
+        profile,
+    }
 }
 
 // ── Profile management ──────────────────────────────────────────────────────
@@ -1346,4 +1430,28 @@ pub async fn delete_profile(
 ) -> Result<(), ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result("DeleteProfile", addr, s.delete_profile(profile_token).await)
+}
+
+/// Run oxvif's read-only ONVIF health / conformance check against a device.
+///
+/// Unlike the other wrappers this does *not* go through the `sessions`
+/// cache — `HealthCheck` builds its own short-lived session internally (it
+/// deliberately tests connectivity from scratch). It never mutates the
+/// device: write probes are left disabled. Infallible — connection/auth
+/// problems surface as failed checks inside the returned
+/// [`oxvif::health::HealthReport`], not as an `Err`.
+#[instrument(skip(creds), fields(addr))]
+pub async fn run_health_check(addr: &str, creds: &Credentials) -> oxvif::health::HealthReport {
+    let mut hc = oxvif::health::HealthCheck::new(addr);
+    if !creds.username.is_empty() {
+        hc = hc.with_credentials(creds.username.clone(), creds.password.clone());
+    }
+    let report = hc.run().await;
+    debug!(
+        addr,
+        ok = report.ok(),
+        elapsed_ms = report.total_elapsed.as_millis() as u64,
+        "health check done"
+    );
+    report
 }

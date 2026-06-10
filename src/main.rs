@@ -22,6 +22,36 @@ use views::MainContent;
 /// single executable — no sibling `assets/` directory needed at runtime.
 const MAIN_CSS: &str = include_str!("../assets/main.css");
 
+/// App icon — same master PNG `build.rs` uses to mint the embedded ICO,
+/// re-decoded here at startup so `WindowBuilder::with_window_icon` has
+/// something to feed to the OS title bar / taskbar / Alt-Tab switcher.
+/// `dx` doesn't wire this up for us; without it, Windows + Wry falls back
+/// to the Dioxus default.
+const ICON_PNG: &[u8] = include_bytes!("../assets/icons/icon.png");
+
+/// Decode the embedded PNG into a `tao::window::Icon`. Returns `None` if
+/// the PNG is in an unexpected colour format — the rest of the app keeps
+/// working with the default icon.
+fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
+    let decoder = png::Decoder::new(ICON_PNG);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf,
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(buf.len() / 3 * 4);
+            for chunk in buf.chunks_exact(3) {
+                out.extend_from_slice(chunk);
+                out.push(0xFF);
+            }
+            out
+        }
+        _ => return None,
+    };
+    dioxus::desktop::tao::window::Icon::from_rgba(rgba, info.width, info.height).ok()
+}
+
 /// Set up tracing with a stderr layer (env-filter respected). When
 /// `log_to_file` is true, also adds a daily-rolling file appender at
 /// `~/.oxdm/logs/oxdm.log.*` and returns its `WorkerGuard` — the caller
@@ -92,6 +122,7 @@ fn main() {
                 .with_window(
                     dioxus::desktop::WindowBuilder::new()
                         .with_title("OxDM")
+                        .with_window_icon(load_window_icon())
                         .with_inner_size(dioxus::desktop::LogicalSize::new(1280.0, 800.0))
                         .with_min_inner_size(dioxus::desktop::LogicalSize::new(900.0, 500.0)),
                 )

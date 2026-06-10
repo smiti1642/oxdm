@@ -106,6 +106,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         // ── Main Content ────────────────────────────────────────────────────
         "app_name" => "OxDM",
         "app_subtitle" => "ONVIF Device Manager",
+        "about_tagline" => "oxvif Device Manager \u{2014} a modern take on ONVIF Device Manager (ODM)",
         "welcome_hint" => "Select a device from the left panel,\nor click  \u{27F3} Scan  to discover devices on the network.",
 
         // ── Settings Tabs ───────────────────────────────────────────────────
@@ -114,6 +115,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "tab_time" => "Time",
         "tab_users" => "Users",
         "tab_maintenance" => "Maintenance",
+        "tab_health" => "Health",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "devices",
@@ -300,6 +302,31 @@ pub fn get(key: &str) -> Option<&'static str> {
         "maint_factory_reset_confirm" => "This will erase all settings. Are you sure?",
         "maint_factory_reset_ok" => "Factory reset initiated.",
 
+        // ── Health check ────────────────────────────────────────────────────
+        "health_run" => "Run health check",
+        "health_running" => "Running health check\u{2026}",
+        "health_empty" => "Run a read-only conformance check against this device.",
+        "health_pass" => "pass",
+        "health_warn" => "warn",
+        "health_fail" => "fail",
+        "health_skip" => "skip",
+        "health_profiles" => "Profiles",
+        "health_conformant" => "conformant",
+        "health_partial" => "partial",
+        "health_unsupported" => "unsupported",
+        "health_missing" => "missing",
+        "health_save_baseline" => "Save as baseline",
+        "health_baseline_saved" => "Baseline saved.",
+        "health_baseline_save_failed" => "Failed to save baseline",
+        "health_baseline_loaded" => "baseline",
+        "health_diff_title" => "Diff vs baseline",
+        "health_diff_none" => "no changes since baseline",
+        "health_diff_flipped_fail" => "flipped \u{2192} FAIL",
+        "health_diff_flipped_pass" => "recovered",
+        "health_diff_added" => "new",
+        "health_diff_removed" => "removed",
+        "health_diff_slowed" => "slowed",
+
         // ── Imaging ─────────────────────────────────────────────────────────
         "img_basic" => "Basic",
         "img_brightness" => "Brightness",
@@ -315,7 +342,24 @@ pub fn get(key: &str) -> Option<&'static str> {
         "img_mode" => "Mode",
         "img_level" => "Level",
         "img_saved" => "Imaging settings saved.",
+        "img_manual_group" => "Manual exposure & focus",
+        "img_exposure_priority" => "Exposure priority",
+        "img_exposure_time" => "Exposure time (s)",
+        "img_exposure_gain" => "Gain (dB)",
+        "img_exposure_iris" => "Iris (F)",
+        "img_wb_cr_gain" => "WB Cr gain",
+        "img_wb_cb_gain" => "WB Cb gain",
+        "img_focus_near" => "Focus near limit",
+        "img_focus_far" => "Focus far limit",
         "btn_apply" => "Apply",
+
+        // ── Network IPv6 panel ──────────────────────────────────────────────
+        "net_ipv6" => "IPv6",
+        "net_ipv6_enabled" => "IPv6 enabled",
+        "net_ipv6_dhcp" => "Acquire via DHCPv6",
+        "net_ipv6_manual" => "Manual IPv6 address",
+        "net_mtu" => "MTU (bytes)",
+        "net_save_v6" => "Save IPv6",
 
         _ => return None,
     })

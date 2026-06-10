@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OxDM icon concepts</title>
+<style>
+  body { margin: 0; padding: 32px; background: #cdd6f4; color: #1e1e2e;
+         font-family: system-ui, sans-serif; }
+  h1 { font-size: 18px; }
+  .row { display: flex; align-items: center; gap: 28px; padding: 20px 0;
+         border-bottom: 1px solid #9399b2; }
+  .label { width: 120px; font-weight: 700; }
+  .sizes { display: flex; align-items: center; gap: 28px; }
+  .sizes figure { margin: 0; text-align: center; }
+  .sizes figcaption { font-size: 11px; color: #6c7086; margin-top: 6px; }
+  img { image-rendering: auto; display: block; }
+  .desc { font-size: 12px; color: #4c4f69; max-width: 260px; }
+  /* show the small sizes on a real OS-ish strip too */
+</style>
+</head>
+<body>
+  <h1>OxDM app-icon concepts — legibility check (open in a browser)</h1>
+  <p>Each row shows the same SVG at 256 / 128 / 64 / 32 / 16&nbsp;px. The 16&nbsp;px
+     column is the taskbar/favicon test — if it’s muddy there, the design is too busy.</p>
+
+  <div class="row">
+    <div class="label">A · Hex + aperture</div>
+    <div class="sizes">
+      <figure><img src="concept-a.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-a.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-a.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-a.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-a.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Keeps the existing hexagon brand, camera aperture inside. Two-tone.</div>
+  </div>
+
+  <div class="row">
+    <div class="label">B · Pure aperture</div>
+    <div class="sizes">
+      <figure><img src="concept-b.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-b.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-b.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-b.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-b.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Cleanest, most “camera”. Drops the hexagon brand link.</div>
+  </div>
+
+  <div class="row">
+    <div class="label">C · Hex + lens</div>
+    <div class="sizes">
+      <figure><img src="concept-c.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-c.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-c.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-c.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-c.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Hexagon brand + glossy lens. Warmer/“product” look.</div>
+  </div>
+
+  <div class="row" style="border-top:3px solid #1e1e2e;">
+    <div class="label">C-oct · Octagon + lens</div>
+    <div class="sizes">
+      <figure><img src="concept-c-oct.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-c-oct.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-c-oct.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-c-oct.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-c-oct.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Octagon brand + glossy lens. “Dome camera” feel.</div>
+  </div>
+
+  <div class="row">
+    <div class="label">D-oct · Octagon + aperture</div>
+    <div class="sizes">
+      <figure><img src="concept-d-oct.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-d-oct.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-d-oct.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-d-oct.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-d-oct.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Octagon brand + 8-blade aperture. 8-fold symmetry — the octagon pun, made literal.</div>
+  </div>
+
+  <div class="row" style="background:#bcc0d8;">
+    <div class="label">★ E-oct · Circle + 8 curved blades</div>
+    <div class="sizes">
+      <figure><img src="concept-e-oct.svg" width="256"><figcaption>256</figcaption></figure>
+      <figure><img src="concept-e-oct.svg" width="128"><figcaption>128</figcaption></figure>
+      <figure><img src="concept-e-oct.svg" width="64"><figcaption>64</figcaption></figure>
+      <figure><img src="concept-e-oct.svg" width="32"><figcaption>32</figcaption></figure>
+      <figure><img src="concept-e-oct.svg" width="16"><figcaption>16</figcaption></figure>
+    </div>
+    <div class="desc">Recommended. Lens rim + eight curved blades forming an octagonal opening — a real camera aperture; circle + octagon in one.</div>
+  </div>
+</body>
+</html>

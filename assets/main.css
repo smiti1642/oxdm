@@ -674,9 +674,9 @@ a      { color: var(--blue); text-decoration: none; }
   user-select: none;
 }
 .welcome-icon {
-  font-size: 52px;
-  color: var(--mauve);
-  opacity: 0.6;
+  /* The full LensBrand SVG carries its own gradients — let the artwork speak.
+     Keep the wrapper for layout / future spacing rules; no tint, no fade. */
+  line-height: 0;
 }
 .welcome-title {
   font-size: 28px;
@@ -1814,6 +1814,130 @@ a      { color: var(--blue); text-decoration: none; }
   color: var(--overlay0);
   text-align: center;
 }
+
+/* ── Health check tab ────────────────────────────────────────────────────── */
+.health-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.health-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.health-summary {
+  font-size: 12px;
+  color: var(--subtext0);
+}
+.health-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 0;
+  color: var(--overlay0);
+  text-align: center;
+}
+.health-results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.health-target {
+  font-size: 11px;
+  color: var(--overlay0);
+}
+.health-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.health-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--overlay1);
+  margin-bottom: 4px;
+}
+.health-row {
+  display: grid;
+  grid-template-columns: 22px 180px 64px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.health-row:nth-child(even) {
+  background: var(--mantle);
+}
+.health-row-status {
+  display: flex;
+  align-items: center;
+}
+.health-row-name {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+}
+.health-row-time {
+  color: var(--overlay0);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.health-row-detail {
+  color: var(--subtext0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.health-pass .health-row-status { color: var(--green); }
+.health-warn .health-row-status { color: var(--yellow); }
+.health-fail .health-row-status { color: var(--red); }
+.health-skip .health-row-status { color: var(--overlay0); }
+.health-fail .health-row-name { color: var(--red); }
+
+/* Profile assessment rows — two-column flex, not the 4-col check grid */
+.health-prow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.health-prow:nth-child(even) {
+  background: var(--mantle);
+}
+.health-prow-name {
+  flex-shrink: 0;
+  min-width: 90px;
+  font-weight: 600;
+  color: var(--text);
+}
+.health-prow-verdict { color: var(--subtext0); }
+.health-pass .health-prow-verdict { color: var(--green); }
+.health-warn .health-prow-verdict { color: var(--yellow); }
+.health-skip .health-prow-verdict { color: var(--overlay0); }
+
+/* Baseline-comparison note under the header, plus the diff section that
+   appears below the per-check table. Both reuse the existing
+   .health-fail/pass/warn accent colours so they fit visually. */
+.health-baseline-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 24px 8px;
+  color: var(--subtext0);
+  font-size: 11px;
+  font-style: italic;
+}
+.health-diff {
+  margin-top: 8px;
+  border-left: 3px solid var(--blue);
+  padding-left: 8px;
+}
 .live-video-tip {
   display: flex;
   align-items: flex-start;
@@ -2162,9 +2286,13 @@ iframe.live-video-frame {
   gap: 8px;
   padding: 24px;
 }
-.about-icon { color: var(--sapphire); }
+/* about-icon was a tint hook for the monochrome lens; LensBrand has its own
+   gradients now, so drop colour styling — keep the line-height kill so the
+   SVG doesn't gain a phantom descender row. */
+.about-icon { line-height: 0; }
 .about-name { font-size: 22px; font-weight: 700; color: var(--text); }
-.about-sub { font-size: 12px; color: var(--overlay1); margin-bottom: 8px; }
+.about-sub { font-size: 12px; color: var(--overlay1); margin-bottom: 4px; }
+.about-tagline { font-size: 11px; color: var(--overlay0); margin-bottom: 8px; max-width: 320px; text-align: center; }
 .about-versions {
   font-family: monospace;
   font-size: 12px;

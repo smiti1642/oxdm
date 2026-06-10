@@ -6,6 +6,11 @@
 > - ✓ 已實作
 > - ~ 部分實作
 > - — 尚未實作
+>
+> oxvif 欄已於 **2026-05-29** 對照實際 API（`OnvifSession` + `src/client/`）重新校正。
+> 重點：Analytics / Receiver / Action Engine / 憑證**整個服務未實作**；
+> Recording / Search / Replay 只做了 CRUD 與 `FindRecordings` / `GetReplayUri`，
+> 各種 `*Configuration` get/set 與進階搜尋（Events / Metadata / PTZ position）尚未實作。
 
 ---
 
@@ -104,8 +109,8 @@
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
 | `GetRelayOutputs` | 取得繼電器輸出清單 | IO 控制頁 | ✓ |
-| `SetRelayOutputSettings` | 設定繼電器參數 | IO 控制頁 | — |
-| `SetRelayOutputState` | 控制繼電器開關 | IO 控制頁 | — |
+| `SetRelayOutputSettings` | 設定繼電器參數 | IO 控制頁 | ✓ |
+| `SetRelayOutputState` | 控制繼電器開關 | IO 控制頁 | ✓ |
 
 ### 2-7 憑證管理
 
@@ -127,13 +132,20 @@
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
 | `SystemReboot` | 重新開機 | 維護頁 | ✓ |
-| `GetSystemBackup` | 取得系統備份檔 | 維護頁 | — |
-| `RestoreSystem` | 從備份還原 | 維護頁 | — |
-| `SetSystemFactoryDefault` | 恢復出廠設定 | 維護頁 | — |
-| `UpgradeSystemFirmware` | 升級韌體 | 維護頁 | — |
-| `StartFirmwareUpgrade` | 開始韌體升級流程 | 維護頁 | — |
-| `GetSystemLog` | 取得系統日誌 | 維護 / 診斷頁 | — |
+| `SetSystemFactoryDefault` | 恢復出廠設定 | 維護頁 | ✓ |
+| `GetSystemUris` | 取得備份/日誌/支援資訊下載 URI | 維護頁 | ✓ |
+| `GetSystemLog` | 取得系統日誌 | 維護 / 診斷頁 | ✓ |
+| `StartFirmwareUpgrade` | 開始韌體升級流程（上傳 URI）| 維護頁 | ✓ |
+| `StartSystemRestore` | 開始還原流程（上傳 URI）| 維護頁 | ✓ |
+| `GetSystemBackup` | 取得系統備份檔（MTOM 附件）| 維護頁 | — |
+| `RestoreSystem` | 從備份還原（MTOM 附件）| 維護頁 | — |
+| `UpgradeSystemFirmware` | 升級韌體（已棄用，MTOM 附件）| 維護頁 | — |
 | `GetSystemSupportInformation` | 取得支援資訊 | 診斷頁 | — |
+
+> 註：備份**下載**走 `GetSystemUris` → `SystemBackupUri`（HTTP GET）；韌體升級與還原走
+> `StartFirmwareUpgrade` / `StartSystemRestore` 的上傳 URI（HTTP POST）。三者皆避開
+> oxvif SOAP-only transport 無法產生的 MTOM 附件，故對應的 `GetSystemBackup` /
+> `RestoreSystem` / `UpgradeSystemFirmware`（附件版）維持未實作。
 
 ---
 
@@ -154,10 +166,10 @@
 
 | 方法 | 說明 | oxvif 狀態 |
 |------|------|-----------|
-| `AddVideoSourceConfiguration` | 加入影像來源設定 | — |
-| `RemoveVideoSourceConfiguration` | 移除影像來源設定 | — |
-| `AddVideoEncoderConfiguration` | 加入影像編碼設定 | — |
-| `RemoveVideoEncoderConfiguration` | 移除影像編碼設定 | — |
+| `AddVideoSourceConfiguration` | 加入影像來源設定 | ✓ |
+| `RemoveVideoSourceConfiguration` | 移除影像來源設定 | ✓ |
+| `AddVideoEncoderConfiguration` | 加入影像編碼設定 | ✓ |
+| `RemoveVideoEncoderConfiguration` | 移除影像編碼設定 | ✓ |
 | `AddAudioSourceConfiguration` | 加入音訊來源設定 | — |
 | `RemoveAudioSourceConfiguration` | 移除音訊來源設定 | — |
 | `AddAudioEncoderConfiguration` | 加入音訊編碼設定 | — |
@@ -168,6 +180,10 @@
 | `RemoveMetadataConfiguration` | 移除 Metadata 設定 | — |
 | `AddVideoAnalyticsConfiguration` | 加入 Analytics 設定 | — |
 | `RemoveVideoAnalyticsConfiguration` | 移除 Analytics 設定 | — |
+
+> 註：上表 Add/Remove 為 Media1，oxvif 僅實作 Video Source / Video Encoder 兩種。
+> 其餘型別（PTZ / Metadata / Audio）改由 Media2 統一的 `AddConfiguration` /
+> `RemoveConfiguration` 處理（oxvif 已實作），不再走 Media1 的個別 Add/Remove。
 
 ### 3-3 影像編碼設定
 
@@ -186,8 +202,8 @@
 |------|------|---------|-----------|
 | `GetVideoSourceConfigurations` | 取得所有影像來源設定 | 設定頁 | ✓ |
 | `GetVideoSourceConfiguration` | 取得單一影像來源設定 | 設定頁 | ✓ |
-| `SetVideoSourceConfiguration` | 更新影像來源設定 | 影像設定頁 | — |
-| `GetVideoSourceConfigurationOptions` | 取得影像來源選項 | 影像設定頁 | — |
+| `SetVideoSourceConfiguration` | 更新影像來源設定 | 影像設定頁 | ✓ |
+| `GetVideoSourceConfigurationOptions` | 取得影像來源選項 | 影像設定頁 | ✓ |
 | `GetCompatibleVideoSourceConfigurations` | 取得 Profile 相容來源 | Profile 設定頁 | — |
 
 ### 3-5 音訊設定
@@ -212,7 +228,7 @@
 | `GetMetadataConfigurations` | 取得 Metadata 設定 | Metadata 設定頁 | ✓ |
 | `GetMetadataConfiguration` | 取得單一 Metadata 設定 | Metadata 設定頁 | ✓ |
 | `SetMetadataConfiguration` | 更新 Metadata 設定 | Metadata 設定頁 | ✓ |
-| `GetMetadataConfigurationOptions` | 取得 Metadata 選項 | Metadata 設定頁 | — |
+| `GetMetadataConfigurationOptions` | 取得 Metadata 選項 | Metadata 設定頁 | ✓ |
 | `GetCompatibleMetadataConfigurations` | 取得 Profile 相容 Metadata | Profile 設定頁 | — |
 
 ### 3-7 串流 / 快照
@@ -229,9 +245,9 @@
 
 | 方法 | 說明 | oxvif 狀態 |
 |------|------|-----------|
-| `GetVideoAnalyticsConfigurations` | 取得 Analytics 設定 | ✓ |
-| `GetVideoAnalyticsConfiguration` | 取得單一 Analytics 設定 | ✓ |
-| `SetVideoAnalyticsConfiguration` | 更新 Analytics 設定 | ✓ |
+| `GetVideoAnalyticsConfigurations` | 取得 Analytics 設定 | — |
+| `GetVideoAnalyticsConfiguration` | 取得單一 Analytics 設定 | — |
+| `SetVideoAnalyticsConfiguration` | 更新 Analytics 設定 | — |
 | `GetCompatibleVideoAnalyticsConfigurations` | 取得相容 Analytics | — |
 
 ---
@@ -279,7 +295,7 @@
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
 | `GetStatus` | 取得目前 PTZ 座標 / 狀態 | PTZ 控制頁 | ✓ |
-| `SendAuxiliaryCommand` | 發送輔助指令 | PTZ 控制頁 | — |
+| `SendAuxiliaryCommand` | 發送輔助指令 | PTZ 控制頁 | ✓ |
 
 ---
 
@@ -307,7 +323,7 @@
 | `Subscribe` | 建立 Push 訂閱（裝置主動 POST） | 事件通知設定 | ✓ |
 | `Renew` | 更新訂閱有效期 | 訂閱管理 | ✓ |
 | `Unsubscribe` | 取消訂閱 | 訂閱管理 | ✓ |
-| `SetSynchronizationPoint` | 設定事件同步點 | 事件處理 | — |
+| `SetSynchronizationPoint` | 設定事件同步點 | 事件處理 | ✓ |
 | `GetCurrentMessage` | 取得目前事件訊息 | 事件查詢 | — |
 
 ---
@@ -318,21 +334,21 @@
 
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
-| `GetSupportedAnalyticsModules` | 取得支援的模組類型 | Analytics 頁 | ✓ |
-| `GetAnalyticsModules` | 取得目前模組 | Analytics 頁 | ✓ |
-| `CreateAnalyticsModules` | 建立模組（移動偵測等） | Analytics 頁 | ✓ |
-| `ModifyAnalyticsModules` | 更新模組設定 | Analytics 頁 | ✓ |
-| `DeleteAnalyticsModules` | 刪除模組 | Analytics 頁 | ✓ |
+| `GetSupportedAnalyticsModules` | 取得支援的模組類型 | Analytics 頁 | — |
+| `GetAnalyticsModules` | 取得目前模組 | Analytics 頁 | — |
+| `CreateAnalyticsModules` | 建立模組（移動偵測等） | Analytics 頁 | — |
+| `ModifyAnalyticsModules` | 更新模組設定 | Analytics 頁 | — |
+| `DeleteAnalyticsModules` | 刪除模組 | Analytics 頁 | — |
 
 ### 7-2 規則引擎
 
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
-| `GetSupportedRules` | 取得支援的規則類型 | Analytics 頁 | ✓ |
-| `GetRules` | 取得目前規則 | Analytics 頁 | ✓ |
-| `CreateRules` | 建立規則（事件觸發條件） | Analytics 頁 | ✓ |
-| `ModifyRules` | 更新規則 | Analytics 頁 | ✓ |
-| `DeleteRules` | 刪除規則 | Analytics 頁 | ✓ |
+| `GetSupportedRules` | 取得支援的規則類型 | Analytics 頁 | — |
+| `GetRules` | 取得目前規則 | Analytics 頁 | — |
+| `CreateRules` | 建立規則（事件觸發條件） | Analytics 頁 | — |
+| `ModifyRules` | 更新規則 | Analytics 頁 | — |
+| `DeleteRules` | 刪除規則 | Analytics 頁 | — |
 
 ---
 
@@ -344,8 +360,8 @@
 |------|------|---------|-----------|
 | `GetRecordings` | 取得錄影清單 | 錄影管理頁 | ✓ |
 | `CreateRecording` | 建立錄影 | 錄影管理頁 | ✓ |
-| `GetRecordingConfiguration` | 取得錄影設定 | 錄影設定頁 | ✓ |
-| `SetRecordingConfiguration` | 更新錄影設定 | 錄影設定頁 | ✓ |
+| `GetRecordingConfiguration` | 取得錄影設定 | 錄影設定頁 | — |
+| `SetRecordingConfiguration` | 更新錄影設定 | 錄影設定頁 | — |
 | `DeleteRecording` | 刪除錄影 | 錄影管理頁 | ✓ |
 
 ### 8-2 Track 管理
@@ -353,8 +369,8 @@
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
 | `CreateTrack` | 在錄影中建立 Track | 錄影設定頁 | ✓ |
-| `GetTrackConfiguration` | 取得 Track 設定 | 錄影設定頁 | ✓ |
-| `SetTrackConfiguration` | 更新 Track 設定 | 錄影設定頁 | ✓ |
+| `GetTrackConfiguration` | 取得 Track 設定 | 錄影設定頁 | — |
+| `SetTrackConfiguration` | 更新 Track 設定 | 錄影設定頁 | — |
 | `DeleteTrack` | 刪除 Track | 錄影管理頁 | ✓ |
 
 ### 8-3 錄影 Job
@@ -363,8 +379,8 @@
 |------|------|---------|-----------|
 | `GetRecordingJobs` | 取得 Job 清單 | 錄影 Job 管理頁 | ✓ |
 | `CreateRecordingJob` | 建立 Job | 錄影 Job 管理頁 | ✓ |
-| `GetRecordingJobConfiguration` | 取得 Job 設定 | 錄影 Job 設定頁 | ✓ |
-| `SetRecordingJobConfiguration` | 更新 Job 設定 | 錄影 Job 設定頁 | ✓ |
+| `GetRecordingJobConfiguration` | 取得 Job 設定 | 錄影 Job 設定頁 | — |
+| `SetRecordingJobConfiguration` | 更新 Job 設定 | 錄影 Job 設定頁 | — |
 | `SetRecordingJobMode` | 設定 Job 模式（開始 / 停止） | 錄影 Job 控制 | ✓ |
 | `GetRecordingJobState` | 取得 Job 狀態 | 錄影 Job 監控 | ✓ |
 | `DeleteRecordingJob` | 刪除 Job | 錄影 Job 管理頁 | ✓ |
@@ -375,19 +391,19 @@
 
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
-| `GetRecordingSummary` | 取得錄影摘要 | 錄影搜尋頁 | ✓ |
-| `GetRecordingInformation` | 取得錄影詳細資訊 | 錄影搜尋頁 | ✓ |
-| `GetMediaAttributes` | 取得媒體屬性 | 錄影搜尋頁 | ✓ |
 | `FindRecordings` | 搜尋錄影 | 錄影搜尋頁 | ✓ |
 | `GetRecordingSearchResults` | 取得搜尋結果 | 錄影搜尋頁 | ✓ |
-| `FindEvents` | 搜尋事件 | 事件搜尋頁 | ✓ |
-| `GetEventSearchResults` | 取得事件搜尋結果 | 事件搜尋頁 | ✓ |
-| `FindMetadata` | 搜尋 Metadata | Metadata 搜尋頁 | ✓ |
-| `GetMetadataSearchResults` | 取得 Metadata 搜尋結果 | Metadata 搜尋頁 | ✓ |
-| `FindPTZPosition` | 搜尋 PTZ 位置 | PTZ 搜尋頁 | ✓ |
-| `GetPTZPositionSearchResults` | 取得 PTZ 搜尋結果 | PTZ 搜尋頁 | ✓ |
-| `GetSearchState` | 取得搜尋狀態 | 搜尋狀態顯示 | ✓ |
 | `EndSearch` | 終止搜尋 | 搜尋管理 | ✓ |
+| `GetRecordingSummary` | 取得錄影摘要 | 錄影搜尋頁 | — |
+| `GetRecordingInformation` | 取得錄影詳細資訊 | 錄影搜尋頁 | — |
+| `GetMediaAttributes` | 取得媒體屬性 | 錄影搜尋頁 | — |
+| `FindEvents` | 搜尋事件 | 事件搜尋頁 | — |
+| `GetEventSearchResults` | 取得事件搜尋結果 | 事件搜尋頁 | — |
+| `FindMetadata` | 搜尋 Metadata | Metadata 搜尋頁 | — |
+| `GetMetadataSearchResults` | 取得 Metadata 搜尋結果 | Metadata 搜尋頁 | — |
+| `FindPTZPosition` | 搜尋 PTZ 位置 | PTZ 搜尋頁 | — |
+| `GetPTZPositionSearchResults` | 取得 PTZ 搜尋結果 | PTZ 搜尋頁 | — |
+| `GetSearchState` | 取得搜尋狀態 | 搜尋狀態顯示 | — |
 
 ---
 
@@ -396,8 +412,8 @@
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
 | `GetReplayUri` | 取得回放串流 URL | 影像回放頁 | ✓ |
-| `GetReplayConfiguration` | 取得回放設定 | 回放設定頁 | ✓ |
-| `SetReplayConfiguration` | 更新回放設定 | 回放設定頁 | ✓ |
+| `GetReplayConfiguration` | 取得回放設定 | 回放設定頁 | — |
+| `SetReplayConfiguration` | 更新回放設定 | 回放設定頁 | — |
 
 ---
 
@@ -421,13 +437,13 @@
 
 | 方法 | 說明 | UI 功能 | oxvif 狀態 |
 |------|------|---------|-----------|
-| `GetReceivers` | 取得 RTP Receiver 清單 | Receiver 管理頁 | ✓ |
-| `GetReceiver` | 取得單一 Receiver 設定 | Receiver 設定頁 | ✓ |
-| `CreateReceiver` | 建立 Receiver | Receiver 管理頁 | ✓ |
-| `ConfigureReceiver` | 更新 Receiver 設定 | Receiver 管理頁 | ✓ |
-| `SetReceiverMode` | 設定 Receiver 模式 | Receiver 控制 | ✓ |
-| `GetReceiverState` | 取得 Receiver 狀態 | Receiver 監控 | ✓ |
-| `DeleteReceiver` | 刪除 Receiver | Receiver 管理頁 | ✓ |
+| `GetReceivers` | 取得 RTP Receiver 清單 | Receiver 管理頁 | — |
+| `GetReceiver` | 取得單一 Receiver 設定 | Receiver 設定頁 | — |
+| `CreateReceiver` | 建立 Receiver | Receiver 管理頁 | — |
+| `ConfigureReceiver` | 更新 Receiver 設定 | Receiver 管理頁 | — |
+| `SetReceiverMode` | 設定 Receiver 模式 | Receiver 控制 | — |
+| `GetReceiverState` | 取得 Receiver 狀態 | Receiver 監控 | — |
+| `DeleteReceiver` | 刪除 Receiver | Receiver 管理頁 | — |
 
 ---
 

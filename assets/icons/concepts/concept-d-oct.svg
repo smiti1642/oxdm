@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Concept D-oct — Octagon frame + 8-blade camera aperture -->
+  <defs>
+    <linearGradient id="bgDo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1e2e"/>
+      <stop offset="1" stop-color="#11111b"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bgDo)"/>
+
+  <!-- octagon brand frame -->
+  <path d="M807.6,634.5 L634.5,807.6 L389.5,807.6 L216.4,634.5 L216.4,389.5 L389.5,216.4 L634.5,216.4 L807.6,389.5 Z"
+        fill="none" stroke="#b4befe" stroke-width="32" stroke-linejoin="round"/>
+
+  <!-- 8 aperture blades (pinwheel of tangent edges), blue -->
+  <g fill="none" stroke="#89b4fa" stroke-width="24" stroke-linecap="round">
+    <line x1="622.9" y1="557.9" x2="615.3" y2="761.5"/>
+    <line x1="557.9" y1="622.9" x2="408.7" y2="761.5"/>
+    <line x1="466.1" y1="622.9" x2="262.5" y2="615.3"/>
+    <line x1="401.1" y1="557.9" x2="262.5" y2="408.7"/>
+    <line x1="401.1" y1="466.1" x2="408.7" y2="262.5"/>
+    <line x1="466.1" y1="401.1" x2="615.3" y2="262.5"/>
+    <line x1="557.9" y1="401.1" x2="761.5" y2="408.7"/>
+    <line x1="622.9" y1="466.1" x2="761.5" y2="615.3"/>
+  </g>
+</svg>

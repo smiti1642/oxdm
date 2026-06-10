@@ -76,6 +76,85 @@ fn ensure_dir() {
     }
 }
 
+// ── Health baselines (one JSON report per device) ───────────────────────────
+
+/// Directory where per-device baseline `HealthReport`s live. One file per
+/// `(scheme, host[:port], path)` triple, sanitized to a safe filename.
+fn baseline_dir() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("baselines"))
+}
+
+/// Turn a device URL into something safe to use as a filename. We don't
+/// hash because filenames stay human-recognizable on disk (helpful when
+/// the user wants to back up / share a specific device's baseline).
+fn sanitize_addr_for_file(addr: &str) -> String {
+    let trimmed = addr
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    trimmed
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' => c,
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
+}
+
+fn baseline_path(addr: &str) -> Option<PathBuf> {
+    baseline_dir().map(|d| d.join(format!("{}.json", sanitize_addr_for_file(addr))))
+}
+
+/// Load a previously-saved baseline `HealthReport` for `addr`. Returns
+/// `None` if the file doesn't exist or fails to parse (a stale or
+/// corrupt baseline shouldn't break the Diagnostics tab — the UI just
+/// proceeds without a baseline).
+pub fn read_baseline(addr: &str) -> Option<oxvif::HealthReport> {
+    let path = baseline_path(addr)?;
+    let json = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str::<oxvif::HealthReport>(&json) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            warn!(error = %e, path = %path.display(), "stale baseline ignored");
+            None
+        }
+    }
+}
+
+/// Persist `report` as the baseline for `addr`. Returns the path it was
+/// written to so the UI can show "saved to …".
+pub fn write_baseline(addr: &str, report: &oxvif::HealthReport) -> std::io::Result<PathBuf> {
+    let path = baseline_path(addr)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "home dir unavailable"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, report.to_json_pretty())?;
+    Ok(path)
+}
+
+/// File modification time of the saved baseline, formatted for the UI
+/// ("yyyy-mm-dd hh:mm"). Returns `None` if there is no baseline or the
+/// mtime is unavailable / unreadable.
+pub fn baseline_saved_at(addr: &str) -> Option<String> {
+    let path = baseline_path(addr)?;
+    let meta = std::fs::metadata(&path).ok()?;
+    let modified = meta.modified().ok()?;
+    let dt = time::OffsetDateTime::from(modified);
+    let local =
+        dt.to_offset(time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC));
+    // YYYY-MM-DD HH:MM — fits in the small note slot without seconds.
+    Some(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        local.year(),
+        u8::from(local.month()),
+        local.day(),
+        local.hour(),
+        local.minute(),
+    ))
+}
+
 // ── Keychain helpers (single entry for all credentials) ─────────────────────
 //
 // All credentials are stored as a single JSON blob in one keychain entry

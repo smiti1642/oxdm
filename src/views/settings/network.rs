@@ -207,8 +207,18 @@ fn InterfaceSection(
     let addr_in = use_signal(|| ipv4_address);
     let prefix_in = use_signal(|| ipv4_prefix_length.to_string());
 
+    // IPv6 + MTU controls (oxvif 0.9.8). Initialised from the read-side
+    // values returned by GetNetworkInterfaces. Saved through the new
+    // struct-based set_network_interfaces_full.
+    let ipv6_enabled_in = use_signal(|| ipv6_enabled);
+    let ipv6_dhcp_in = use_signal(|| false);
+    let ipv6_address_in = use_signal(|| ipv6_address.clone());
+    let ipv6_prefix_in = use_signal(|| "64".to_string());
+    let mtu_in = use_signal(|| mtu.to_string());
+
     let header = format!("{} ({})", i18n::t(locale, "net_interface"), &iface_name);
     let token_for_save = token.clone();
+    let token_for_save_v6 = token.clone();
 
     rsx! {
         div { class: "prop-section-header", "{header}" }
@@ -301,6 +311,131 @@ fn InterfaceSection(
                         }));
                     },
                     Icon { name: "check", size: 14 } " " {i18n::t(locale, "btn_save")}
+                }
+            }
+        }
+
+        // IPv6 + MTU panel (oxvif 0.9.8 NetworkInterfaceConfig).
+        div { class: "prop-section-header", {i18n::t(locale, "net_ipv6")} }
+        div { class: "id-edit-form",
+            div { class: "id-edit-row",
+                label { class: "id-edit-label", {i18n::t(locale, "net_ipv6_enabled")} }
+                input {
+                    r#type: "checkbox",
+                    checked: "{*ipv6_enabled_in.read()}",
+                    oninput: move |e| ipv6_enabled_in.clone().set(e.value() == "true"),
+                }
+            }
+            div { class: "id-edit-row",
+                label { class: "id-edit-label", {i18n::t(locale, "net_ipv6_dhcp")} }
+                input {
+                    r#type: "checkbox",
+                    checked: "{*ipv6_dhcp_in.read()}",
+                    oninput: move |e| ipv6_dhcp_in.clone().set(e.value() == "true"),
+                }
+            }
+            div { class: "id-edit-row",
+                label { class: "id-edit-label", {i18n::t(locale, "net_ipv6_manual")} }
+                input {
+                    class: "id-edit-input",
+                    r#type: "text",
+                    disabled: "{*ipv6_dhcp_in.read()}",
+                    title: if *ipv6_dhcp_in.read() { i18n::t(locale, "net_disabled_by_dhcp") } else { "" },
+                    value: "{ipv6_address_in.read().clone()}",
+                    oninput: move |e| ipv6_address_in.clone().set(e.value()),
+                }
+            }
+            div { class: "id-edit-row",
+                label { class: "id-edit-label", {i18n::t(locale, "net_iface_prefix")} }
+                input {
+                    class: "id-edit-input",
+                    r#type: "number",
+                    min: "1", max: "128",
+                    disabled: "{*ipv6_dhcp_in.read()}",
+                    value: "{ipv6_prefix_in.read().clone()}",
+                    oninput: move |e| ipv6_prefix_in.clone().set(e.value()),
+                }
+            }
+            div { class: "id-edit-row",
+                label { class: "id-edit-label", {i18n::t(locale, "net_mtu")} }
+                input {
+                    class: "id-edit-input",
+                    r#type: "number",
+                    min: "576", max: "9000",
+                    value: "{mtu_in.read().clone()}",
+                    oninput: move |e| mtu_in.clone().set(e.value()),
+                }
+            }
+            div { class: "id-edit-actions",
+                button {
+                    class: "btn btn-md btn-primary",
+                    onclick: move |_| {
+                        let tok = token_for_save_v6.clone();
+                        let v4_enabled = *enabled_in.peek();
+                        let v4_dhcp = *dhcp_in.peek();
+                        let v4_ip = addr_in.peek().clone();
+                        let v4_prefix: u32 = prefix_in.peek().parse().unwrap_or(24);
+                        let v6_enabled = *ipv6_enabled_in.peek();
+                        let v6_dhcp = *ipv6_dhcp_in.peek();
+                        let v6_ip = ipv6_address_in.peek().clone();
+                        let v6_prefix: u32 = ipv6_prefix_in.peek().parse().unwrap_or(64);
+                        let mtu_val: u32 = mtu_in.peek().parse().unwrap_or(0);
+                        ctx.dialog.clone().set(Some(ConfirmDialog {
+                            title: i18n::t(locale, "net_iface_confirm_title").to_string(),
+                            message: i18n::t(locale, "net_iface_confirm_msg").to_string(),
+                            confirm_label: i18n::t(locale, "btn_confirm").to_string(),
+                            cancel_label: i18n::t(locale, "btn_cancel").to_string(),
+                            dangerous: true,
+                            on_confirm: EventHandler::new(move |_| {
+                                let tok = tok.clone();
+                                let v4_ip = v4_ip.clone();
+                                let v6_ip = v6_ip.clone();
+                                let addr_s = addr.read().clone();
+                                let creds_s = creds.read().clone();
+                                spawn(async move {
+                                    let cfg = oxvif::NetworkInterfaceConfig {
+                                        enabled: *enabled_in.peek(),
+                                        mtu: if mtu_val > 0 { Some(mtu_val) } else { None },
+                                        ipv4: Some(oxvif::IpStackConfig {
+                                            enabled: v4_enabled,
+                                            from_dhcp: v4_dhcp,
+                                            manual: if v4_ip.is_empty() {
+                                                vec![]
+                                            } else {
+                                                vec![oxvif::ManualAddress {
+                                                    address: v4_ip,
+                                                    prefix_length: v4_prefix,
+                                                }]
+                                            },
+                                        }),
+                                        ipv6: Some(oxvif::IpStackConfig {
+                                            enabled: v6_enabled,
+                                            from_dhcp: v6_dhcp,
+                                            manual: if v6_ip.is_empty() {
+                                                vec![]
+                                            } else {
+                                                vec![oxvif::ManualAddress {
+                                                    address: v6_ip,
+                                                    prefix_length: v6_prefix,
+                                                }]
+                                            },
+                                        }),
+                                    };
+                                    match api::set_network_interfaces_full(
+                                        &addr_s, &creds_s, &tok, &cfg,
+                                    ).await {
+                                        Ok(reboot) => {
+                                            let key = if reboot { "net_saved_reboot" } else { "net_saved" };
+                                            ctx.push_toast(ToastLevel::Success, i18n::t(locale, key));
+                                            refresh.call(());
+                                        }
+                                        Err(e) => ctx.push_toast(ToastLevel::Error, e),
+                                    }
+                                });
+                            }),
+                        }));
+                    },
+                    Icon { name: "check", size: 14 } " " {i18n::t(locale, "net_save_v6")}
                 }
             }
         }
