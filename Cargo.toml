@@ -1,6 +1,6 @@
 [package]
 name = "oxdm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
 authors = ["smiti1642"]

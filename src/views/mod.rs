@@ -1,5 +1,6 @@
 pub mod events;
 pub mod imaging;
+pub mod io_control;
 pub mod live_video;
 mod main_content;
 pub mod osd;

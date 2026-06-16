@@ -42,6 +42,7 @@ pub fn DevicePanel() -> Element {
                 div { class: "panel-section-title", {i18n::t(locale, "section_general")} }
                 NavLink { view: View::DeviceSettings, icon: "settings", label: i18n::t(locale, "nav_settings") }
                 NavLink { view: View::Osd,            icon: "info",     label: i18n::t(locale, "nav_osd") }
+                NavLink { view: View::IoControl,      icon: "zap",      label: i18n::t(locale, "nav_io_control") }
                 NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
             }
 

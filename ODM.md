@@ -714,8 +714,14 @@ ODM 使用者的肌肉記憶：
   寫 UI 簡單，但失敗會變磚，要配二次確認 + 進度條 + 失敗回報。
 - ⬜ **GetSystemLog 下載** — 維護頁補一個「下載日誌」按鈕。
 - ⬜ **憑證管理** — HTTPS client cert 管理（ONVIF 14 系列 API）。少數部署會用。
-- ⬜ **IO / Relay 控制** — `GetRelayOutputs` / `SetRelayOutputState`。
-  部分 camera 支援繼電器輸出控制門鎖 / 警示燈。
+- ✅ **IO / Relay 控制（relay output）** — `GetRelayOutputs` /
+  `SetRelayOutputState` / `SetRelayOutputSettings`。UI 在
+  `views/io_control.rs`(IoControl view):Bistable 給 Activate/Deactivate
+  按鈕、Monostable 給 Pulse、可編輯 mode/idle_state/delay_time。
+- ⬜ **Digital Input 讀取** — `GetDigitalInputs`(oxvif 0.9.9）。已在
+  `feature/digital-input` 分支完成（token+idle_state 配置面 + 即時狀態走
+  Events 分頁 PullPoint topic `tns1:Device/Trigger/DigitalInput`），
+  待 oxvif 0.9.9 發布到 crates.io 後再併回 main。
 
 ### Tier 4 — Polish
 

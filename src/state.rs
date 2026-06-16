@@ -73,6 +73,7 @@ pub enum View {
     PtzControl,
     Events,
     Osd,
+    IoControl,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

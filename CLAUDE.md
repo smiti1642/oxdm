@@ -200,6 +200,12 @@ src/
                            api::set_video_encoder_configuration
     ptz.rs                 PTZ pad + zoom + preset list over a live preview
     osd.rs                 OSD text/overlay read + create / update / delete
+    io_control.rs          Relay output control (Activate/Deactivate for
+                           Bistable, Pulse for Monostable, settings editor).
+                           Uses oxvif GetRelayOutputs / SetRelayOutputState /
+                           SetRelayOutputSettings. Digital input read-out is
+                           parked on the feature/digital-input branch (needs
+                           oxvif 0.9.9 GetDigitalInputs).
     events.rs              PullPoint event subscription + rolling event log
     settings/
       mod.rs
@@ -326,6 +332,12 @@ Currently `oxvif = "0.9.8"`, pinned to the crates.io registry, with the
 `[dev-dependencies]` (the latter only for `tests/healthtab_smoke.rs`; the
 release binary never pulls axum). Notable surfaces from 0.9.8 that oxdm
 relies on:
+
+- `oxvif::RelayOutput` — IO Control view (`views/io_control.rs`) reads via
+  `api::get_relay_outputs` and writes via `api::set_relay_output_state` /
+  `api::set_relay_output_settings`. Digital input read-out (`GetDigitalInputs`,
+  added in the unpublished 0.9.9) lives on the `feature/digital-input`
+  branch, not on main.
 
 - `oxvif::health::{HealthCheck, HealthReport, ReportDiff, SlowedCheck}` —
   serde-derived report types, used by `views/settings/health.rs` for the

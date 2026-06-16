@@ -23,8 +23,8 @@ use oxvif::{
     DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove, Hostname,
     IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
     NetworkInterfaceConfig, NetworkProtocol, NotificationMessage, NtpInfo, OnvifSession,
-    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, SnapshotUri, StreamUri,
-    SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfiguration2,
+    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, RelayOutput, SnapshotUri,
+    StreamUri, SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfiguration2,
     VideoEncoderConfigurationOptions, VideoEncoding, VideoRateControl2,
 };
 use std::sync::Arc;
@@ -1051,6 +1051,73 @@ pub async fn get_network_protocols(
 ) -> Result<Vec<NetworkProtocol>, ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result("GetNetworkProtocols", addr, s.get_network_protocols().await)
+}
+
+// ── IO control ──────────────────────────────────────────────────────────────
+//
+// `GetRelayOutputs` is ONVIF-optional. Cameras without an IO board typically
+// return `SOAP-ENV:Receiver: Optional Action Not Implemented` (or
+// `ter:ActionNotSupported`). Map those to the `"unsupported"` sentinel so the
+// IO Control view shows a soft empty state instead of a red error banner —
+// the device simply doesn't have any IO hardware, which isn't a failure.
+const IO_UNSUPPORTED_SENTINEL: &str = "unsupported";
+
+fn is_action_unsupported(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("not implemented")
+        || lower.contains("actionnotsupported")
+        || lower.contains("not supported")
+}
+
+fn map_io_unsupported<T>(err: ApiError) -> Result<T, ApiError> {
+    if is_action_unsupported(&err) {
+        Err(IO_UNSUPPORTED_SENTINEL.to_string())
+    } else {
+        Err(err)
+    }
+}
+
+#[instrument(skip(creds), fields(addr))]
+pub async fn get_relay_outputs(
+    addr: &str,
+    creds: &Credentials,
+) -> Result<Vec<RelayOutput>, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result("GetRelayOutputs", addr, s.get_relay_outputs().await).or_else(map_io_unsupported)
+}
+
+/// `state` must be `"active"` or `"inactive"`.
+#[instrument(skip(creds), fields(addr, relay_token))]
+pub async fn set_relay_output_state(
+    addr: &str,
+    creds: &Credentials,
+    relay_token: &str,
+    state: &str,
+) -> Result<(), ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "SetRelayOutputState",
+        addr,
+        s.set_relay_output_state(relay_token, state).await,
+    )
+}
+
+#[instrument(skip(creds), fields(addr, relay_token, mode))]
+pub async fn set_relay_output_settings(
+    addr: &str,
+    creds: &Credentials,
+    relay_token: &str,
+    mode: &str,
+    delay_time: &str,
+    idle_state: &str,
+) -> Result<(), ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "SetRelayOutputSettings",
+        addr,
+        s.set_relay_output_settings(relay_token, mode, delay_time, idle_state)
+            .await,
+    )
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────

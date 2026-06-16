@@ -4,6 +4,7 @@ use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::events::EventsView;
 use crate::views::imaging::ImagingView;
+use crate::views::io_control::IoControlView;
 use crate::views::live_video::LiveVideoView;
 use crate::views::osd::OsdView;
 use crate::views::ptz::PtzControlView;
@@ -52,6 +53,7 @@ pub fn MainContent() -> Element {
                 View::PtzControl      => rsx! { PtzControlView     { key: "{addr_key}", addr, creds } },
                 View::Events          => rsx! { EventsView         { key: "{addr_key}", addr, creds } },
                 View::Osd             => rsx! { OsdView            { key: "{addr_key}", addr, creds } },
+                View::IoControl       => rsx! { IoControlView      { key: "{addr_key}", addr, creds } },
             }
         }
     }
