@@ -48,8 +48,12 @@ const ALL_KEYS: &[&str] = &[
     // IO Control view
     "io_control",
     "io_relay_outputs",
+    "io_digital_inputs",
+    "io_input_hint",
     "io_no_relays",
+    "io_no_inputs",
     "io_relays_unsupported",
+    "io_inputs_unsupported",
     "io_mode",
     "io_mode_bistable",
     "io_mode_monostable",

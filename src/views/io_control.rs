@@ -1,19 +1,11 @@
 #![allow(non_snake_case)]
-//! IO Control view — relay outputs (controllable).
+//! IO Control view — relay outputs (controllable) + digital inputs (read-only).
 //!
 //! Relay outputs come with `mode`/`delay_time`/`idle_state` properties that
 //! `SetRelayOutputSettings` writes, and a logical state (`active`/`inactive`)
-//! that `SetRelayOutputState` flips.
-//!
-//! Digital input read-out lives on the `feature/digital-input` branch, gated
-//! on oxvif 0.9.9's `GetDigitalInputs`; this view ships relay output only.
-//!
-//! `RelayCard` / `RelayEditDrawer` take the relay's fields as plain `String`
-//! props rather than the `oxvif::RelayOutput` struct: oxvif 0.9.8's
-//! `RelayOutput` doesn't derive `PartialEq`, which `#[component]` requires.
-//! This field-splitting is a stopgap — 0.9.9 derives `PartialEq` on
-//! `RelayOutput`, so when `feature/digital-input` merges back (post-0.9.9
-//! release) it supersedes this file with the struct-prop version.
+//! that `SetRelayOutputState` flips. Live input transitions arrive via the
+//! Events tab (PullPoint subscription on `tns1:Device/Trigger/DigitalInput`);
+//! this page only shows the configured idle state.
 
 use crate::components::{Icon, TabError};
 use crate::state::{ConfirmDialog, Credentials, Ctx, ToastLevel};
@@ -29,6 +21,12 @@ pub fn IoControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         async move { api::get_relay_outputs(&addr, &creds).await }
+    });
+
+    let mut inputs = use_resource(move || {
+        let addr = addr.read().clone();
+        let creds = creds.read().clone();
+        async move { api::get_digital_inputs(&addr, &creds).await }
     });
 
     // Edit drawer for relay properties. Some(token) = editing that relay.
@@ -62,14 +60,48 @@ pub fn IoControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                             for relay in list.iter().cloned() {
                                 RelayCard {
                                     key: "{relay.token}",
-                                    token: relay.token,
-                                    mode: relay.mode,
-                                    idle_state: relay.idle_state,
-                                    delay_time: relay.delay_time,
+                                    relay: relay,
                                     addr,
                                     creds,
                                     on_changed: move |_| relays.restart(),
                                     editing,
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+
+            // ── Digital Inputs ─────────────────────────────────────────
+            div { class: "io-section",
+                div { class: "io-section-header",
+                    h3 { {i18n::t(locale, "io_digital_inputs")} }
+                    span { class: "io-section-hint",
+                        {i18n::t(locale, "io_input_hint")}
+                    }
+                }
+                match &*inputs.read_unchecked() {
+                    None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
+                    Some(Err(e)) if e == "unsupported" => rsx! {
+                        div { class: "tab-empty", {i18n::t(locale, "io_inputs_unsupported")} }
+                    },
+                    Some(Err(e)) => rsx! {
+                        TabError { error: e.to_string(), on_retry: move |_| inputs.restart() }
+                    },
+                    Some(Ok(list)) if list.is_empty() => rsx! {
+                        div { class: "tab-empty", {i18n::t(locale, "io_no_inputs")} }
+                    },
+                    Some(Ok(list)) => rsx! {
+                        div { class: "io-list",
+                            for input in list.iter().cloned() {
+                                div { class: "io-card", key: "{input.token}",
+                                    div { class: "io-card-row",
+                                        span { class: "io-card-token", "{input.token}" }
+                                        span { class: "io-card-prop",
+                                            {format!("{}: {}", i18n::t(locale, "io_idle_state"),
+                                                idle_label(locale, &input.idle_state))}
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -82,10 +114,7 @@ pub fn IoControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
 
 #[component]
 fn RelayCard(
-    token: String,
-    mode: String,
-    idle_state: String,
-    delay_time: String,
+    relay: oxvif::RelayOutput,
     addr: ReadSignal<String>,
     creds: Memo<Credentials>,
     on_changed: EventHandler<()>,
@@ -93,7 +122,8 @@ fn RelayCard(
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let is_monostable = mode == "Monostable";
+    let token = relay.token.clone();
+    let is_monostable = relay.mode == "Monostable";
     let is_editing = editing
         .read()
         .as_ref()
@@ -103,17 +133,17 @@ fn RelayCard(
     rsx! {
         div { class: "io-card",
             div { class: "io-card-row",
-                span { class: "io-card-token", "{token}" }
+                span { class: "io-card-token", "{relay.token}" }
                 span { class: "io-card-prop",
-                    {format!("{}: {}", i18n::t(locale, "io_mode"), mode_label(locale, &mode))}
+                    {format!("{}: {}", i18n::t(locale, "io_mode"), mode_label(locale, &relay.mode))}
                 }
                 span { class: "io-card-prop",
                     {format!("{}: {}", i18n::t(locale, "io_idle_state"),
-                        idle_label(locale, &idle_state))}
+                        idle_label(locale, &relay.idle_state))}
                 }
                 if is_monostable {
                     span { class: "io-card-prop",
-                        {format!("{}: {}", i18n::t(locale, "io_delay_time"), delay_time)}
+                        {format!("{}: {}", i18n::t(locale, "io_delay_time"), relay.delay_time)}
                     }
                 }
             }
@@ -210,10 +240,7 @@ fn RelayCard(
 
             if is_editing {
                 RelayEditDrawer {
-                    token: token.clone(),
-                    mode: mode.clone(),
-                    idle_state: idle_state.clone(),
-                    delay_time: delay_time.clone(),
+                    relay: relay.clone(),
                     addr,
                     creds,
                     on_close: move |_| editing.set(None),
@@ -232,10 +259,7 @@ fn RelayCard(
 
 #[component]
 fn RelayEditDrawer(
-    token: String,
-    mode: String,
-    idle_state: String,
-    delay_time: String,
+    relay: oxvif::RelayOutput,
     addr: ReadSignal<String>,
     creds: Memo<Credentials>,
     on_close: EventHandler<()>,
@@ -243,9 +267,10 @@ fn RelayEditDrawer(
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let mut mode = use_signal(|| mode.clone());
-    let mut delay_time = use_signal(|| delay_time.clone());
-    let mut idle_state = use_signal(|| idle_state.clone());
+    let mut mode = use_signal(|| relay.mode.clone());
+    let mut delay_time = use_signal(|| relay.delay_time.clone());
+    let mut idle_state = use_signal(|| relay.idle_state.clone());
+    let token = relay.token.clone();
 
     rsx! {
         div { class: "io-edit-drawer",

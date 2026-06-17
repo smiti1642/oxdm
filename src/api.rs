@@ -20,8 +20,8 @@
 //! ultimately render strings anyway.
 
 use oxvif::{
-    DeviceInfo, DiscoveredDevice, DnsInformation, EventProperties, FocusMove, Hostname,
-    IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
+    DeviceInfo, DigitalInput, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
+    Hostname, IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
     NetworkInterfaceConfig, NetworkProtocol, NotificationMessage, NtpInfo, OnvifSession,
     OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, RelayOutput, SnapshotUri,
     StreamUri, SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfiguration2,
@@ -1055,11 +1055,12 @@ pub async fn get_network_protocols(
 
 // ── IO control ──────────────────────────────────────────────────────────────
 //
-// `GetRelayOutputs` is ONVIF-optional. Cameras without an IO board typically
-// return `SOAP-ENV:Receiver: Optional Action Not Implemented` (or
-// `ter:ActionNotSupported`). Map those to the `"unsupported"` sentinel so the
-// IO Control view shows a soft empty state instead of a red error banner —
-// the device simply doesn't have any IO hardware, which isn't a failure.
+// Both `GetRelayOutputs` and `GetDigitalInputs` are ONVIF-optional. Cameras
+// without an IO board typically return `SOAP-ENV:Receiver: Optional Action
+// Not Implemented` (or `ter:ActionNotSupported`). Map those to the
+// `"unsupported"` sentinel so the IO Control view shows a soft empty state
+// instead of a red error banner — the device simply doesn't have any IO
+// hardware, which isn't a failure.
 const IO_UNSUPPORTED_SENTINEL: &str = "unsupported";
 
 fn is_action_unsupported(err: &str) -> bool {
@@ -1118,6 +1119,15 @@ pub async fn set_relay_output_settings(
         s.set_relay_output_settings(relay_token, mode, delay_time, idle_state)
             .await,
     )
+}
+
+#[instrument(skip(creds), fields(addr))]
+pub async fn get_digital_inputs(
+    addr: &str,
+    creds: &Credentials,
+) -> Result<Vec<DigitalInput>, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result("GetDigitalInputs", addr, s.get_digital_inputs().await).or_else(map_io_unsupported)
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────

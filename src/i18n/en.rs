@@ -46,8 +46,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         // ── IO Control view ────────────────────────────────────────────
         "io_control" => "IO Control",
         "io_relay_outputs" => "Relay Outputs",
+        "io_digital_inputs" => "Digital Inputs",
+        "io_input_hint" => "Live state arrives via the Events tab",
         "io_no_relays" => "No relay outputs reported by this device.",
+        "io_no_inputs" => "No digital inputs reported by this device.",
         "io_relays_unsupported" => "This device doesn't support relay output control.",
+        "io_inputs_unsupported" => "This device doesn't expose digital inputs.",
         "io_mode" => "Mode",
         "io_mode_bistable" => "Bistable (latching)",
         "io_mode_monostable" => "Monostable (pulse)",

@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "oxdm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arboard",
  "async-trait",
@@ -3492,9 +3492,9 @@ dependencies = [
 
 [[package]]
 name = "oxvif"
-version = "0.9.8"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78144cb9e70f2eed8b068024dd934267d5aac6d61a6c504d0f280ea6a1858ed0"
+checksum = "a2d217ee8f81fd585adbac28c82a51e9e0c91ecefa3f8c339530a599a00691c6"
 dependencies = [
  "async-stream",
  "async-trait",

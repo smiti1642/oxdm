@@ -201,11 +201,9 @@ src/
     ptz.rs                 PTZ pad + zoom + preset list over a live preview
     osd.rs                 OSD text/overlay read + create / update / delete
     io_control.rs          Relay output control (Activate/Deactivate for
-                           Bistable, Pulse for Monostable, settings editor).
-                           Uses oxvif GetRelayOutputs / SetRelayOutputState /
-                           SetRelayOutputSettings. Digital input read-out is
-                           parked on the feature/digital-input branch (needs
-                           oxvif 0.9.9 GetDigitalInputs).
+                           Bistable, Pulse for Monostable, settings editor)
+                           + digital input config list. Uses oxvif 0.9.9
+                           GetDigitalInputs / GetRelayOutputs / Set*.
     events.rs              PullPoint event subscription + rolling event log
     settings/
       mod.rs
@@ -327,17 +325,19 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.9.8"`, pinned to the crates.io registry, with the
+Currently `oxvif = "0.9.9"`, pinned to the crates.io registry, with the
 `health` feature enabled in `[dependencies]` and `mock-server, health` in
 `[dev-dependencies]` (the latter only for `tests/healthtab_smoke.rs`; the
-release binary never pulls axum). Notable surfaces from 0.9.8 that oxdm
-relies on:
+release binary never pulls axum). Notable surfaces oxdm relies on:
 
-- `oxvif::RelayOutput` — IO Control view (`views/io_control.rs`) reads via
-  `api::get_relay_outputs` and writes via `api::set_relay_output_state` /
-  `api::set_relay_output_settings`. Digital input read-out (`GetDigitalInputs`,
-  added in the unpublished 0.9.9) lives on the `feature/digital-input`
-  branch, not on main.
+- `oxvif::{RelayOutput, DigitalInput}` — IO Control view (`views/io_control.rs`)
+  reads both via `api::get_relay_outputs` / `api::get_digital_inputs` and
+  writes via `api::set_relay_output_state` / `api::set_relay_output_settings`
+  (0.9.9 added `GetDigitalInputs`). Mock state under
+  `oxvif::mock::DeviceState::{relay_outputs, digital_inputs}` plus the
+  `/mock/digital-input/{token}/pulse|set` REST hooks let tests drive
+  simulated input transitions without a real camera (see
+  `tests/io_control_smoke.rs`).
 
 - `oxvif::health::{HealthCheck, HealthReport, ReportDiff, SlowedCheck}` —
   serde-derived report types, used by `views/settings/health.rs` for the
@@ -357,7 +357,7 @@ relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.9.8", path = "../oxvif", features = ["health"] }
+oxvif = { version = "0.9.9", path = "../oxvif", features = ["health"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to

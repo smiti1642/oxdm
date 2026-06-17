@@ -1,6 +1,6 @@
 [package]
 name = "oxdm"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
 authors = ["smiti1642"]
@@ -14,7 +14,7 @@ publish = false
 
 [dependencies]
 dioxus = { version = "=0.7.5", features = ["desktop", "router"] }
-oxvif = { version = "0.9.8", features = ["health"] }
+oxvif = { version = "0.9.9", features = ["health"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -52,7 +52,7 @@ winresource = "0.1"
 # Pull in oxvif's mock-server feature so tests/healthtab_smoke.rs can
 # drive a real bound-port ONVIF mock without needing a camera. Test
 # builds only; the release binary doesn't carry axum.
-oxvif = { version = "0.9.8", features = ["mock-server", "health"] }
+oxvif = { version = "0.9.9", features = ["mock-server", "health"] }
 
 [profile.wasm-dev]
 inherits = "dev"
