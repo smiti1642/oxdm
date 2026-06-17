@@ -48,9 +48,15 @@ jobs:
         # Authenticate binstall's GitHub API calls — anonymous requests get
         # rate-limited (403) when fetching the dioxus-cli release artifact,
         # which intermittently failed the macOS job.
+        #
+        # --force: Swatinem/rust-cache restores binstall's install *record*
+        # (so binstall thinks dioxus-cli is already installed and skips it)
+        # without the actual `dx` binary in ~/.cargo/bin, leaving the Bundle
+        # step with "dx: command not found". Forcing a reinstall guarantees
+        # the binary is present every run.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo binstall -y dioxus-cli@0.7.5
+        run: cargo binstall -y --force dioxus-cli@0.7.5
 
       - name: Bundle
         run: dx bundle --release --platform desktop --package-types ${{ matrix.pkg }}
