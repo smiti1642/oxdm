@@ -45,6 +45,11 @@ jobs:
       # Pin dioxus-cli to the version oxdm's dioxus is pinned to (=0.7.5).
       - uses: cargo-bins/cargo-binstall@main
       - name: Install dioxus-cli
+        # Authenticate binstall's GitHub API calls — anonymous requests get
+        # rate-limited (403) when fetching the dioxus-cli release artifact,
+        # which intermittently failed the macOS job.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo binstall -y dioxus-cli@0.7.5
 
       - name: Bundle
