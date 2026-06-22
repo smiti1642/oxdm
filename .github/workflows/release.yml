@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   bundle:
-    name: ${{ matrix.label }}
+    name: ${{ matrix.label }} (${{ matrix.pkg }})
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +28,14 @@ jobs:
             label: linux-x86_64
             pkg: appimage
             ext: AppImage
+          # RPM for Fedora/RHEL: installs the .desktop entry and hicolor icons
+          # system-wide, so the GNOME dock/overview icon resolves out of the box
+          # (the AppImage needs manual desktop integration for the same effect).
+          # dx bundles RPMs with the pure-Rust `rpm` crate — no rpmbuild needed.
+          - os: ubuntu-latest
+            label: linux-x86_64
+            pkg: rpm
+            ext: rpm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
