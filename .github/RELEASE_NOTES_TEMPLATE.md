@@ -15,8 +15,18 @@
 | Platform | Asset |
 |----------|-------|
 | macOS (Apple Silicon) | `oxdm-<version>-macos-aarch64.dmg` |
-| Windows (x86_64) | `oxdm-<version>-windows-x86_64.msi` |
+| Windows (x86_64) — installer | `oxdm-<version>-windows-x86_64.msi` |
+| Windows (x86_64) — portable | `oxdm-<version>-windows-x86_64-portable.zip` |
 | Linux — Ubuntu/Debian (x86_64) | `oxdm-<version>-ubuntu-x86_64.deb` |
+
+## Windows
+
+- **Installer** (`.msi`) — standard install with a Start-menu shortcut.
+- **Portable** (`-portable.zip`) — unzip and run `oxdm.exe`; no install, no
+  registry writes.
+- Both use the **WebView2 runtime**, which is preinstalled on Windows 10/11.
+  If the window stays blank on an old/stripped system, install the WebView2
+  runtime from Microsoft.
 
 ## Linux (pre-release)
 
