@@ -24,18 +24,17 @@ jobs:
             label: windows-x86_64
             pkg: msi
             ext: msi
+          # AppImage built on Ubuntu links Debian-family WebKitGTK paths, so it
+          # only runs on Debian/Ubuntu-based distros — Fedora/RHEL resolve the
+          # webkit helper (WebKitNetworkProcess) at a different path and crash on
+          # launch. Labelled `ubuntu-*` so the asset filename states its range.
+          # The dx-bundled RPM is intentionally dropped: its cpio payload is
+          # malformed and won't install on ANY RPM distro. Fedora/RHEL support is
+          # planned via Flatpak, not this AppImage.
           - os: ubuntu-latest
-            label: linux-x86_64
+            label: ubuntu-x86_64
             pkg: appimage
             ext: AppImage
-          # RPM for Fedora/RHEL: installs the .desktop entry and hicolor icons
-          # system-wide, so the GNOME dock/overview icon resolves out of the box
-          # (the AppImage needs manual desktop integration for the same effect).
-          # dx bundles RPMs with the pure-Rust `rpm` crate — no rpmbuild needed.
-          - os: ubuntu-latest
-            label: linux-x86_64
-            pkg: rpm
-            ext: rpm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
