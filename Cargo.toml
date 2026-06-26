@@ -1,5 +1,8 @@
 [package]
-name = "oxdm"
+# Published as `oxvif-device-manager` — the bare `oxdm` name was already taken
+# on crates.io by an unrelated crate. The installed command / executable stays
+# `oxdm` via the [[bin]] entry below.
+name = "oxvif-device-manager"
 version = "0.1.4"
 edition = "2021"
 description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
@@ -9,8 +12,16 @@ repository = "https://github.com/smiti1642/oxdm"
 readme = "README.md"
 keywords = ["onvif", "ip-camera", "dioxus", "desktop", "rtsp"]
 categories = ["multimedia", "gui"]
-# Not published to crates.io — this is a desktop app, not a library.
-publish = false
+# Design-exploration SVGs / preview page — not compiled into the binary, so
+# keep them out of the published crate.
+exclude = ["assets/icons/concepts/"]
+
+# Keep the binary / command name `oxdm` even though the crate is published under
+# a longer name. `cargo install oxvif-device-manager` then yields an `oxdm`
+# executable, matching the bundles and the ~/.oxdm config dir.
+[[bin]]
+name = "oxdm"
+path = "src/main.rs"
 
 [dependencies]
 dioxus = { version = "=0.7.5", features = ["desktop", "router"] }

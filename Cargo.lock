@@ -3460,7 +3460,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxdm"
+name = "oxvif"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2d217ee8f81fd585adbac28c82a51e9e0c91ecefa3f8c339530a599a00691c6"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64",
+ "diqwest",
+ "futures-core",
+ "if-addrs",
+ "quick-xml",
+ "rand 0.10.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "socket2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxvif-device-manager"
 version = "0.1.4"
 dependencies = [
  "arboard",
@@ -3488,31 +3513,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "winresource",
-]
-
-[[package]]
-name = "oxvif"
-version = "0.9.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2d217ee8f81fd585adbac28c82a51e9e0c91ecefa3f8c339530a599a00691c6"
-dependencies = [
- "async-stream",
- "async-trait",
- "axum",
- "base64",
- "diqwest",
- "futures-core",
- "if-addrs",
- "quick-xml",
- "rand 0.10.1",
- "reqwest",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "socket2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]

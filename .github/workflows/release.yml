@@ -74,7 +74,10 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          src=$(find target/dx/oxdm/bundle -type f -name "*.${{ matrix.ext }}" | head -1)
+          # dx writes to target/dx/<app>/bundle; <app> follows the crate name
+          # (now `oxvif-device-manager`), so match on the bundle dir + ext
+          # rather than hardcoding the app subdir.
+          src=$(find target/dx -type f -path '*/bundle/*' -name "*.${{ matrix.ext }}" | head -1)
           if [ -z "$src" ]; then echo "no .${{ matrix.ext }} produced"; exit 1; fi
           mkdir -p out
           cp "$src" "out/oxdm-${version}-${{ matrix.label }}.${{ matrix.ext }}"
