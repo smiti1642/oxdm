@@ -41,11 +41,21 @@ Notes:
 
 OxDM builds with a standard Rust toolchain — no extra tooling is required to
 produce a runnable binary (`dx` is only needed for hot-reload development and
-for producing installer bundles):
+for producing installer bundles). Install from
+[crates.io](https://crates.io/crates/oxvif-device-manager):
+
+```sh
+cargo install oxvif-device-manager
+```
+
+or build the latest commit directly from Git:
 
 ```sh
 cargo install --git https://github.com/smiti1642/oxdm
 ```
+
+Either way the installed command is **`oxdm`** (the crate is published as
+`oxvif-device-manager` because the shorter name was already taken).
 
 On Linux, install the WebKitGTK/wry development packages first. For example, on
 Debian/Ubuntu:
