@@ -92,7 +92,12 @@ jobs:
           exe=$(find target -type f -name oxdm.exe -path '*release*' ! -path '*deps*' | head -1)
           if [ -z "$exe" ]; then echo "no oxdm.exe found"; exit 1; fi
           echo "portable exe: $exe"
-          7z a "out/oxdm-${version}-windows-x86_64-portable.zip" "$exe"
+          mkdir -p out
+          # Copy to a flat name first so the zip holds `oxdm.exe` at its root,
+          # not the full target/.../release/ path (7z stores paths as given).
+          cp "$exe" oxdm.exe
+          7z a "out/oxdm-${version}-windows-x86_64-portable.zip" oxdm.exe
+          rm oxdm.exe
           ls -la out
 
       - name: Upload to release

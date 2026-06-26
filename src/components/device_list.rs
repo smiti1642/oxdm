@@ -163,11 +163,6 @@ pub fn DeviceList() -> Element {
 
             scanning.set(true);
 
-            // Remember current selection to try to preserve it.
-            let prev_addr = selected
-                .peek()
-                .and_then(|i| devices.peek().get(i).map(|d| d.addr.clone()));
-
             // Mark all non-manual entries offline up front. Each round flips
             // re-discovered ones back online; ones that never reappear stay
             // greyed so the UI can show them as stale rather than vanishing.
@@ -288,13 +283,17 @@ pub fn DeviceList() -> Element {
                 }
             }
 
-            // Restore selection (or fall back to Welcome if device gone).
-            let new_sel = prev_addr
-                .as_ref()
-                .and_then(|addr| devices.peek().iter().position(|d| &d.addr == addr));
-            selected.set(new_sel);
-            if new_sel.is_none() {
-                view.set(View::Welcome);
+            // Don't touch the selection here. Scan rounds update entries in
+            // place or append — never remove or reorder — so a selected index
+            // stays pointing at the same device, including one the user clicked
+            // *during* the scan. Only fall back to Welcome if the current
+            // selection somehow points past the end of the list.
+            let cur_sel = *selected.peek();
+            if let Some(i) = cur_sel {
+                if i >= devices.peek().len() {
+                    selected.set(None);
+                    view.set(View::Welcome);
+                }
             }
 
             if !had_error {
