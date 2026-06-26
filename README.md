@@ -5,6 +5,8 @@ manager — a contemporary successor to the classic **ONVIF Device Manager
 (ODM)**. It is written in Rust with [Dioxus](https://dioxuslabs.com/) and built
 on the [`oxvif`](https://crates.io/crates/oxvif) ONVIF client library.
 
+![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
+
 > **Project status — pre-release (v0.1.4).** Core device management works
 > end-to-end against real cameras and the `oxvif` mock server. Release bundles
 > are not yet code-signed, so the operating system may warn about an

@@ -12,9 +12,10 @@ repository = "https://github.com/smiti1642/oxdm"
 readme = "README.md"
 keywords = ["onvif", "ip-camera", "dioxus", "desktop", "rtsp"]
 categories = ["multimedia", "gui"]
-# Design-exploration SVGs / preview page — not compiled into the binary, so
-# keep them out of the published crate.
-exclude = ["assets/icons/concepts/"]
+# Design-exploration SVGs / preview page and the README screenshot — not
+# compiled into the binary (the README references the screenshot by absolute
+# URL), so keep them out of the published crate.
+exclude = ["assets/icons/concepts/", "docs/"]
 
 # Keep the binary / command name `oxdm` even though the crate is published under
 # a longer name. `cargo install oxvif-device-manager` then yields an `oxdm`
