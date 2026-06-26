@@ -135,16 +135,6 @@ In OxDM, open the **Manual** tab → **Add** → enter `127.0.0.1:18080` (no
 credentials required). Snapshot thumbnails and the settings tabs will show live
 data from the mock device, and the **Diagnostics** tab works against it as well.
 
-## Architecture
-
-OxDM is a single, desktop-only crate. A fixed four-pane shell (Topbar, device
-list, device panel, and main content) switches views through a `View` enum
-rather than a router. All ONVIF calls funnel through `src/api.rs` (which wraps
-`oxvif`), and a process-wide session cache (`src/sessions.rs`) reuses
-`OnvifSession`s across calls. See [`CLAUDE.md`](./CLAUDE.md) for the full module
-map and conventions, and [`ODM.md`](./ODM.md) for the ONVIF API coverage map and
-roadmap.
-
 ## License
 
 Released under the [MIT License](./LICENSE). © 2026 smiti1642
