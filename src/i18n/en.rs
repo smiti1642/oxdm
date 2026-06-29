@@ -1,7 +1,7 @@
 pub fn get(key: &str) -> Option<&'static str> {
     Some(match key {
         // ── Topbar ──────────────────────────────────────────────────────────
-        "search_placeholder" => "Search devices\u{2026}",
+        "search_placeholder" => "Search devices…",
         "tooltip_credentials" => "Credentials",
         "tooltip_theme" => "Theme",
         "tooltip_language" => "Language",
@@ -9,7 +9,7 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Sidebar ─────────────────────────────────────────────────────────
         "sidebar_title" => "Devices",
-        "filter_placeholder" => "Name or address\u{2026}",
+        "filter_placeholder" => "Name or address…",
         "no_devices" => "No devices found.\nClick Scan to discover.",
         "no_manual_devices" => "No manual devices.\nClick Add to create one.",
         "no_matches" => "No matches.",
@@ -25,7 +25,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "devtab_discovered" => "Discovered",
         "devtab_manual" => "Manual",
         "btn_scan_label" => "Scan",
-        "btn_scanning" => "Scanning\u{2026}",
+        "btn_scanning" => "Scanning…",
         "btn_scanning_tooltip" => "A scan is already in progress.",
         "btn_retry" => "Retry",
         "addr_err_empty" => "Address is required.",
@@ -37,7 +37,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "btn_add_label" => "Add",
 
         // ── Device Panel ────────────────────────────────────────────────────
-        "select_device" => "\u{2190} Select a device",
+        "select_device" => "← Select a device",
         "section_general" => "General",
         "nav_settings" => "Settings",
         "nav_events" => "Events",
@@ -138,8 +138,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         // ── Main Content ────────────────────────────────────────────────────
         "app_name" => "OxDM",
         "app_subtitle" => "ONVIF Device Manager",
-        "about_tagline" => "oxvif Device Manager \u{2014} a modern take on ONVIF Device Manager (ODM)",
-        "welcome_hint" => "Select a device from the left panel,\nor click  \u{27F3} Scan  to discover devices on the network.",
+        "about_tagline" => "oxvif Device Manager — a modern take on ONVIF Device Manager (ODM)",
+        "welcome_hint" => "Select a device from the left panel,\nor click  ⟳ Scan  to discover devices on the network.",
 
         // ── Settings Tabs ───────────────────────────────────────────────────
         "tab_identification" => "Identification",
@@ -153,7 +153,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "status_devices" => "devices",
         "status_device" => "device",
         "status_online" => "online",
-        "status_scanning" => "Scanning\u{2026}",
+        "status_scanning" => "Scanning…",
         "status_ws_discovery" => "WS-Discovery",
 
         // ── Theme names ─────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Log viewer ──────────────────────────────────────────────────────
         "logs_title" => "Logs",
-        "logs_filter_placeholder" => "Filter\u{2026}",
+        "logs_filter_placeholder" => "Filter…",
         "logs_refresh" => "Refresh",
         "logs_no_dir" => "Could not locate the log directory.",
         "logs_empty" => "No log file yet. Enable \"Save logs to disk\" in About, then restart.",
@@ -204,7 +204,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "add_device_title" => "Add Device",
         "add_device_addr" => "IP address or ONVIF URL",
         "add_device_addr_hint" => "192.168.1.100",
-        "add_device_addr_auto" => "Just enter the IP \u{2014} the ONVIF path is added automatically.",
+        "add_device_addr_auto" => "Just enter the IP — the ONVIF path is added automatically.",
         "add_device_name" => "Display name",
         "add_device_name_hint" => "Optional",
         "add_device_custom_creds" => "Custom credentials",
@@ -243,7 +243,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ptz_zoom" => "Zoom",
         "ptz_speed" => "Speed",
         "ptz_home" => "Home",
-        "ptz_home_ok" => "Moving to home position\u{2026}",
+        "ptz_home_ok" => "Moving to home position…",
         "ptz_stop" => "Stop",
         "ptz_presets" => "Presets",
         "ptz_no_presets" => "No presets saved.",
@@ -255,13 +255,13 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ptz_focus_far" => "Far",
         "ptz_focus_auto" => "Auto",
         "ptz_focus_manual" => "Manual",
-        "ptz_preset_new_placeholder" => "New preset name\u{2026}",
+        "ptz_preset_new_placeholder" => "New preset name…",
         "ptz_preset_save_hint" => "Save current position as a new preset.",
         "ptz_preset_saved" => "Preset saved.",
         "ptz_preset_removed" => "Preset removed.",
 
         // ── Shared ──────────────────────────────────────────────────────────
-        "loading" => "Loading\u{2026}",
+        "loading" => "Loading…",
         "yes" => "Yes",
         "no" => "No",
         "enabled" => "Enabled",
@@ -290,7 +290,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "time_apply_tz_hint" => "Send the timezone and DST flag above without changing the clock.",
         "time_saved" => "Time settings saved.",
         "tz_current_prefix" => "Current: ",
-        "tz_custom" => "Custom\u{2026}",
+        "tz_custom" => "Custom…",
         "tz_custom_label" => "Custom POSIX TZ",
         "prop_utc_time" => "UTC time",
         "prop_local_time" => "Local time",
@@ -336,7 +336,7 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── Health check ────────────────────────────────────────────────────
         "health_run" => "Run health check",
-        "health_running" => "Running health check\u{2026}",
+        "health_running" => "Running health check…",
         "health_empty" => "Run a read-only conformance check against this device.",
         "health_pass" => "pass",
         "health_warn" => "warn",
@@ -353,7 +353,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "health_baseline_loaded" => "baseline",
         "health_diff_title" => "Diff vs baseline",
         "health_diff_none" => "no changes since baseline",
-        "health_diff_flipped_fail" => "flipped \u{2192} FAIL",
+        "health_diff_flipped_fail" => "flipped → FAIL",
         "health_diff_flipped_pass" => "recovered",
         "health_diff_added" => "new",
         "health_diff_removed" => "removed",
