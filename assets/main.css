@@ -2129,6 +2129,27 @@ iframe.live-video-frame {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.recordings-replay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.recordings-replay-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface0);
+  color: var(--subtext0);
+  font-size: 12px;
+  border-bottom: 1px solid var(--surface1);
+}
+.recordings-replay-note-body {
+  flex: 1;
+  line-height: 1.4;
+}
 
 /* ── Error Boundary ──────────────────────────────────────────────────────── */
 .error-boundary {

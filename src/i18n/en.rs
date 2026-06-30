@@ -46,6 +46,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_recordings" => "Recordings",
         "recordings_empty" => "No recordings found on this device.",
         "recordings_unsupported" => "This device does not support recording playback (Profile G).",
+        "recordings_replay_caveat" => "Playback uses standard RTSP. If the frame stays blank, this device's replay requires ONVIF replay control, which the built-in player does not support yet — use the URI in a replay-capable tool.",
+        "recordings_copy_uri" => "Copy replay URI",
+        "recordings_uri_copied" => "Replay URI copied to clipboard.",
         "recordings_select_hint" => "Select a recording to play it back.",
         // ── IO Control view ────────────────────────────────────────────
         "io_control" => "IO Control",

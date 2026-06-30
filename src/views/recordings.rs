@@ -135,6 +135,12 @@ fn ReplayStage(
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
+    // Resolve the replay URI and register it with go2rtc. We return the URI
+    // alongside the player source so the view can show it and offer a copy
+    // action — important because ONVIF replay often needs RTSP control headers
+    // (`Require: onvif-replay`) that go2rtc, a generic RTSP client, does not
+    // send; on those devices the player stays blank and the user needs the URI
+    // for a replay-capable tool. See the advisory below.
     let source = use_resource(move || {
         let addr = addr.read().clone();
         let creds = creds.read().clone();
@@ -148,56 +154,90 @@ fn ReplayStage(
             let uri = api::get_replay_uri(&addr, &creds, &token)
                 .await
                 .map_err(|e| format!("replay_uri:{e}"))?;
-            backend
+            let src = backend
                 .open_rtsp(&uri, &addr, &creds)
                 .await
-                .map_err(|e| format!("backend_error:{e}"))
+                .map_err(|e| format!("backend_error:{e}"))?;
+            Ok::<(String, video::VideoSource), String>((uri, src))
         }
     });
 
-    rsx! {
-        div { class: "live-video-stage",
-            match &*source.read_unchecked() {
-                None => rsx! {
-                    div { class: "live-video-placeholder", {i18n::t(locale, "loading")} }
-                },
-                Some(Err(reason)) => {
-                    let key = match reason.as_str() {
-                        "no_device"  => "live_video_no_device",
-                        "no_backend" => "live_video_no_backend",
-                        _            => "live_video_error",
-                    };
-                    let detail = reason
-                        .strip_prefix("backend_error:")
-                        .or_else(|| reason.strip_prefix("replay_uri:"))
-                        .map(str::to_string);
-                    rsx! {
-                        div { class: "live-video-placeholder",
-                            Icon { name: "alert-triangle", size: 28 }
-                            p { {i18n::t(locale, key)} }
-                            if let Some(msg) = detail {
-                                p { class: "live-video-detail", "{msg}" }
-                            }
+    let res = source.read_unchecked();
+    match &*res {
+        None => rsx! {
+            div { class: "live-video-stage",
+                div { class: "live-video-placeholder", {i18n::t(locale, "loading")} }
+            }
+        },
+        Some(Err(reason)) => {
+            let key = match reason.as_str() {
+                "no_device" => "live_video_no_device",
+                "no_backend" => "live_video_no_backend",
+                _ => "live_video_error",
+            };
+            let detail = reason
+                .strip_prefix("backend_error:")
+                .or_else(|| reason.strip_prefix("replay_uri:"))
+                .map(str::to_string);
+            rsx! {
+                div { class: "live-video-stage",
+                    div { class: "live-video-placeholder",
+                        Icon { name: "alert-triangle", size: 28 }
+                        p { {i18n::t(locale, key)} }
+                        if let Some(msg) = detail {
+                            p { class: "live-video-detail", "{msg}" }
                         }
                     }
                 }
-                Some(Ok(src)) => match src.embed {
-                    EmbedKind::Img => rsx! {
-                        img { class: "live-video-frame", src: "{src.url}", alt: "recording replay" }
-                    },
-                    EmbedKind::Video => rsx! {
-                        video {
-                            class: "live-video-frame",
-                            src: "{src.url}",
-                            autoplay: true,
-                            controls: true,
-                            muted: true,
+            }
+        }
+        Some(Ok((uri, src))) => {
+            let uri = uri.clone();
+            rsx! {
+                div { class: "recordings-replay",
+                    // Advisory: go2rtc plays plain-RTSP/H.264 replay, but cannot
+                    // drive ONVIF replay control headers — so on devices that
+                    // require them the frame stays blank. Always shown (we can't
+                    // reliably detect go2rtc's downstream connect failure here).
+                    div { class: "recordings-replay-note",
+                        Icon { name: "info", size: 14 }
+                        span { class: "recordings-replay-note-body",
+                            {i18n::t(locale, "recordings_replay_caveat")}
                         }
-                    },
-                    EmbedKind::Iframe => rsx! {
-                        iframe { class: "live-video-frame", src: "{src.url}" }
-                    },
-                },
+                        button {
+                            class: "btn btn-sm btn-ghost",
+                            onclick: move |_| {
+                                let msg = match crate::util::copy_to_clipboard(&uri) {
+                                    Ok(()) => (crate::state::ToastLevel::Success,
+                                               i18n::t(locale, "recordings_uri_copied").to_string()),
+                                    Err(e) => (crate::state::ToastLevel::Error, e),
+                                };
+                                ctx.push_toast(msg.0, msg.1);
+                            },
+                            Icon { name: "clipboard-copy", size: 12 }
+                            {i18n::t(locale, "recordings_copy_uri")}
+                        }
+                    }
+                    div { class: "live-video-stage",
+                        match src.embed {
+                            EmbedKind::Img => rsx! {
+                                img { class: "live-video-frame", src: "{src.url}", alt: "recording replay" }
+                            },
+                            EmbedKind::Video => rsx! {
+                                video {
+                                    class: "live-video-frame",
+                                    src: "{src.url}",
+                                    autoplay: true,
+                                    controls: true,
+                                    muted: true,
+                                }
+                            },
+                            EmbedKind::Iframe => rsx! {
+                                iframe { class: "live-video-frame", src: "{src.url}" }
+                            },
+                        }
+                    }
+                }
             }
         }
     }

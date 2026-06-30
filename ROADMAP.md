@@ -37,6 +37,7 @@ or settings tab surfaces each capability); the *protocol* side is tracked in
 | 14 | **Audio configuration (full set)** | 2 | M | M | P3 | Only worth it alongside two-way audio; config-only value is low |
 | 15 | **Unicast discovery `Resolve`** | 1 | S | — | P3 | No UI; enterprise-subnet use |
 | 16 | **Receiver / access-control family** (Profiles A/C/D) | 1 | L | L | **P3 / won't do** | Door-control etc., outside the camera-management scope |
+| 17 | **ONVIF replay-aware playback** (Profile G, was risk R1) | 4 | M | L | **P2** | Real fix for the #4 playback gap: many cameras' replay RTSP requires `Require: onvif-replay` + `Range: clock=` headers that go2rtc/ffmpeg/VLC don't send, so the frame stays blank. Build a replay-aware RTSP client (e.g. Rust `retina`, which can send custom headers + Range) that pulls the replay RTP and bridges it to the WebView — pipe H.264 into a **go2rtc `exec` source** → WebRTC/MSE. Fallback path for export-only devices: ONVIF `ExportRecordedData` → download clip → play file. Until then, #4 ships with an advisory + "copy replay URI" (done). |
 
 ## Sequencing
 
