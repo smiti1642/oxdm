@@ -44,6 +44,7 @@ pub fn DevicePanel() -> Element {
                 NavLink { view: View::Osd,            icon: "info",     label: i18n::t(locale, "nav_osd") }
                 NavLink { view: View::IoControl,      icon: "zap",      label: i18n::t(locale, "nav_io_control") }
                 NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
+                NavLink { view: View::Recordings,     icon: "clock",    label: i18n::t(locale, "nav_recordings") }
             }
 
             // ── NVT profile thumbnails ──────────────────────────────────────

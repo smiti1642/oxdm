@@ -1512,7 +1512,6 @@ pub async fn delete_profile(
 // ── Recordings (Profile G) ──────────────────────────────────────────────────
 
 /// Search all recordings stored on the device (find → poll → end, in one call).
-#[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
 #[instrument(skip(creds), fields(addr))]
 pub async fn search_recordings(
     addr: &str,
@@ -1523,7 +1522,6 @@ pub async fn search_recordings(
 }
 
 /// Resolve an RTSP replay URI for a stored recording (RTP-Unicast over RTSP).
-#[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
 #[instrument(skip(creds), fields(addr, recording_token))]
 pub async fn get_replay_uri(
     addr: &str,

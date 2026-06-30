@@ -43,6 +43,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_events" => "Events",
         "nav_osd" => "OSD",
         "nav_io_control" => "IO Control",
+        "nav_recordings" => "Recordings",
+        "recordings_empty" => "No recordings found on this device.",
+        "recordings_select_hint" => "Select a recording to play it back.",
         // ── IO Control view ────────────────────────────────────────────
         "io_control" => "IO Control",
         "io_relay_outputs" => "Relay Outputs",

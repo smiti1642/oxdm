@@ -92,7 +92,6 @@ pub trait VideoBackend: Send + Sync {
     /// Default: unsupported — only the go2rtc bridge can do RTSP. The MJPEG
     /// snapshot backend has no way to play arbitrary RTSP, so it inherits
     /// this `Err`.
-    #[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
     async fn open_rtsp(
         &self,
         _rtsp_url: &str,

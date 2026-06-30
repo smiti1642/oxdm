@@ -8,6 +8,7 @@ use crate::views::io_control::IoControlView;
 use crate::views::live_video::LiveVideoView;
 use crate::views::osd::OsdView;
 use crate::views::ptz::PtzControlView;
+use crate::views::recordings::RecordingsView;
 use crate::views::settings::{
     HealthTab, IdentificationTab, MaintenanceTab, NetworkTab, TimeTab, UsersTab,
 };
@@ -54,6 +55,7 @@ pub fn MainContent() -> Element {
                 View::Events          => rsx! { EventsView         { key: "{addr_key}", addr, creds } },
                 View::Osd             => rsx! { OsdView            { key: "{addr_key}", addr, creds } },
                 View::IoControl       => rsx! { IoControlView      { key: "{addr_key}", addr, creds } },
+                View::Recordings      => rsx! { RecordingsView     { key: "{addr_key}", addr, creds } },
             }
         }
     }

@@ -2061,6 +2061,75 @@ iframe.live-video-frame {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* ── Recordings (Profile G playback) ─────────────────────────────────────── */
+.recordings-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.recordings-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.recordings-list {
+  width: 280px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--surface0);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recordings-player {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+.recordings-placeholder {
+  margin: auto;
+  color: var(--overlay1);
+  font-size: 14px;
+  text-align: center;
+  padding: 24px;
+}
+.recording-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface0);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+}
+.recording-row:hover { background: var(--surface1); }
+.recording-row--active {
+  border-color: var(--mauve);
+  background: var(--surface1);
+}
+.recording-row-source { font-size: 13px; font-weight: 600; }
+.recording-row-time {
+  font-size: 11px;
+  color: var(--subtext0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.recording-row-status {
+  font-size: 10px;
+  color: var(--overlay1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ── Error Boundary ──────────────────────────────────────────────────────── */
 .error-boundary {
   display: flex;

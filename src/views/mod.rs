@@ -5,6 +5,7 @@ pub mod live_video;
 mod main_content;
 pub mod osd;
 pub mod ptz;
+pub mod recordings;
 pub mod settings;
 pub mod video_encoder;
 pub use main_content::MainContent;

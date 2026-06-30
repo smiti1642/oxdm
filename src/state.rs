@@ -74,6 +74,7 @@ pub enum View {
     Events,
     Osd,
     IoControl,
+    Recordings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
