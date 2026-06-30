@@ -45,6 +45,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_io_control" => "Управление IO",
         "nav_recordings" => "Записи",
         "recordings_empty" => "На этом устройстве нет записей.",
+        "recordings_unsupported" => "Это устройство не поддерживает воспроизведение записей (Profile G).",
         "recordings_select_hint" => "Выберите запись для воспроизведения.",
         "io_control" => "Управление IO",
         "io_relay_outputs" => "Релейные выходы",

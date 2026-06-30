@@ -45,6 +45,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_io_control" => "IO 控制",
         "nav_recordings" => "錄影回放",
         "recordings_empty" => "此裝置上沒有錄影。",
+        "recordings_unsupported" => "此裝置不支援錄影回放（Profile G）。",
         "recordings_select_hint" => "選擇一筆錄影以回放。",
         "io_control" => "IO 控制",
         "io_relay_outputs" => "繼電器輸出",

@@ -45,6 +45,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_io_control" => "IO Control",
         "nav_recordings" => "Recordings",
         "recordings_empty" => "No recordings found on this device.",
+        "recordings_unsupported" => "This device does not support recording playback (Profile G).",
         "recordings_select_hint" => "Select a recording to play it back.",
         // ── IO Control view ────────────────────────────────────────────
         "io_control" => "IO Control",

@@ -45,6 +45,14 @@ pub fn RecordingsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                         None => rsx! {
                             div { class: "recordings-placeholder", {i18n::t(locale, "loading")} }
                         },
+                        // A missing recording/search/replay service URL means the
+                        // device doesn't advertise Profile G at all — show a plain
+                        // "not supported" state instead of a retryable error.
+                        Some(Err(e)) if e.contains("service URL") => rsx! {
+                            div { class: "recordings-placeholder",
+                                {i18n::t(locale, "recordings_unsupported")}
+                            }
+                        },
                         Some(Err(e)) => rsx! {
                             TabError {
                                 error: e.clone(),
