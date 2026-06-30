@@ -23,9 +23,9 @@ use oxvif::{
     DeviceInfo, DigitalInput, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
     NetworkInterfaceConfig, NetworkProtocol, NotificationMessage, NtpInfo, OnvifSession,
-    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, RelayOutput, SnapshotUri,
-    StreamUri, SystemDateTime, User, VideoEncoderConfiguration, VideoEncoderConfiguration2,
-    VideoEncoderConfigurationOptions, VideoEncoding, VideoRateControl2,
+    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, RecordingInformation,
+    RelayOutput, SnapshotUri, StreamUri, SystemDateTime, User, VideoEncoderConfiguration,
+    VideoEncoderConfiguration2, VideoEncoderConfigurationOptions, VideoEncoding, VideoRateControl2,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1507,6 +1507,36 @@ pub async fn delete_profile(
 ) -> Result<(), ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result("DeleteProfile", addr, s.delete_profile(profile_token).await)
+}
+
+// ── Recordings (Profile G) ──────────────────────────────────────────────────
+
+/// Search all recordings stored on the device (find → poll → end, in one call).
+#[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
+#[instrument(skip(creds), fields(addr))]
+pub async fn search_recordings(
+    addr: &str,
+    creds: &Credentials,
+) -> Result<Vec<RecordingInformation>, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result("FindRecordings", addr, s.search_recordings(None).await)
+}
+
+/// Resolve an RTSP replay URI for a stored recording (RTP-Unicast over RTSP).
+#[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
+#[instrument(skip(creds), fields(addr, recording_token))]
+pub async fn get_replay_uri(
+    addr: &str,
+    creds: &Credentials,
+    recording_token: &str,
+) -> Result<String, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "GetReplayUri",
+        addr,
+        s.get_replay_uri(recording_token, "RTP-Unicast", "RTSP")
+            .await,
+    )
 }
 
 /// Run oxvif's read-only ONVIF health / conformance check against a device.
