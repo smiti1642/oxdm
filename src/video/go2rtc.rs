@@ -138,6 +138,59 @@ impl Go2rtcBackend {
         self.wait_until_ready().await
     }
 
+    /// Resolve the binary and make sure the child process is up. Shared
+    /// fail-fast path for both `open` (live) and `open_rtsp` (replay).
+    async fn ensure_spawned(&self) -> Result<(), String> {
+        let binary = self.binary.as_ref().ok_or_else(|| {
+            "go2rtc binary not found. Drop go2rtc(.exe) next to oxdm(.exe), \
+             set OXDM_GO2RTC=/path/to/go2rtc, or install on PATH."
+                .to_string()
+        })?;
+        self.ensure_running(binary).await
+    }
+
+    /// Register `rtsp_url` with go2rtc under `stream_name` and return the
+    /// shipped-player URL. Shared by `open` (live) and `open_rtsp` (replay);
+    /// the only difference between them is how the RTSP URL is obtained.
+    ///
+    /// Appends `#video=h264#audio=copy` so go2rtc transcodes H.265 → H.264
+    /// (WebView2 ships no HEVC decoder by default); a no-op for H.264 sources.
+    /// PUT is an upsert, so re-registering the same name is idempotent.
+    async fn register_and_url(
+        &self,
+        rtsp_url: &str,
+        stream_name: &str,
+    ) -> Result<VideoSource, String> {
+        let src_with_codec = format!("{rtsp_url}#video=h264#audio=copy");
+
+        let put = format!(
+            "http://{API_HOST}:{API_PORT}/api/streams?name={}&src={}",
+            urlencode(stream_name),
+            urlencode(&src_with_codec)
+        );
+        let resp = self
+            .http
+            .put(&put)
+            .send()
+            .await
+            .map_err(|e| format!("register stream: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("register stream HTTP {}", resp.status()));
+        }
+
+        // mode=webrtc,mse — WebRTC first (sub-second latency), MSE fallback.
+        let url = format!(
+            "http://{API_HOST}:{API_PORT}/stream.html?src={}&mode=webrtc,mse",
+            urlencode(stream_name)
+        );
+
+        Ok(VideoSource {
+            id: stream_name.to_string(),
+            url,
+            embed: EmbedKind::Iframe,
+        })
+    }
+
     async fn wait_until_ready(&self) -> Result<(), String> {
         let deadline = std::time::Instant::now() + READY_PROBE_TIMEOUT;
         let probe_url = format!("http://{API_HOST}:{API_PORT}/api/streams");
@@ -178,13 +231,7 @@ impl VideoBackend for Go2rtcBackend {
         profile_token: &str,
         creds: &Credentials,
     ) -> Result<VideoSource, String> {
-        let binary = self.binary.as_ref().ok_or_else(|| {
-            "go2rtc binary not found. Drop go2rtc(.exe) next to oxdm(.exe), \
-             set OXDM_GO2RTC=/path/to/go2rtc, or install on PATH."
-                .to_string()
-        })?;
-
-        self.ensure_running(binary).await?;
+        self.ensure_spawned().await?;
 
         // Resolve the RTSP URI via ONVIF GetStreamUri. The device is
         // free to return a URL with or without an embedded credential
@@ -199,50 +246,24 @@ impl VideoBackend for Go2rtcBackend {
         let rtsp_url =
             inject_credentials(&stream.uri, device_addr, &creds.username, &creds.password);
 
-        // Append `#video=h264#audio=copy` so go2rtc transcodes the
-        // video to H.264 when the camera is H.265 — WebView2 doesn't
-        // ship the HEVC decoder by default, and a successful WebRTC
-        // negotiation will tick its clock without rendering frames if
-        // the codec lands on something the WebView can't decode. For
-        // H.264 cameras this is a no-op (codec already matches), so
-        // the CPU cost only kicks in when actually needed.
-        let src_with_codec = format!("{rtsp_url}#video=h264#audio=copy");
-
         let stream_name = stream_name_for(device_addr, profile_token);
+        self.register_and_url(&rtsp_url, &stream_name).await
+    }
 
-        // Always re-PUT in case the camera URL or credentials changed
-        // since the last open. go2rtc treats PUT as upsert, so this is
-        // safe (and idempotent for repeated tab switches).
-        let put = format!(
-            "http://{API_HOST}:{API_PORT}/api/streams?name={}&src={}",
-            urlencode(&stream_name),
-            urlencode(&src_with_codec)
-        );
-        let resp = self
-            .http
-            .put(&put)
-            .send()
-            .await
-            .map_err(|e| format!("register stream: {e}"))?;
-        if !resp.status().is_success() {
-            return Err(format!("register stream HTTP {}", resp.status()));
-        }
+    async fn open_rtsp(
+        &self,
+        rtsp_url: &str,
+        device_addr: &str,
+        creds: &Credentials,
+    ) -> Result<VideoSource, String> {
+        self.ensure_spawned().await?;
 
-        // mode=webrtc,mse — try WebRTC first (sub-second latency), fall
-        // back to MSE (fragmented MP4) if WebRTC's video track lands on
-        // a codec WebView2 can decode for negotiation but not render.
-        // The transcode-to-H.264 hint on the source above keeps both
-        // paths inside what WebView2's media engine actually handles.
-        let url = format!(
-            "http://{API_HOST}:{API_PORT}/stream.html?src={}&mode=webrtc,mse",
-            urlencode(&stream_name)
-        );
-
-        Ok(VideoSource {
-            id: stream_name,
-            url,
-            embed: EmbedKind::Iframe,
-        })
+        // The replay URI already points at the recording; we only need to
+        // splice credentials in (and let `inject_credentials` rewrite a
+        // loopback/0.0.0.0 host to the device we know is reachable).
+        let rtsp_url = inject_credentials(rtsp_url, device_addr, &creds.username, &creds.password);
+        let stream_name = replay_stream_name(&rtsp_url);
+        self.register_and_url(&rtsp_url, &stream_name).await
     }
 
     async fn close(&self, source_id: &str) {
@@ -347,6 +368,19 @@ fn stream_name_for(device_addr: &str, profile_token: &str) -> String {
     device_addr.hash(&mut h);
     profile_token.hash(&mut h);
     format!("oxdm-{:016x}", h.finish())
+}
+
+/// Build a stable, URL-safe go2rtc stream name for a replay URI. Hashing
+/// the (credential-injected) RTSP URL means re-opening the same recording
+/// reuses the same go2rtc stream (PUT idempotency) while distinct
+/// recordings get distinct streams. Prefixed `oxdm-replay-` to never
+/// collide with live streams from `stream_name_for`.
+fn replay_stream_name(rtsp_url: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    rtsp_url.hash(&mut h);
+    format!("oxdm-replay-{:016x}", h.finish())
 }
 
 /// Splice credentials into an RTSP URL. Trusts the camera's
@@ -531,5 +565,26 @@ mod tests {
         let a = stream_name_for("192.168.1.10", "Profile_1");
         let b = stream_name_for("192.168.1.10", "Profile_2");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn replay_stream_name_stable_and_distinct() {
+        let a = replay_stream_name("rtsp://192.168.1.10:554/replay/Rec_001");
+        let b = replay_stream_name("rtsp://192.168.1.10:554/replay/Rec_001");
+        let c = replay_stream_name("rtsp://192.168.1.10:554/replay/Rec_002");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert!(a.starts_with("oxdm-replay-"));
+    }
+
+    #[test]
+    fn replay_stream_name_never_collides_with_live() {
+        // The `-replay-` infix guarantees a live stream and a replay stream
+        // can coexist in go2rtc without clobbering each other: live names
+        // are `oxdm-<hex>` (hex can't contain the letters in "replay").
+        let live = stream_name_for("192.168.1.10", "Profile_1");
+        let replay = replay_stream_name("rtsp://192.168.1.10/s");
+        assert!(!live.starts_with("oxdm-replay-"));
+        assert!(replay.starts_with("oxdm-replay-"));
     }
 }

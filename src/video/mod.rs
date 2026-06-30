@@ -84,6 +84,24 @@ pub trait VideoBackend: Send + Sync {
         creds: &Credentials,
     ) -> Result<VideoSource, String>;
 
+    /// Play an already-resolved RTSP URI (e.g. an ONVIF replay URI from
+    /// `GetReplayUri`) rather than resolving a live profile stream.
+    /// `device_addr` is used only as a host fallback when the URI reports
+    /// an unreachable host (`0.0.0.0` / loopback). Returns an embeddable URL.
+    ///
+    /// Default: unsupported — only the go2rtc bridge can do RTSP. The MJPEG
+    /// snapshot backend has no way to play arbitrary RTSP, so it inherits
+    /// this `Err`.
+    #[allow(dead_code)] // Wired up in Phase 3 (Recordings view)
+    async fn open_rtsp(
+        &self,
+        _rtsp_url: &str,
+        _device_addr: &str,
+        _creds: &Credentials,
+    ) -> Result<VideoSource, String> {
+        Err("this backend does not support RTSP playback".to_string())
+    }
+
     /// Stop streaming the source previously returned by `open`. Idempotent.
     #[allow(dead_code)] // Reserved for view teardown / settings UI
     async fn close(&self, source_id: &str);
