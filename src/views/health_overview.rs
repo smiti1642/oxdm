@@ -259,6 +259,28 @@ pub fn HealthOverviewView() -> Element {
         }
     };
 
+    // Drag start for an All-devices row: if the row is part of the checked
+    // selection, drag the whole selection; otherwise just that device.
+    let drag_start = use_callback(move |clicked: HealthDeviceRef| {
+        let sel = selected.peek();
+        let payload: Vec<HealthDeviceRef> = if sel.contains(&clicked.addr) {
+            ctx.devices
+                .peek()
+                .iter()
+                .filter(|d| sel.contains(&d.addr))
+                .map(|d| HealthDeviceRef {
+                    endpoint: d.endpoint.clone(),
+                    addr: d.addr.clone(),
+                    name: d.name.clone(),
+                })
+                .collect()
+        } else {
+            vec![clicked]
+        };
+        drop(sel);
+        ctx.dragging.clone().set(payload);
+    });
+
     let run = move |_| {
         if *running.read() {
             return;
@@ -548,6 +570,7 @@ pub fn HealthOverviewView() -> Element {
                                     }
                                 },
                                 show_remove: true,
+                                draggable: false,
                                 on_remove: {
                                     let ep = row.ref_endpoint.clone();
                                     let ra = row.ref_addr.clone();
@@ -562,6 +585,7 @@ pub fn HealthOverviewView() -> Element {
                                         }
                                     }
                                 },
+                                on_dragstart: move |_| {},
                             }
                         }
                     }
@@ -600,7 +624,16 @@ pub fn HealthOverviewView() -> Element {
                                 },
                                 on_key: move |_| {},
                                 show_remove: false,
+                                draggable: true,
                                 on_remove: move |_| {},
+                                on_dragstart: {
+                                    let r = HealthDeviceRef {
+                                        endpoint: d.endpoint.clone(),
+                                        addr: d.addr.clone(),
+                                        name: d.name.clone(),
+                                    };
+                                    move |_| drag_start.call(r.clone())
+                                },
                             }
                         }
                     }
@@ -634,13 +667,20 @@ fn DeviceRow(
     cred_badge: String,
     show_key: bool,
     show_remove: bool,
+    draggable: bool,
     state: Option<RunState>,
     on_toggle: EventHandler<()>,
     on_key: EventHandler<()>,
     on_remove: EventHandler<()>,
+    on_dragstart: EventHandler<()>,
 ) -> Element {
+    let ctx = use_context::<Ctx>();
     rsx! {
-        div { class: if offline { "hbatch-row hbatch-row--offline" } else { "hbatch-row" },
+        div {
+            class: if offline { "hbatch-row hbatch-row--offline" } else { "hbatch-row" },
+            draggable,
+            ondragstart: move |_| on_dragstart.call(()),
+            ondragend: move |_| ctx.dragging.clone().set(Vec::new()),
             if checkbox {
                 label { class: "hbatch-check",
                     input {

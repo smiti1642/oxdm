@@ -6,7 +6,10 @@ use crate::{
         GlobalCredentialsDialog, Icon,
     },
     i18n,
-    state::{AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
+    state::{
+        AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, HealthDeviceRef, ToastLevel,
+        View,
+    },
     util,
 };
 use dioxus::prelude::*;
@@ -627,6 +630,7 @@ fn DeviceCard(
     rsx! {
         div {
             class: card_class,
+            draggable: true,
             onclick: move |_| {
                 sel.set(Some(index));
                 view.set(View::DeviceSettings);
@@ -636,6 +640,16 @@ fn DeviceCard(
                 let coords = e.data().client_coordinates();
                 ctx_menu.set(Some((coords.x, coords.y)));
             },
+            ondragstart: move |_| {
+                if let Some(d) = ctx.devices.peek().get(index) {
+                    ctx.dragging.clone().set(vec![HealthDeviceRef {
+                        endpoint: d.endpoint.clone(),
+                        addr: d.addr.clone(),
+                        name: d.name.clone(),
+                    }]);
+                }
+            },
+            ondragend: move |_| ctx.dragging.clone().set(Vec::new()),
             div { class: "device-card-header",
                 span { class: dot_class }
                 span { class: "device-name", "{name}" }

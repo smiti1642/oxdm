@@ -283,6 +283,9 @@ pub struct Ctx {
     /// Which target the Health Overview shows (All devices / a specific group).
     /// Set by the sidebar Groups tab and the topbar Health button.
     pub health_list: Signal<HealthListSel>,
+    /// Devices currently being dragged onto a group (empty = no drag in
+    /// progress). Set on `ondragstart`, consumed on a group's `ondrop`.
+    pub dragging: Signal<Vec<HealthDeviceRef>>,
     /// Currently selected media profile token (for NVT operations).
     pub selected_profile: Signal<Option<String>>,
     /// Persist tracing output to disk. Toggled in the About dialog,

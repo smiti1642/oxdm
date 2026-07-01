@@ -398,6 +398,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_delete" => "Delete group",
         "hgroups_delete_confirm" => "Delete the group \"{name}\"? Devices themselves are not affected.",
         "hgroups_remove" => "Remove from group",
+        "hgroups_new_group" => "New group",
         "hgroups_all_devices" => "All devices",
         "hgroups_groups_header" => "Groups",
         "hgroups_empty" => "No groups yet.",

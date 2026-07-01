@@ -2,7 +2,10 @@
 use crate::api;
 use crate::components::{ContextMenu, CtxMenuItem, Icon, RenameGroupDialog};
 use crate::i18n;
-use crate::state::{ConfirmDialog, Credentials, Ctx, HealthListSel, View};
+use crate::state::{
+    new_group_id, ConfirmDialog, Credentials, Ctx, HealthDeviceRef, HealthGroup, HealthListSel,
+    View,
+};
 use dioxus::prelude::*;
 use tracing::{debug, warn};
 
@@ -74,11 +77,79 @@ fn HealthGroupsPanel() -> Element {
     let rename_open = use_signal(|| false);
     let mut rename_id = use_signal(String::new);
 
+    let mut new_name = use_signal(String::new);
+
     let groups = ctx.health_groups.read().clone();
     let current = ctx.health_list.read().clone();
     let is_all = matches!(current, HealthListSel::AllDevices);
+    let is_dragging = !ctx.dragging.read().is_empty();
 
     let go = move |sel: HealthListSel| ctx.health_list.clone().set(sel);
+
+    // Dedupe-append helper.
+    fn push_deduped(devices: &mut Vec<HealthDeviceRef>, r: HealthDeviceRef) {
+        let dup = devices
+            .iter()
+            .any(|x| (!r.endpoint.is_empty() && x.endpoint == r.endpoint) || x.addr == r.addr);
+        if !dup {
+            devices.push(r);
+        }
+    }
+
+    // Drop the dragged devices into an existing group.
+    let drop_into = use_callback(move |gid: String| {
+        let refs = ctx.dragging.peek().clone();
+        ctx.dragging.clone().set(Vec::new());
+        if refs.is_empty() {
+            return;
+        }
+        let mut hg = ctx.health_groups;
+        let mut groups = hg.write();
+        if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
+            for r in refs {
+                push_deduped(&mut g.devices, r);
+            }
+        }
+    });
+
+    // Create a group from the typed name (or an auto-name), optionally seeding
+    // it with the dragged devices; then select it.
+    let create_group = use_callback(move |with_dragged: bool| {
+        let refs = if with_dragged {
+            ctx.dragging.peek().clone()
+        } else {
+            Vec::new()
+        };
+        ctx.dragging.clone().set(Vec::new());
+        let mut hg = ctx.health_groups;
+        let new_id = {
+            let mut groups = hg.write();
+            let typed = new_name.peek().trim().to_string();
+            let name = if typed.is_empty() {
+                format!(
+                    "{} {}",
+                    i18n::t(locale, "hgroups_new_group"),
+                    groups.len() + 1
+                )
+            } else {
+                typed
+            };
+            let id = new_group_id(&groups);
+            let mut devices = Vec::new();
+            for r in refs {
+                push_deduped(&mut devices, r);
+            }
+            groups.push(HealthGroup {
+                id: id.clone(),
+                name,
+                devices,
+                ..Default::default()
+            });
+            id
+        };
+        new_name.set(String::new());
+        ctx.health_list.clone().set(HealthListSel::Group(new_id));
+    });
 
     rsx! {
         div { class: "device-panel",
@@ -106,7 +177,11 @@ fn HealthGroupsPanel() -> Element {
                     for (i , g) in groups.iter().enumerate() {
                         button {
                             key: "{i}",
-                            class: if matches!(&current, HealthListSel::Group(id) if *id == g.id) { "group-sb-item group-sb-item--active" } else { "group-sb-item" },
+                            class: {
+                                let active = matches!(&current, HealthListSel::Group(id) if *id == g.id);
+                                let drop = if is_dragging { " group-sb-item--droppable" } else { "" };
+                                if active { format!("group-sb-item group-sb-item--active{drop}") } else { format!("group-sb-item{drop}") }
+                            },
                             onclick: {
                                 let gid = g.id.clone();
                                 move |_| go(HealthListSel::Group(gid.clone()))
@@ -119,9 +194,37 @@ fn HealthGroupsPanel() -> Element {
                                     ctx_menu.set(Some((c.x, c.y, gid.clone())));
                                 }
                             },
+                            ondragover: move |e: Event<DragData>| e.prevent_default(),
+                            ondrop: {
+                                let gid = g.id.clone();
+                                move |e: Event<DragData>| {
+                                    e.prevent_default();
+                                    drop_into.call(gid.clone());
+                                }
+                            },
                             span { class: "group-sb-icon", Icon { name: "folder", size: 14 } }
                             span { class: "group-sb-name", {format!("{} ({})", g.name, g.devices.len())} }
                         }
+                    }
+                }
+                div {
+                    class: if is_dragging { "hgroups-new-row hgroups-drop-zone" } else { "hgroups-new-row" },
+                    ondragover: move |e: Event<DragData>| e.prevent_default(),
+                    ondrop: move |e: Event<DragData>| {
+                        e.prevent_default();
+                        create_group.call(true);
+                    },
+                    input {
+                        class: "form-input form-input--flex",
+                        r#type: "text",
+                        placeholder: i18n::t(locale, "hgroups_new_group_placeholder"),
+                        value: "{new_name}",
+                        oninput: move |e| new_name.set(e.value()),
+                    }
+                    button {
+                        class: "btn btn-sm btn-primary",
+                        onclick: move |_| create_group.call(false),
+                        Icon { name: "plus", size: 14 }
                     }
                 }
             }

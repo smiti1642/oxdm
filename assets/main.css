@@ -2077,6 +2077,18 @@ a      { color: var(--blue); text-decoration: none; }
   font-style: italic;
   padding: 4px 8px;
 }
+/* Drag-and-drop: highlight groups + the new-group row as drop targets while a
+   device is being dragged. */
+.group-sb-item--droppable {
+  outline: 1px dashed var(--blue);
+  outline-offset: -3px;
+}
+.hgroups-drop-zone {
+  outline: 1px dashed var(--blue);
+  outline-offset: -2px;
+  border-radius: 6px;
+  background: var(--surface0);
+}
 .hbatch-header {
   display: flex;
   align-items: flex-start;

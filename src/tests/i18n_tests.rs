@@ -380,6 +380,7 @@ const ALL_KEYS: &[&str] = &[
     "hgroups_delete",
     "hgroups_delete_confirm",
     "hgroups_remove",
+    "hgroups_new_group",
     "hgroups_all_devices",
     "hgroups_groups_header",
     "hgroups_empty",

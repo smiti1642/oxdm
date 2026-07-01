@@ -397,6 +397,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_delete" => "Удалить группу",
         "hgroups_delete_confirm" => "Удалить группу «{name}»? Сами устройства не затрагиваются.",
         "hgroups_remove" => "Убрать из группы",
+        "hgroups_new_group" => "Новая группа",
         "hgroups_all_devices" => "Все устройства",
         "hgroups_groups_header" => "Группы",
         "hgroups_empty" => "Групп пока нет.",

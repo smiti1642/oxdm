@@ -397,6 +397,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_delete" => "刪除群組",
         "hgroups_delete_confirm" => "確定刪除群組「{name}」?裝置本身不受影響。",
         "hgroups_remove" => "從群組移除",
+        "hgroups_new_group" => "新群組",
         "hgroups_all_devices" => "所有裝置",
         "hgroups_groups_header" => "群組",
         "hgroups_empty" => "尚無群組。",
