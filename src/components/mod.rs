@@ -25,7 +25,7 @@ pub use dialog::ConfirmDialogModal;
 pub use dialog_overlay::DialogOverlay;
 pub use edit_device_dialog::EditDeviceDialog;
 pub use health_group_dialogs::{
-    AddToGroupDialog, GroupCredentialsDialog, GroupDeviceCredentialsDialog,
+    AddToGroupDialog, GroupCredentialsDialog, GroupDeviceCredentialsDialog, RenameGroupDialog,
 };
 pub use icon::{Icon, LensBrand};
 pub use log_viewer::LogViewer;

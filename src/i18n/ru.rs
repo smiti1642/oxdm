@@ -390,6 +390,13 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── HealthCheck groups ──────────────────────────────────────────────
         "ctx_add_to_group" => "Добавить в список HealthCheck",
+        "devtab_groups" => "Группы",
+        "hgroups_add_hint" => "Щёлкните устройство правой кнопкой, чтобы добавить его в группу.",
+        "hgroups_rename" => "Переименовать",
+        "hgroups_rename_title" => "Переименовать группу",
+        "hgroups_delete" => "Удалить группу",
+        "hgroups_delete_confirm" => "Удалить группу «{name}»? Сами устройства не затрагиваются.",
+        "hgroups_remove" => "Убрать из группы",
         "hgroups_all_devices" => "Все устройства",
         "hgroups_groups_header" => "Группы",
         "hgroups_empty" => "Групп пока нет.",

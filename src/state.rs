@@ -62,6 +62,17 @@ impl Locale {
 pub enum DeviceListTab {
     Discovered,
     Manual,
+    Groups,
+}
+
+/// Which target the Health Overview is showing — shared between the sidebar
+/// Groups tab (which selects it) and the Health view (which renders it).
+#[derive(Clone, Debug, PartialEq)]
+pub enum HealthListSel {
+    /// The dynamic, filterable list over all live devices.
+    AllDevices,
+    /// A saved group, by its stable id.
+    Group(String),
 }
 
 // ── View ────────────────────────────────────────────────────────────────────
@@ -270,6 +281,9 @@ pub struct Ctx {
     pub global_credentials: Signal<Credentials>,
     /// Persisted HealthCheck groups (device references + per-group credentials).
     pub health_groups: Signal<Vec<HealthGroup>>,
+    /// Which target the Health Overview shows (All devices / a specific group).
+    /// Set by the sidebar Groups tab and the topbar Health button.
+    pub health_list: Signal<HealthListSel>,
     /// Currently selected media profile token (for NVT operations).
     pub selected_profile: Signal<Option<String>>,
     /// Persist tracing output to disk. Toggled in the About dialog,

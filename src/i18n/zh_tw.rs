@@ -390,6 +390,13 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── HealthCheck groups ──────────────────────────────────────────────
         "ctx_add_to_group" => "加入 HealthCheck 清單",
+        "devtab_groups" => "群組",
+        "hgroups_add_hint" => "在裝置上按右鍵即可加入群組。",
+        "hgroups_rename" => "重新命名",
+        "hgroups_rename_title" => "群組重新命名",
+        "hgroups_delete" => "刪除群組",
+        "hgroups_delete_confirm" => "確定刪除群組「{name}」?裝置本身不受影響。",
+        "hgroups_remove" => "從群組移除",
         "hgroups_all_devices" => "所有裝置",
         "hgroups_groups_header" => "群組",
         "hgroups_empty" => "尚無群組。",

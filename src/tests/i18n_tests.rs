@@ -373,6 +373,13 @@ const ALL_KEYS: &[&str] = &[
     "hbatch_export_nothing",
     // HealthCheck groups
     "ctx_add_to_group",
+    "devtab_groups",
+    "hgroups_add_hint",
+    "hgroups_rename",
+    "hgroups_rename_title",
+    "hgroups_delete",
+    "hgroups_delete_confirm",
+    "hgroups_remove",
     "hgroups_all_devices",
     "hgroups_groups_header",
     "hgroups_empty",

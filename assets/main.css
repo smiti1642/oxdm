@@ -2039,6 +2039,44 @@ a      { color: var(--blue); text-decoration: none; }
   align-items: center;
   gap: 8px;
 }
+/* Sidebar Groups tab */
+.groups-sidebar {
+  padding: 4px;
+  gap: 2px;
+}
+.group-sb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--subtext0);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.group-sb-item:hover { background: var(--surface0); }
+.group-sb-item--active {
+  background: var(--surface0);
+  color: var(--text);
+  font-weight: 600;
+}
+.group-sb-icon { display: flex; color: var(--overlay1); }
+.group-sb-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-groups-hint {
+  font-size: 11px;
+  color: var(--overlay0);
+  font-style: italic;
+  padding: 4px 8px;
+}
 .hbatch-header {
   display: flex;
   align-items: flex-start;

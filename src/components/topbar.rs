@@ -36,7 +36,11 @@ pub fn Topbar() -> Element {
                     title: i18n::t(locale, "hbatch_title"),
                     onclick: {
                         let mut view_sig = ctx.view;
-                        move |_| view_sig.set(View::HealthOverview)
+                        let mut health_list = ctx.health_list;
+                        move |_| {
+                            health_list.set(crate::state::HealthListSel::AllDevices);
+                            view_sig.set(View::HealthOverview);
+                        }
                     },
                     Icon { name: "activity", size: 16 }
                 }

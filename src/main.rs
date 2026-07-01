@@ -165,6 +165,7 @@ fn App() -> Element {
         dialog: use_signal(|| None),
         global_credentials: use_signal(|| global_creds),
         health_groups: use_signal(|| saved_groups),
+        health_list: use_signal(|| crate::state::HealthListSel::AllDevices),
         selected_profile: use_signal(|| None),
         keyboard_action: use_signal(|| None),
         log_to_file: use_signal(|| cfg.log_to_file),

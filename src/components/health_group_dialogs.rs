@@ -284,3 +284,67 @@ pub fn GroupDeviceCredentialsDialog(open: Signal<bool>, group_id: String, addr: 
         }
     }
 }
+
+/// Rename a group. Render with `key: "{group_id}"` so it re-seeds per target.
+#[component]
+pub fn RenameGroupDialog(open: Signal<bool>, group_id: String) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+
+    let current = ctx
+        .health_groups
+        .peek()
+        .iter()
+        .find(|g| g.id == group_id)
+        .map(|g| g.name.clone())
+        .unwrap_or_default();
+    let mut name = use_signal(|| current.clone());
+
+    if !*open.read() {
+        return rsx! {};
+    }
+
+    let mut open_sig = open;
+    let gid = group_id.clone();
+
+    rsx! {
+        DialogOverlay {
+            on_close: move |_| open_sig.set(false),
+            inner_class: "dialog".to_string(),
+            div { class: "dialog-header",
+                span { class: "dialog-title", {i18n::t(locale, "hgroups_rename_title")} }
+            }
+            div { class: "dialog-body",
+                input {
+                    class: "form-input",
+                    r#type: "text",
+                    placeholder: i18n::t(locale, "hgroups_new_group_placeholder"),
+                    value: "{name}",
+                    oninput: move |e| name.set(e.value()),
+                }
+            }
+            div { class: "dialog-footer",
+                button {
+                    class: "btn btn-md btn-ghost",
+                    onclick: move |_| open_sig.set(false),
+                    {i18n::t(locale, "btn_cancel")}
+                }
+                button {
+                    class: "btn btn-md btn-primary",
+                    onclick: move |_| {
+                        let n = name.peek().trim().to_string();
+                        if !n.is_empty() {
+                            let mut hg = ctx.health_groups;
+                            let mut groups = hg.write();
+                            if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
+                                g.name = n;
+                            }
+                        }
+                        open_sig.set(false);
+                    },
+                    {i18n::t(locale, "btn_save")}
+                }
+            }
+        }
+    }
+}

@@ -33,14 +33,9 @@ const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v1";
 
 // ── List selection + filters ────────────────────────────────────────────────
 
-/// Which list the right panel is showing.
-#[derive(Clone, PartialEq)]
-enum ListSel {
-    /// The dynamic, filterable list over all live devices.
-    AllDevices,
-    /// A saved group, by its stable id.
-    Group(String),
-}
+// The selected list now lives in `Ctx.health_list` (set by the sidebar Groups
+// tab / topbar); alias the shared enum so the rest of this module reads cleanly.
+use crate::state::HealthListSel as ListSel;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SourceFilter {
@@ -98,7 +93,11 @@ struct GroupRow {
     display_addr: String,
     offline: bool,
     cred_badge: &'static str,
+    /// Live device addr — results/creds lookup (empty when offline).
     addr: String,
+    /// Persisted ref identity, for removal from the group.
+    ref_endpoint: String,
+    ref_addr: String,
 }
 
 // ── Per-device run state ────────────────────────────────────────────────────
@@ -180,7 +179,7 @@ pub fn HealthOverviewView() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    let mut selected_list = use_signal(|| ListSel::AllDevices);
+    let selected_list = ctx.health_list;
     let mut source_filter = use_signal(|| SourceFilter::All);
     let mut auth_filter = use_signal(|| AuthFilter::LoggedIn);
     let mut selected = use_signal(HashSet::<String>::new);
@@ -413,6 +412,8 @@ pub fn HealthOverviewView() -> Element {
                         offline: false,
                         cred_badge: cred_badge_key(ctx.group_cred_source(g, d)),
                         addr: d.addr.clone(),
+                        ref_endpoint: r.endpoint.clone(),
+                        ref_addr: r.addr.clone(),
                     },
                     None => GroupRow {
                         name: r.name.clone(),
@@ -420,6 +421,8 @@ pub fn HealthOverviewView() -> Element {
                         offline: true,
                         cred_badge: "",
                         addr: String::new(),
+                        ref_endpoint: r.endpoint.clone(),
+                        ref_addr: r.addr.clone(),
                     },
                 })
                 .collect()
@@ -428,34 +431,6 @@ pub fn HealthOverviewView() -> Element {
 
     rsx! {
         div { class: "hbatch-view",
-            // ── Left: lists column ──────────────────────────────────────────
-            div { class: "hbatch-lists",
-                button {
-                    class: if matches!(list, ListSel::AllDevices) { "hbatch-list-item hbatch-list-item--active" } else { "hbatch-list-item" },
-                    onclick: move |_| selected_list.set(ListSel::AllDevices),
-                    Icon { name: "activity", size: 14 }
-                    {i18n::t(locale, "hgroups_all_devices")}
-                }
-                div { class: "hbatch-groups-header", {i18n::t(locale, "hgroups_groups_header")} }
-                if groups.is_empty() {
-                    div { class: "hbatch-groups-empty", {i18n::t(locale, "hgroups_empty")} }
-                } else {
-                    for (i , g) in groups.iter().enumerate() {
-                        button {
-                            key: "{i}",
-                            class: if matches!(&list, ListSel::Group(gid) if *gid == g.id) { "hbatch-list-item hbatch-list-item--active" } else { "hbatch-list-item" },
-                            onclick: {
-                                let id = g.id.clone();
-                                move |_| selected_list.set(ListSel::Group(id.clone()))
-                            },
-                            Icon { name: "folder", size: 14 }
-                            {format!("{} ({})", g.name, g.devices.len())}
-                        }
-                    }
-                }
-            }
-
-            // ── Right: panel ────────────────────────────────────────────────
             div { class: "hbatch-panel",
                 div { class: "hbatch-header",
                     div { class: "hbatch-header-text",
@@ -572,6 +547,21 @@ pub fn HealthOverviewView() -> Element {
                                         open.set(true);
                                     }
                                 },
+                                show_remove: true,
+                                on_remove: {
+                                    let ep = row.ref_endpoint.clone();
+                                    let ra = row.ref_addr.clone();
+                                    let gid = active_group_id.clone();
+                                    let mut hg = ctx.health_groups;
+                                    move |_| {
+                                        let mut groups = hg.write();
+                                        if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
+                                            g.devices.retain(|r| {
+                                                !((!ep.is_empty() && r.endpoint == ep) || r.addr == ra)
+                                            });
+                                        }
+                                    }
+                                },
                             }
                         }
                     }
@@ -609,6 +599,8 @@ pub fn HealthOverviewView() -> Element {
                                     }
                                 },
                                 on_key: move |_| {},
+                                show_remove: false,
+                                on_remove: move |_| {},
                             }
                         }
                     }
@@ -641,9 +633,11 @@ fn DeviceRow(
     offline: bool,
     cred_badge: String,
     show_key: bool,
+    show_remove: bool,
     state: Option<RunState>,
     on_toggle: EventHandler<()>,
     on_key: EventHandler<()>,
+    on_remove: EventHandler<()>,
 ) -> Element {
     rsx! {
         div { class: if offline { "hbatch-row hbatch-row--offline" } else { "hbatch-row" },
@@ -668,6 +662,14 @@ fn DeviceRow(
                     class: "btn btn-ghost btn-sm hbatch-key-btn",
                     onclick: move |_| on_key.call(()),
                     Icon { name: "key", size: 12 }
+                }
+            }
+            if show_remove {
+                button {
+                    class: "btn btn-ghost btn-sm hbatch-key-btn",
+                    title: i18n::t(locale, "hgroups_remove"),
+                    onclick: move |_| on_remove.call(()),
+                    Icon { name: "x", size: 12 }
                 }
             }
             div { class: "hbatch-outcome",

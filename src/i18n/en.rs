@@ -391,6 +391,13 @@ pub fn get(key: &str) -> Option<&'static str> {
 
         // ── HealthCheck groups ──────────────────────────────────────────────
         "ctx_add_to_group" => "Add to HealthCheck list",
+        "devtab_groups" => "Groups",
+        "hgroups_add_hint" => "Right-click a device to add it to a group.",
+        "hgroups_rename" => "Rename",
+        "hgroups_rename_title" => "Rename group",
+        "hgroups_delete" => "Delete group",
+        "hgroups_delete_confirm" => "Delete the group \"{name}\"? Devices themselves are not affected.",
+        "hgroups_remove" => "Remove from group",
         "hgroups_all_devices" => "All devices",
         "hgroups_groups_header" => "Groups",
         "hgroups_empty" => "No groups yet.",
