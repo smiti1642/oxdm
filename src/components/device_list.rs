@@ -3,12 +3,10 @@ use crate::{
     api,
     components::{
         AddDeviceDialog, AddToGroupDialog, ContextMenu, CtxMenuItem, EditDeviceDialog,
-        GlobalCredentialsDialog, Icon, RenameGroupDialog,
+        GlobalCredentialsDialog, Icon,
     },
     i18n,
-    state::{
-        AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, HealthListSel, ToastLevel, View,
-    },
+    state::{AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, ToastLevel, View},
     util,
 };
 use dioxus::prelude::*;
@@ -94,7 +92,6 @@ fn visible_device_indices(
             let tab_match = match tab {
                 DeviceListTab::Discovered => !d.manual,
                 DeviceListTab::Manual => d.manual,
-                DeviceListTab::Groups => false,
             };
             tab_match
                 && status.matches(d.auth_status)
@@ -394,7 +391,6 @@ pub fn DeviceList() -> Element {
             let tab_match = match active_tab {
                 DeviceListTab::Discovered => !d.manual,
                 DeviceListTab::Manual => d.manual,
-                DeviceListTab::Groups => false,
             };
             tab_match
                 && active_status.matches(d.auth_status)
@@ -431,7 +427,6 @@ pub fn DeviceList() -> Element {
         .iter()
         .filter(|d| d.manual && matches_filters(d))
         .count();
-    let group_count = ctx.health_groups.read().len();
 
     rsx! {
         aside { class: "sidebar",
@@ -469,14 +464,6 @@ pub fn DeviceList() -> Element {
                         span { class: "sidebar-tab-badge", "{manual_count}" }
                     }
                 }
-                button {
-                    class: if active_tab == DeviceListTab::Groups { "sidebar-tab sidebar-tab--active" } else { "sidebar-tab" },
-                    onclick: move |_| list_tab.set(DeviceListTab::Groups),
-                    {i18n::t(locale, "devtab_groups")}
-                    if group_count > 0 {
-                        span { class: "sidebar-tab-badge", "{group_count}" }
-                    }
-                }
             }
 
             div { class: "sidebar-search",
@@ -493,33 +480,28 @@ pub fn DeviceList() -> Element {
             // side-by-side selects. Resets and defaults are local state,
             // not persisted — users who want a specific view re-pick each
             // session. Keeps the UI discoverable without a hidden popup.
-            if active_tab != DeviceListTab::Groups {
-                div { class: "sidebar-filters",
-                    select {
-                        class: "sidebar-filter-select",
-                        title: i18n::t(locale, "filter_status_tooltip"),
-                        value: "{active_status.as_str()}",
-                        onchange: move |e| status_filter.set(StatusFilter::from_str(&e.value())),
-                        option { value: "all",     {i18n::t(locale, "filter_status_all")} }
-                        option { value: "ok",      {i18n::t(locale, "filter_status_ok")} }
-                        option { value: "failed",  {i18n::t(locale, "filter_status_failed")} }
-                        option { value: "unknown", {i18n::t(locale, "filter_status_unknown")} }
-                    }
-                    select {
-                        class: "sidebar-filter-select",
-                        title: i18n::t(locale, "filter_sort_tooltip"),
-                        value: "{active_sort.as_str()}",
-                        onchange: move |e| sort_by.set(SortBy::from_str(&e.value())),
-                        option { value: "default", {i18n::t(locale, "filter_sort_default")} }
-                        option { value: "name",    {i18n::t(locale, "filter_sort_name")} }
-                        option { value: "ip",      {i18n::t(locale, "filter_sort_ip")} }
-                    }
+            div { class: "sidebar-filters",
+                select {
+                    class: "sidebar-filter-select",
+                    title: i18n::t(locale, "filter_status_tooltip"),
+                    value: "{active_status.as_str()}",
+                    onchange: move |e| status_filter.set(StatusFilter::from_str(&e.value())),
+                    option { value: "all",     {i18n::t(locale, "filter_status_all")} }
+                    option { value: "ok",      {i18n::t(locale, "filter_status_ok")} }
+                    option { value: "failed",  {i18n::t(locale, "filter_status_failed")} }
+                    option { value: "unknown", {i18n::t(locale, "filter_status_unknown")} }
+                }
+                select {
+                    class: "sidebar-filter-select",
+                    title: i18n::t(locale, "filter_sort_tooltip"),
+                    value: "{active_sort.as_str()}",
+                    onchange: move |e| sort_by.set(SortBy::from_str(&e.value())),
+                    option { value: "default", {i18n::t(locale, "filter_sort_default")} }
+                    option { value: "name",    {i18n::t(locale, "filter_sort_name")} }
+                    option { value: "ip",      {i18n::t(locale, "filter_sort_ip")} }
                 }
             }
 
-            if active_tab == DeviceListTab::Groups {
-                GroupsSidebar {}
-            } else {
             div { class: "device-list",
                 if filtered.is_empty() {
                     div { class: "device-empty",
@@ -538,7 +520,6 @@ pub fn DeviceList() -> Element {
                                     rsx! { {i18n::t(locale, "no_manual_devices")} }
                                 }
                             }
-                            DeviceListTab::Groups => rsx! {},
                         }
                     }
                 }
@@ -560,7 +541,6 @@ pub fn DeviceList() -> Element {
                         picker_device_idx,
                     }
                 }
-            }
             }
 
             // ── Footer: context-dependent buttons ───────────────────────────
@@ -588,9 +568,6 @@ pub fn DeviceList() -> Element {
                             {i18n::t(locale, "btn_add_label")}
                         }
                     },
-                    DeviceListTab::Groups => rsx! {
-                        span { class: "sidebar-groups-hint", {i18n::t(locale, "hgroups_add_hint")} }
-                    },
                 }
             }
         }
@@ -599,112 +576,6 @@ pub fn DeviceList() -> Element {
         GlobalCredentialsDialog { open: creds_open }
         EditDeviceDialog { open: edit_dialog_open, device_index: edit_device_idx }
         AddToGroupDialog { open: picker_open, device_index: picker_device_idx }
-    }
-}
-
-/// The sidebar's Groups tab: an "All devices" entry plus one row per saved
-/// HealthCheck group. Clicking navigates to the Health Overview scoped to that
-/// target; right-clicking a group offers rename / delete.
-#[component]
-fn GroupsSidebar() -> Element {
-    let ctx = use_context::<Ctx>();
-    let locale = *ctx.locale.read();
-    let mut ctx_menu: Signal<Option<(f64, f64, String)>> = use_signal(|| None);
-    let rename_open = use_signal(|| false);
-    let mut rename_id = use_signal(String::new);
-
-    let groups = ctx.health_groups.read().clone();
-    let current = ctx.health_list.read().clone();
-    let is_all = matches!(current, HealthListSel::AllDevices);
-
-    let go = move |sel: HealthListSel| {
-        ctx.health_list.clone().set(sel);
-        ctx.view.clone().set(View::HealthOverview);
-    };
-
-    rsx! {
-        div { class: "device-list groups-sidebar",
-            button {
-                class: if is_all { "group-sb-item group-sb-item--active" } else { "group-sb-item" },
-                onclick: move |_| go(HealthListSel::AllDevices),
-                span { class: "group-sb-icon", Icon { name: "activity", size: 14 } }
-                {i18n::t(locale, "hgroups_all_devices")}
-            }
-            for (i, g) in groups.iter().enumerate() {
-                button {
-                    key: "{i}",
-                    class: if matches!(&current, HealthListSel::Group(id) if *id == g.id) { "group-sb-item group-sb-item--active" } else { "group-sb-item" },
-                    onclick: {
-                        let gid = g.id.clone();
-                        move |_| go(HealthListSel::Group(gid.clone()))
-                    },
-                    oncontextmenu: {
-                        let gid = g.id.clone();
-                        move |e: Event<MouseData>| {
-                            e.prevent_default();
-                            let c = e.data().client_coordinates();
-                            ctx_menu.set(Some((c.x, c.y, gid.clone())));
-                        }
-                    },
-                    span { class: "group-sb-icon", Icon { name: "folder", size: 14 } }
-                    span { class: "group-sb-name", {format!("{} ({})", g.name, g.devices.len())} }
-                }
-            }
-        }
-
-        if let Some((mx, my, gid)) = ctx_menu.read().clone() {
-            ContextMenu {
-                x: mx,
-                y: my,
-                on_close: move |_| ctx_menu.set(None),
-                CtxMenuItem {
-                    icon: "edit-2",
-                    label: i18n::t(locale, "hgroups_rename"),
-                    on_click: {
-                        let gid = gid.clone();
-                        move |_| {
-                            ctx_menu.set(None);
-                            rename_id.set(gid.clone());
-                            rename_open.clone().set(true);
-                        }
-                    },
-                }
-                CtxMenuItem {
-                    icon: "trash-2",
-                    label: i18n::t(locale, "hgroups_delete"),
-                    danger: true,
-                    on_click: {
-                        let gid = gid.clone();
-                        move |_| {
-                            ctx_menu.set(None);
-                            let gid = gid.clone();
-                            let name = ctx
-                                .health_groups
-                                .peek()
-                                .iter()
-                                .find(|g| g.id == gid)
-                                .map(|g| g.name.clone())
-                                .unwrap_or_default();
-                            ctx.dialog.clone().set(Some(ConfirmDialog {
-                                title: i18n::t(locale, "hgroups_delete").to_string(),
-                                message: i18n::t(locale, "hgroups_delete_confirm").replace("{name}", &name),
-                                confirm_label: i18n::t(locale, "btn_confirm").to_string(),
-                                cancel_label: i18n::t(locale, "btn_cancel").to_string(),
-                                dangerous: true,
-                                on_confirm: EventHandler::new(move |_| {
-                                    ctx.health_groups.clone().write().retain(|g| g.id != gid);
-                                    if matches!(&*ctx.health_list.peek(), HealthListSel::Group(id) if *id == gid) {
-                                        ctx.health_list.clone().set(HealthListSel::AllDevices);
-                                    }
-                                }),
-                            }));
-                        }
-                    },
-                }
-            }
-        }
-
-        RenameGroupDialog { open: rename_open, group_id: rename_id.read().clone() }
     }
 }
 

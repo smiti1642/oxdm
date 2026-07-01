@@ -62,7 +62,6 @@ impl Locale {
 pub enum DeviceListTab {
     Discovered,
     Manual,
-    Groups,
 }
 
 /// Which target the Health Overview is showing — shared between the sidebar

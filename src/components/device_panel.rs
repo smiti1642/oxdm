@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 use crate::api;
-use crate::components::Icon;
+use crate::components::{ContextMenu, CtxMenuItem, Icon, RenameGroupDialog};
 use crate::i18n;
-use crate::state::{Credentials, Ctx, View};
+use crate::state::{ConfirmDialog, Credentials, Ctx, HealthListSel, View};
 use dioxus::prelude::*;
 use tracing::{debug, warn};
 
@@ -10,6 +10,13 @@ use tracing::{debug, warn};
 pub fn DevicePanel() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
+
+    // Health mode: this middle pane becomes the group-navigation "basket"
+    // (All devices + saved groups) instead of the selected device's nav.
+    if *ctx.view.read() == View::HealthOverview {
+        return rsx! { HealthGroupsPanel {} };
+    }
+
     let devices = ctx.devices.read();
     let selected = *ctx.selected.read();
 
@@ -53,6 +60,126 @@ pub fn DevicePanel() -> Element {
                 ProfileThumbnails {}
             }
         }
+    }
+}
+
+/// Health mode's middle pane: "All devices" + one entry per saved group.
+/// Clicking sets `ctx.health_list` (the Health Overview reads it); right-click
+/// a group to rename / delete.
+#[component]
+fn HealthGroupsPanel() -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    let mut ctx_menu: Signal<Option<(f64, f64, String)>> = use_signal(|| None);
+    let rename_open = use_signal(|| false);
+    let mut rename_id = use_signal(String::new);
+
+    let groups = ctx.health_groups.read().clone();
+    let current = ctx.health_list.read().clone();
+    let is_all = matches!(current, HealthListSel::AllDevices);
+
+    let go = move |sel: HealthListSel| ctx.health_list.clone().set(sel);
+
+    rsx! {
+        div { class: "device-panel",
+            div { class: "panel-header",
+                div { class: "panel-device-icon",
+                    Icon { name: "activity", size: 26 }
+                }
+                div { class: "panel-device-name", {i18n::t(locale, "hbatch_title")} }
+            }
+
+            div { class: "panel-section",
+                button {
+                    class: if is_all { "group-sb-item group-sb-item--active" } else { "group-sb-item" },
+                    onclick: move |_| go(HealthListSel::AllDevices),
+                    span { class: "group-sb-icon", Icon { name: "activity", size: 14 } }
+                    {i18n::t(locale, "hgroups_all_devices")}
+                }
+            }
+
+            div { class: "panel-section",
+                div { class: "panel-section-title", {i18n::t(locale, "devtab_groups")} }
+                if groups.is_empty() {
+                    div { class: "sidebar-groups-hint", {i18n::t(locale, "hgroups_add_hint")} }
+                } else {
+                    for (i , g) in groups.iter().enumerate() {
+                        button {
+                            key: "{i}",
+                            class: if matches!(&current, HealthListSel::Group(id) if *id == g.id) { "group-sb-item group-sb-item--active" } else { "group-sb-item" },
+                            onclick: {
+                                let gid = g.id.clone();
+                                move |_| go(HealthListSel::Group(gid.clone()))
+                            },
+                            oncontextmenu: {
+                                let gid = g.id.clone();
+                                move |e: Event<MouseData>| {
+                                    e.prevent_default();
+                                    let c = e.data().client_coordinates();
+                                    ctx_menu.set(Some((c.x, c.y, gid.clone())));
+                                }
+                            },
+                            span { class: "group-sb-icon", Icon { name: "folder", size: 14 } }
+                            span { class: "group-sb-name", {format!("{} ({})", g.name, g.devices.len())} }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some((mx, my, gid)) = ctx_menu.read().clone() {
+            ContextMenu {
+                x: mx,
+                y: my,
+                on_close: move |_| ctx_menu.set(None),
+                CtxMenuItem {
+                    icon: "edit-2",
+                    label: i18n::t(locale, "hgroups_rename"),
+                    on_click: {
+                        let gid = gid.clone();
+                        move |_| {
+                            ctx_menu.set(None);
+                            rename_id.set(gid.clone());
+                            rename_open.clone().set(true);
+                        }
+                    },
+                }
+                CtxMenuItem {
+                    icon: "trash-2",
+                    label: i18n::t(locale, "hgroups_delete"),
+                    danger: true,
+                    on_click: {
+                        let gid = gid.clone();
+                        move |_| {
+                            ctx_menu.set(None);
+                            let gid = gid.clone();
+                            let name = ctx
+                                .health_groups
+                                .peek()
+                                .iter()
+                                .find(|g| g.id == gid)
+                                .map(|g| g.name.clone())
+                                .unwrap_or_default();
+                            ctx.dialog.clone().set(Some(ConfirmDialog {
+                                title: i18n::t(locale, "hgroups_delete").to_string(),
+                                message: i18n::t(locale, "hgroups_delete_confirm").replace("{name}", &name),
+                                confirm_label: i18n::t(locale, "btn_confirm").to_string(),
+                                cancel_label: i18n::t(locale, "btn_cancel").to_string(),
+                                dangerous: true,
+                                on_confirm: EventHandler::new(move |_| {
+                                    ctx.health_groups.clone().write().retain(|g| g.id != gid);
+                                    if matches!(&*ctx.health_list.peek(), HealthListSel::Group(id) if *id == gid) {
+                                        ctx.health_list.clone().set(HealthListSel::AllDevices);
+                                    }
+                                }),
+                            }));
+                        }
+                    },
+                }
+            }
+        }
+
+        RenameGroupDialog { open: rename_open, group_id: rename_id.read().clone() }
     }
 }
 
