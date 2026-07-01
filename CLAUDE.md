@@ -3,7 +3,7 @@
 ## Project overview
 
 `oxdm` is a Dioxus desktop app for managing ONVIF IP cameras, built on top of
-`oxvif`. Single crate, no workspace. Desktop-only (Dioxus 0.7.5, wry window).
+`oxvif`. Single crate, no workspace. Desktop-only (Dioxus 0.7.9, wry window).
 
 ## Working principles
 

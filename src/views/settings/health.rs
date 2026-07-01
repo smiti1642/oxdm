@@ -320,7 +320,7 @@ fn row_message(c: &CheckResult) -> &str {
     }
 }
 
-fn verdict_class(v: &ProfileVerdict) -> &'static str {
+pub(crate) fn verdict_class(v: &ProfileVerdict) -> &'static str {
     match v {
         ProfileVerdict::Conformant => "health-pass",
         ProfileVerdict::Partial => "health-warn",
@@ -328,7 +328,7 @@ fn verdict_class(v: &ProfileVerdict) -> &'static str {
     }
 }
 
-fn verdict_label(locale: crate::state::Locale, v: &ProfileVerdict) -> &'static str {
+pub(crate) fn verdict_label(locale: crate::state::Locale, v: &ProfileVerdict) -> &'static str {
     match v {
         ProfileVerdict::Conformant => i18n::t(locale, "health_conformant"),
         ProfileVerdict::Partial => i18n::t(locale, "health_partial"),

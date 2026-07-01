@@ -9,11 +9,22 @@
 
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    if target_os == "windows" {
+    // dioxus-cli (`dx serve` / `dx build` / `dx bundle`) generates its own
+    // Windows resource (icon + VERSION) from the `[bundle] icon` set in
+    // Dioxus.toml and links it in. If we ALSO embed one here via winresource,
+    // the linker aborts with `CVT1100: duplicate resource` / `LNK1123`. So only
+    // embed the icon ourselves for plain cargo builds — the `cargo install`
+    // path from crates.io, which is the only route that would otherwise ship an
+    // icon-less exe. Under dx, let the CLI own the resource. `DX_RUSTC` is set
+    // by dioxus-cli in the build environment (unlike `DIOXUS_CLI_ENABLED`,
+    // which it only sets when *running* the app, not at build time).
+    let under_dx = std::env::var_os("DX_RUSTC").is_some();
+    if target_os == "windows" && !under_dx {
         embed_windows_icon();
     }
     println!("cargo:rerun-if-changed=assets/icons/icon.png");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=DX_RUSTC");
 }
 
 fn embed_windows_icon() {

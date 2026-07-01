@@ -33,9 +33,9 @@ const ICON_PNG: &[u8] = include_bytes!("../assets/icons/icon.png");
 /// the PNG is in an unexpected colour format — the rest of the app keeps
 /// working with the default icon.
 fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
-    let decoder = png::Decoder::new(ICON_PNG);
+    let decoder = png::Decoder::new(std::io::Cursor::new(ICON_PNG));
     let mut reader = decoder.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
     let rgba = match info.color_type {
         png::ColorType::Rgba => buf,
@@ -137,6 +137,7 @@ fn App() -> Element {
     let cfg = use_hook(persist::load_config);
     let (global_creds, creds_map) = use_hook(|| persist::load_all_credentials(&cfg));
     let saved_devices = use_hook(|| persist::load_devices(&creds_map));
+    let saved_groups = use_hook(|| persist::load_health_groups(&creds_map));
 
     // Install both video backends. MJPEG is the always-on default;
     // go2rtc is optional and lazy — its `new()` only locates the binary,
@@ -163,6 +164,7 @@ fn App() -> Element {
         next_toast_id: use_signal(|| 0),
         dialog: use_signal(|| None),
         global_credentials: use_signal(|| global_creds),
+        health_groups: use_signal(|| saved_groups),
         selected_profile: use_signal(|| None),
         keyboard_action: use_signal(|| None),
         log_to_file: use_signal(|| cfg.log_to_file),
@@ -191,11 +193,24 @@ fn App() -> Element {
         device_ops::reverify_auth(ctx, ctx.devices);
     });
 
-    // Auto-save credentials + devices when either changes (single keychain write)
+    // Auto-save credentials + devices when either changes (single keychain
+    // write). `groups` is `.peek()`d (included in the blob, not subscribed) so a
+    // device/cred change re-emits group creds too and can't clobber them.
     use_effect(move || {
         let creds = ctx.global_credentials.read().clone();
-        let devices = ctx.devices.read();
-        persist::save_credentials_and_devices(&creds, &devices);
+        let devices = ctx.devices.read().clone();
+        let groups = ctx.health_groups.peek().clone();
+        persist::save_credentials_and_devices(&creds, &devices, &groups);
+    });
+
+    // Auto-save health groups when they change. Symmetrically, `creds`/`devices`
+    // are `.peek()`d so a group change re-emits the full keychain blob (device +
+    // global creds included) — neither effect erases the other's keys.
+    use_effect(move || {
+        let groups = ctx.health_groups.read().clone();
+        let creds = ctx.global_credentials.peek().clone();
+        let devices = ctx.devices.peek().clone();
+        persist::save_health_groups(&creds, &devices, &groups);
     });
 
     let theme_class = ctx.theme.read().css_class();

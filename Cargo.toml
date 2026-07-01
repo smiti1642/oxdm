@@ -25,8 +25,8 @@ name = "oxdm"
 path = "src/main.rs"
 
 [dependencies]
-dioxus = { version = "=0.7.5", features = ["desktop", "router"] }
-oxvif = { version = "0.9.9", features = ["health"] }
+dioxus = { version = "=0.7.9", features = ["desktop", "router"] }
+oxvif = { version = "0.10.0", path = "../oxvif", features = ["health"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -38,18 +38,18 @@ digest_auth = "0.3"
 percent-encoding = "2"
 reqwest = "0.13"
 serde_json = "1"
-toml = "0.8"
+toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
-rfd = "0.15"
-opener = "0.7"
+rfd = "0.17"
+opener = "0.8"
 async-trait = "0.1"
 time = { version = "0.3", features = ["local-offset"] }
 # PNG decode for the runtime window icon — `tao::window::Icon::from_rgba`
 # wants raw RGBA, and we keep the master `assets/icons/icon.png` as the
 # only source of truth so `dx` can also use it for bundling.
-png = "0.17"
+png = "0.18"
 
 [build-dependencies]
 # Build-time only — used by build.rs on Windows to (1) generate a multi-
@@ -57,14 +57,14 @@ png = "0.17"
 # into the .exe via the Windows resource section, so Explorer / shortcuts
 # pick it up without going through MSI. No-op on non-Windows targets.
 image = { version = "0.25", default-features = false, features = ["png"] }
-ico = "0.4"
+ico = "0.5"
 winresource = "0.1"
 
 [dev-dependencies]
 # Pull in oxvif's mock-server feature so tests/healthtab_smoke.rs can
 # drive a real bound-port ONVIF mock without needing a camera. Test
 # builds only; the release binary doesn't carry axum.
-oxvif = { version = "0.9.9", features = ["mock-server", "health"] }
+oxvif = { version = "0.10.0", path = "../oxvif", features = ["mock-server", "health"] }
 
 [profile.wasm-dev]
 inherits = "dev"

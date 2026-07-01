@@ -222,7 +222,7 @@ fn CredentialToggle(
     password: Signal<String>,
     locale: crate::state::Locale,
 ) -> Element {
-    use crate::components::Icon;
+    use crate::components::{CredentialsFields, Icon};
     let is_open = *show.read();
 
     rsx! {
@@ -238,23 +238,7 @@ fn CredentialToggle(
             {i18n::t(locale, "add_device_custom_creds")}
         }
         if is_open {
-            div { class: "form-field",
-                label { class: "form-label", {i18n::t(locale, "cred_username")} }
-                input {
-                    class: "form-input",
-                    r#type: "text",
-                    placeholder: i18n::t(locale, "cred_username"),
-                    value: "{username}",
-                    oninput: move |e| username.clone().set(e.value()),
-                }
-            }
-            div { class: "form-field",
-                label { class: "form-label", {i18n::t(locale, "cred_password")} }
-                PasswordField {
-                    value: password,
-                    placeholder: i18n::t(locale, "cred_password"),
-                }
-            }
+            CredentialsFields { username, password, locale }
         }
     }
 }

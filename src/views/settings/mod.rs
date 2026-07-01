@@ -1,4 +1,4 @@
-mod health;
+pub(crate) mod health;
 pub(crate) mod identification;
 mod maintenance;
 mod network;

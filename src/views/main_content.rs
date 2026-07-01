@@ -3,6 +3,7 @@ use crate::components::{Icon, LensBrand};
 use crate::i18n;
 use crate::state::{Credentials, Ctx, SettingsTab, View};
 use crate::views::events::EventsView;
+use crate::views::health_overview::HealthOverviewView;
 use crate::views::imaging::ImagingView;
 use crate::views::io_control::IoControlView;
 use crate::views::live_video::LiveVideoView;
@@ -48,6 +49,7 @@ pub fn MainContent() -> Element {
         main { class: "main-content",
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
+                View::HealthOverview  => rsx! { HealthOverviewView {} },
                 View::DeviceSettings  => rsx! { DeviceSettingsView { key: "{addr_key}", addr, creds } },
                 View::LiveVideo       => rsx! { LiveVideoView      { key: "{addr_key}", addr, creds } },
                 View::ImagingSettings => rsx! { ImagingView        { key: "{addr_key}", addr, creds } },

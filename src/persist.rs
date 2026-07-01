@@ -4,7 +4,7 @@
 //! - `~/.oxdm/devices.toml`: manually added devices (per-device creds in keychain)
 //! - System keychain: global credentials + per-device credential overrides
 
-use crate::state::{Credentials, DeviceEntry, Locale, Theme};
+use crate::state::{Credentials, DeviceEntry, HealthGroup, Locale, Theme};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -54,6 +54,15 @@ pub struct DeviceRecord {
     pub has_credentials: bool,
 }
 
+/// `healthcheck.toml` wrapper. `HealthGroup`'s credential fields are
+/// `#[serde(skip)]`, so this file never contains secrets (they live in the
+/// keychain blob) — same guarantee as `devices.toml`.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct HealthGroupsFile {
+    #[serde(default, rename = "group")]
+    groups: Vec<HealthGroup>,
+}
+
 // ── Paths ───────────────────────────────────────────────────────────────────
 
 fn oxdm_dir() -> Option<PathBuf> {
@@ -66,6 +75,10 @@ fn config_path() -> Option<PathBuf> {
 
 fn devices_path() -> Option<PathBuf> {
     oxdm_dir().map(|d| d.join("devices.toml"))
+}
+
+fn healthcheck_path() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("healthcheck.toml"))
 }
 
 fn ensure_dir() {
@@ -201,6 +214,59 @@ fn keyring_save_all(map: &CredsMap) {
         }
         Err(e) => warn!(error = %e, "Keychain entry creation failed"),
     }
+}
+
+// Group credentials share the single keychain blob via reserved key prefixes.
+// Keys are only ever constructed for lookup, never split — and manual-device
+// addrs are http(s) URLs, never `group:`-prefixed, so there's no collision.
+fn group_cred_key(id: &str) -> String {
+    format!("group:{id}")
+}
+
+fn group_device_cred_key(id: &str, addr: &str) -> String {
+    format!("group:{id}:{addr}")
+}
+
+/// The single source of truth for the keychain blob: global creds + manual
+/// per-device creds + per-group and per-device-in-group creds. Every keychain
+/// write goes through here so no save path can clobber another's keys — a
+/// deleted group simply stops contributing its `group:<id>*` keys.
+fn build_creds_map(
+    global: &Credentials,
+    devices: &[DeviceEntry],
+    groups: &[HealthGroup],
+) -> CredsMap {
+    let mut map = CredsMap::new();
+    if !global.username.is_empty() {
+        map.insert(
+            CREDS_KEY_GLOBAL.to_string(),
+            (global.username.clone(), global.password.clone()),
+        );
+    }
+    for d in devices.iter().filter(|d| d.manual) {
+        if let Some(c) = &d.credentials {
+            map.insert(d.addr.clone(), (c.username.clone(), c.password.clone()));
+        }
+    }
+    for g in groups {
+        if let Some(c) = &g.credentials {
+            if !c.username.is_empty() {
+                map.insert(
+                    group_cred_key(&g.id),
+                    (c.username.clone(), c.password.clone()),
+                );
+            }
+        }
+        for (addr, c) in &g.device_credentials {
+            if !c.username.is_empty() {
+                map.insert(
+                    group_device_cred_key(&g.id, addr),
+                    (c.username.clone(), c.password.clone()),
+                );
+            }
+        }
+    }
+    map
 }
 
 // ── Load ────────────────────────────────────────────────────────────────────
@@ -345,42 +411,26 @@ pub fn save_config(theme: Theme, locale: Locale, log_to_file: bool, tls_strict: 
     }
 }
 
-/// Save all credentials (global + per-device) to a single keychain entry,
-/// and save manual device records to devices.toml.
-pub fn save_credentials_and_devices(global_creds: &Credentials, devices: &[DeviceEntry]) {
-    ensure_dir();
+/// Write the whole keychain blob from the complete app state. This is the ONLY
+/// keychain write path (besides the legacy migration in `load_all_credentials`)
+/// — both `save_credentials_and_devices` and `save_health_groups` funnel
+/// through it with the full `(global, devices, groups)` triple, so neither can
+/// erase the other's keys.
+fn save_keychain_blob(global: &Credentials, devices: &[DeviceEntry], groups: &[HealthGroup]) {
+    keyring_save_all(&build_creds_map(global, devices, groups));
+}
 
-    // Build a single credentials map for the keychain
-    let mut map: CredsMap = HashMap::new();
-
-    if !global_creds.username.is_empty() {
-        map.insert(
-            CREDS_KEY_GLOBAL.to_string(),
-            (global_creds.username.clone(), global_creds.password.clone()),
-        );
-    }
-
+fn write_devices_file(devices: &[DeviceEntry]) {
+    let Some(path) = devices_path() else { return };
     let records: Vec<DeviceRecord> = devices
         .iter()
         .filter(|d| d.manual)
-        .map(|d| {
-            let has_creds = d.credentials.is_some();
-            if let Some(c) = &d.credentials {
-                map.insert(d.addr.clone(), (c.username.clone(), c.password.clone()));
-            }
-            DeviceRecord {
-                name: d.name.clone(),
-                addr: d.addr.clone(),
-                has_credentials: has_creds,
-            }
+        .map(|d| DeviceRecord {
+            name: d.name.clone(),
+            addr: d.addr.clone(),
+            has_credentials: d.credentials.is_some(),
         })
         .collect();
-
-    // Single keychain write for all credentials
-    keyring_save_all(&map);
-
-    // Save devices.toml
-    let Some(path) = devices_path() else { return };
     let file = DevicesFile { devices: records };
     match toml::to_string_pretty(&file) {
         Ok(content) => {
@@ -392,6 +442,99 @@ pub fn save_credentials_and_devices(global_creds: &Credentials, devices: &[Devic
         }
         Err(e) => error!(error = %e, "Failed to serialize devices"),
     }
+}
+
+fn write_health_groups_file(groups: &[HealthGroup]) {
+    let Some(path) = healthcheck_path() else {
+        return;
+    };
+    let file = HealthGroupsFile {
+        groups: groups.to_vec(),
+    };
+    match toml::to_string_pretty(&file) {
+        Ok(content) => {
+            if let Err(e) = std::fs::write(&path, content) {
+                error!(error = %e, "Failed to write healthcheck.toml");
+            } else {
+                debug!("Saved {} health group(s)", file.groups.len());
+            }
+        }
+        Err(e) => error!(error = %e, "Failed to serialize health groups"),
+    }
+}
+
+/// Save all credentials (global + per-device + group) to the single keychain
+/// entry, and save manual device records to devices.toml. Takes `groups` so the
+/// rebuilt keychain blob keeps their creds (anti-clobber).
+pub fn save_credentials_and_devices(
+    global_creds: &Credentials,
+    devices: &[DeviceEntry],
+    groups: &[HealthGroup],
+) {
+    ensure_dir();
+    save_keychain_blob(global_creds, devices, groups);
+    write_devices_file(devices);
+}
+
+/// Save HealthCheck groups to healthcheck.toml, and re-emit the full keychain
+/// blob (so group creds land alongside global/device creds without clobbering).
+pub fn save_health_groups(
+    global_creds: &Credentials,
+    devices: &[DeviceEntry],
+    groups: &[HealthGroup],
+) {
+    ensure_dir();
+    save_keychain_blob(global_creds, devices, groups);
+    write_health_groups_file(groups);
+}
+
+/// Load persisted HealthCheck groups from healthcheck.toml, hydrating each
+/// group's credentials from the already-loaded keychain map (no extra keychain
+/// access). Returns an empty vec on missing / unparseable file.
+pub fn load_health_groups(creds_map: &CredsMap) -> Vec<HealthGroup> {
+    let Some(path) = healthcheck_path() else {
+        return Vec::new();
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            debug!("No healthcheck.toml found");
+            return Vec::new();
+        }
+    };
+    let file: HealthGroupsFile = match toml::from_str(&content) {
+        Ok(f) => f,
+        Err(e) => {
+            error!(error = %e, "Failed to parse healthcheck.toml");
+            return Vec::new();
+        }
+    };
+    let mut groups = file.groups;
+    for g in &mut groups {
+        if let Some((u, p)) = creds_map.get(&group_cred_key(&g.id)) {
+            g.credentials = Some(Credentials {
+                username: u.clone(),
+                password: p.clone(),
+            });
+        }
+        for r in &g.devices {
+            if let Some((u, p)) = creds_map.get(&group_device_cred_key(&g.id, &r.addr)) {
+                g.device_credentials.insert(
+                    r.addr.clone(),
+                    Credentials {
+                        username: u.clone(),
+                        password: p.clone(),
+                    },
+                );
+            }
+        }
+    }
+    info!(
+        count = groups.len(),
+        "Loaded health groups from {}",
+        path.display()
+    );
+    groups
 }
 
 // ── Conversions ─────────────────────────────────────────────────────────────

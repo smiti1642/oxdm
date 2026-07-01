@@ -2,6 +2,7 @@
 //! Reusable UI components used across multiple views.
 
 use crate::components::Icon;
+use crate::i18n;
 use dioxus::prelude::*;
 
 /// A key-value row for property tables.
@@ -11,6 +12,36 @@ pub fn PropRow(label: String, value: String) -> Element {
         tr {
             td { class: "prop-label", "{label}" }
             td { class: "prop-value", "{value}" }
+        }
+    }
+}
+
+/// A username text input + password field pair. Shared by the global,
+/// add-device, and HealthCheck-group credential dialogs so the markup isn't
+/// duplicated per call site.
+#[component]
+pub fn CredentialsFields(
+    username: Signal<String>,
+    password: Signal<String>,
+    locale: crate::state::Locale,
+) -> Element {
+    rsx! {
+        div { class: "form-field",
+            label { class: "form-label", {i18n::t(locale, "cred_username")} }
+            input {
+                class: "form-input",
+                r#type: "text",
+                placeholder: i18n::t(locale, "cred_username"),
+                value: "{username}",
+                oninput: move |e| username.clone().set(e.value()),
+            }
+        }
+        div { class: "form-field",
+            label { class: "form-label", {i18n::t(locale, "cred_password")} }
+            PasswordField {
+                value: password,
+                placeholder: i18n::t(locale, "cred_password"),
+            }
         }
     }
 }

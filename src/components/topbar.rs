@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::components::{AboutDialog, Icon, LogViewer};
 use crate::i18n;
-use crate::state::{Ctx, Theme};
+use crate::state::{Ctx, Theme, View};
 use dioxus::prelude::*;
 
 #[component]
@@ -31,6 +31,15 @@ pub fn Topbar() -> Element {
             }
             div { class: "topbar-center" }
             div { class: "topbar-right",
+                button {
+                    class: "icon-btn",
+                    title: i18n::t(locale, "hbatch_title"),
+                    onclick: {
+                        let mut view_sig = ctx.view;
+                        move |_| view_sig.set(View::HealthOverview)
+                    },
+                    Icon { name: "activity", size: 16 }
+                }
                 button {
                     class: "icon-btn",
                     title: i18n::t(locale, "tooltip_theme"),

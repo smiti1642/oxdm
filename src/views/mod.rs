@@ -1,4 +1,5 @@
 pub mod events;
+pub mod health_overview;
 pub mod imaging;
 pub mod io_control;
 pub mod live_video;
