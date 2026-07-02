@@ -198,6 +198,25 @@ struct ProfileGProbe {
     replay_error: Option<ExportError>,
 }
 
+/// Active Profile S probe — actually fetches a snapshot and pings the RTSP
+/// endpoint, since a returned stream/snapshot URI is no guarantee it serves.
+#[derive(Clone, PartialEq, Serialize, Default)]
+struct ProfileSProbe {
+    /// The snapshot URL returned bytes with an image content-type.
+    snapshot_ok: bool,
+    /// Size of the fetched snapshot in bytes (on success).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snapshot_bytes: Option<usize>,
+    /// Classified error from the snapshot fetch (on failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snapshot_error: Option<ExportError>,
+    /// The RTSP endpoint answered `OPTIONS` (200 or 401).
+    rtsp_ok: bool,
+    /// Classified error from the RTSP probe (on failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rtsp_error: Option<ExportError>,
+}
+
 #[derive(Clone, PartialEq, Serialize)]
 struct DeviceResult {
     target: String,
@@ -212,6 +231,7 @@ struct DeviceResult {
     timed_out: bool,
     report: Option<HealthReport>,
     profile_g_probe: ProfileGProbe,
+    profile_s_probe: ProfileSProbe,
 }
 
 impl DeviceResult {
@@ -551,6 +571,7 @@ pub fn HealthOverviewView() -> Element {
                         timed_out: true,
                         report: None,
                         profile_g_probe: ProfileGProbe::default(),
+                        profile_s_probe: ProfileSProbe::default(),
                     });
                 }
                 _ => {}
@@ -1145,6 +1166,29 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
                 }
             }
 
+            // Active Profile S probe — snapshot fetch + RTSP reachability.
+            {
+                let s = &result.profile_s_probe;
+                let ran = s.snapshot_ok || s.snapshot_error.is_some() || s.rtsp_ok || s.rtsp_error.is_some();
+                ran.then(|| rsx! {
+                    div { class: "hbatch-gprobe",
+                        span { class: "hbatch-gprobe-label", {i18n::t(locale, "hbatch_sprobe")} }
+                        if let Some(err) = s.snapshot_error.as_ref() {
+                            span { class: "health-fail hbatch-badge", {format!("{}: {err}", i18n::t(locale, "hbatch_sprobe_snapshot"))} }
+                        } else if s.snapshot_ok {
+                            span { class: "health-pass hbatch-badge",
+                                {format!("{} {} KB", i18n::t(locale, "hbatch_sprobe_snapshot"), s.snapshot_bytes.unwrap_or(0) / 1024)}
+                            }
+                        }
+                        if let Some(err) = s.rtsp_error.as_ref() {
+                            span { class: "health-fail hbatch-badge", {format!("{}: {err}", i18n::t(locale, "hbatch_sprobe_rtsp"))} }
+                        } else if s.rtsp_ok {
+                            span { class: "health-pass hbatch-badge", {i18n::t(locale, "hbatch_sprobe_rtsp_ok")} }
+                        }
+                    }
+                })
+            }
+
             // Active Profile G probe result.
             div { class: "hbatch-gprobe",
                 span { class: "hbatch-gprobe-label", {i18n::t(locale, "hbatch_gprobe")} }
@@ -1161,6 +1205,21 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
             }
         }
     }
+}
+
+/// The `detail` of a passing check by id (the media checks stash the resolved
+/// snapshot/stream URL there), or `None` when the check didn't pass.
+fn check_detail<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a str> {
+    rep.checks
+        .iter()
+        .find(|c| c.id == id && matches!(c.status, CheckStatus::Pass))
+        .map(|c| c.detail.as_str())
+}
+
+/// Decoded byte length of a (padded, newline-free) base64 payload.
+fn b64_bytes(b64: &str) -> usize {
+    let pad = b64.bytes().rev().take_while(|&b| b == b'=').count().min(2);
+    b64.len() / 4 * 3 - pad
 }
 
 // ── Per-device run ──────────────────────────────────────────────────────────
@@ -1202,6 +1261,33 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
             Err(e) => probe.search_error = Some(classify(&e, skew)),
         }
 
+        // Active Profile S probe — actually exercise the stream/snapshot the
+        // health check only resolved URIs for. The URIs are taken from the
+        // report's passing media checks, so no extra SOAP round-trips.
+        let mut s_probe = ProfileSProbe::default();
+        let snap_url = check_detail(&report, "get_snapshot_uri")
+            .filter(|u| u.starts_with("http"))
+            .map(str::to_string);
+        if let Some(url) = snap_url {
+            match api::fetch_snapshot_data_uri(&url, creds).await {
+                Ok(data_uri) => {
+                    s_probe.snapshot_ok = true;
+                    s_probe.snapshot_bytes =
+                        data_uri.split_once(',').map(|(_, b64)| b64_bytes(b64));
+                }
+                Err(e) => s_probe.snapshot_error = Some(classify(&e, skew)),
+            }
+        }
+        let rtsp_url = check_detail(&report, "get_stream_uri")
+            .filter(|u| u.starts_with("rtsp"))
+            .map(str::to_string);
+        if let Some(url) = rtsp_url {
+            match api::probe_rtsp_options(&url).await {
+                Ok(()) => s_probe.rtsp_ok = true,
+                Err(e) => s_probe.rtsp_error = Some(classify(&e, skew)),
+            }
+        }
+
         DeviceResult {
             target: d.addr.clone(),
             display_addr: d.display_addr.clone(),
@@ -1212,6 +1298,7 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
             timed_out: false,
             report: Some(report),
             profile_g_probe: probe,
+            profile_s_probe: s_probe,
         }
     };
 
@@ -1280,6 +1367,7 @@ fn classify(raw: &str, skew: Option<i64>) -> ExportError {
     } else if raw.contains("HTTP request failed")
         || raw.contains("error sending request")
         || raw.starts_with("HTTP ")
+        || raw.starts_with("RTSP")
     {
         (ErrorClass::Http, None, raw.to_string())
     } else {
@@ -1485,6 +1573,8 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             d.fingerprint_error.as_ref(),
             d.profile_g_probe.search_error.as_ref(),
             d.profile_g_probe.replay_error.as_ref(),
+            d.profile_s_probe.snapshot_error.as_ref(),
+            d.profile_s_probe.rtsp_error.as_ref(),
         ]
         .into_iter()
         .flatten()
@@ -1644,6 +1734,16 @@ mod tests {
         assert_eq!(e.likely_cause, LikelyCause::Transport);
     }
 
+    #[test]
+    fn b64_bytes_accounts_for_padding() {
+        use base64::Engine;
+        let enc = base64::engine::general_purpose::STANDARD;
+        for len in [0usize, 1, 2, 3, 10, 48_213] {
+            let raw = vec![0u8; len];
+            assert_eq!(b64_bytes(&enc.encode(&raw)), len, "len={len}");
+        }
+    }
+
     fn rep_with(
         declared: &[&str],
         s: ProfileVerdict,
@@ -1712,6 +1812,7 @@ mod tests {
             timed_out: false,
             report: Some(rep_with(&["G", "M"], Conformant, Conformant, Unsupported)),
             profile_g_probe: ProfileGProbe::default(),
+            profile_s_probe: ProfileSProbe::default(),
         };
         let sum = build_summary(std::slice::from_ref(&dev));
 
