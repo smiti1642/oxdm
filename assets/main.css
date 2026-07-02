@@ -2236,9 +2236,8 @@ a      { color: var(--blue); text-decoration: none; }
 .hdetail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 70vh;
-  overflow-y: auto;
+  gap: 16px;
+  padding: 20px;
 }
 .hdetail-head {
   display: flex;

@@ -379,7 +379,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_state_running" => "執行中…",
         "hbatch_timeout" => "逾時",
         "hbatch_fp_failed" => "裝置資訊失敗",
-        "hbatch_gprobe" => "Profile G：",
+        "hbatch_gprobe" => "錄影探測：",
         "hbatch_gprobe_search" => "搜尋",
         "hbatch_gprobe_recs" => "筆錄影",
         "hbatch_gprobe_replay" => "重播",

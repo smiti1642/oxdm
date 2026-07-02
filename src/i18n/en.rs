@@ -380,7 +380,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_state_running" => "running…",
         "hbatch_timeout" => "timed out",
         "hbatch_fp_failed" => "device info failed",
-        "hbatch_gprobe" => "Profile G:",
+        "hbatch_gprobe" => "Recording probe:",
         "hbatch_gprobe_search" => "search",
         "hbatch_gprobe_recs" => "recordings",
         "hbatch_gprobe_replay" => "replay",

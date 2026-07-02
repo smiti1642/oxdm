@@ -379,7 +379,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_state_running" => "выполняется…",
         "hbatch_timeout" => "тайм-аут",
         "hbatch_fp_failed" => "сбой получения сведений",
-        "hbatch_gprobe" => "Профиль G:",
+        "hbatch_gprobe" => "Проверка записи:",
         "hbatch_gprobe_search" => "поиск",
         "hbatch_gprobe_recs" => "записей",
         "hbatch_gprobe_replay" => "воспроизведение",
