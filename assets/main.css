@@ -1092,6 +1092,7 @@ a      { color: var(--blue); text-decoration: none; }
   animation: dialog-in 0.2s ease-out;
 }
 .dialog--wide { width: 440px; }
+.dialog--detail { width: 560px; max-width: 92vw; }
 
 .dialog-header {
   padding: 16px 20px 12px;
@@ -2221,6 +2222,33 @@ a      { color: var(--blue); text-decoration: none; }
 .hbatch-view .health-warn { color: var(--yellow); }
 .hbatch-view .health-fail { color: var(--red); }
 .hbatch-view .health-skip { color: var(--overlay0); }
+
+/* Declared-vs-assessed profile chips (row + detail modal). */
+.hbatch-declared {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.hbatch-declared-label { color: var(--overlay1); font-weight: 600; }
+
+/* Per-device drill-down modal. */
+.hdetail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.hdetail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hdetail-ident { display: flex; flex-direction: column; gap: 2px; }
+.hdetail-title { margin: 0; }
+.hdetail-fp { color: var(--subtext0); font-size: 13px; }
 .live-video-tip {
   display: flex;
   align-items: flex-start;

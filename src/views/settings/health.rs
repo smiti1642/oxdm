@@ -265,7 +265,7 @@ fn DiffRow(icon: &'static str, cls: &'static str, label: String, ids: String) ->
 
 /// Group checks by category label, preserving first-appearance order
 /// (oxvif already emits them grouped, but don't rely on that).
-fn group_by_category(rep: &HealthReport) -> Vec<(&'static str, Vec<&CheckResult>)> {
+pub(crate) fn group_by_category(rep: &HealthReport) -> Vec<(&'static str, Vec<&CheckResult>)> {
     let mut groups: Vec<(&'static str, Vec<&CheckResult>)> = Vec::new();
     for c in &rep.checks {
         let label = c.category.label();
@@ -292,7 +292,7 @@ fn summary_text(locale: crate::state::Locale, rep: &HealthReport) -> String {
     )
 }
 
-fn status_class(s: &CheckStatus) -> &'static str {
+pub(crate) fn status_class(s: &CheckStatus) -> &'static str {
     match s {
         CheckStatus::Pass => "health-pass",
         CheckStatus::Warn(_) => "health-warn",
@@ -301,7 +301,7 @@ fn status_class(s: &CheckStatus) -> &'static str {
     }
 }
 
-fn status_icon(s: &CheckStatus) -> &'static str {
+pub(crate) fn status_icon(s: &CheckStatus) -> &'static str {
     match s {
         CheckStatus::Pass => "check",
         CheckStatus::Warn(_) => "alert-triangle",
@@ -313,7 +313,7 @@ fn status_icon(s: &CheckStatus) -> &'static str {
 /// The message shown on a row: Pass uses the info `detail`; Warn/Fail/Skip
 /// carry their reason in the status payload (matching `HealthReport`'s own
 /// `Display`).
-fn row_message(c: &CheckResult) -> &str {
+pub(crate) fn row_message(c: &CheckResult) -> &str {
     match &c.status {
         CheckStatus::Pass => &c.detail,
         CheckStatus::Warn(r) | CheckStatus::Fail(r) | CheckStatus::Skip(r) => r,

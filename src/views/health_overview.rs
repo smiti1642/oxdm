@@ -14,12 +14,15 @@
 //! G), this actively probes Profile G — it really calls `FindRecordings` and
 //! `GetReplayUri` and captures the verbatim SOAP fault, since that replay/search
 //! path is where brand quirks (e.g. Hanwha's occurrence-constraint fault) hide.
+use crate::components::DialogOverlay;
 use crate::components::{GroupCredentialsDialog, GroupDeviceCredentialsDialog, Icon};
 use crate::state::{
     AuthStatus, CredSource, Credentials, Ctx, DeviceEntry, DragPending, HealthDeviceRef,
     HealthGroup, ToastLevel,
 };
-use crate::views::settings::health::{verdict_class, verdict_label};
+use crate::views::settings::health::{
+    group_by_category, row_message, status_class, status_icon, verdict_class, verdict_label,
+};
 use crate::{api, i18n};
 use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
@@ -31,7 +34,7 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v2";
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v3";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -261,6 +264,38 @@ struct CauseTotals {
     brand_quirk: usize,
 }
 
+/// Reconciliation of one ONVIF profile: what the device *declares* (via scopes)
+/// vs what oxvif *assessed* by probing. The `Broken` case — declared but not
+/// conformant — is the headline diagnostic ("claims Profile G, replay fails").
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ProfileStatus {
+    /// Declared and assessed Conformant.
+    Ok,
+    /// Declared but assessed Partial/Unsupported.
+    Broken,
+    /// Declared but oxvif doesn't assess this profile (M/A/C/D/K).
+    Unverified,
+    /// Assessed Conformant but not declared (works, vendor didn't claim it).
+    Extra,
+}
+
+struct ProfileState {
+    profile: String,
+    assessed: Option<ProfileVerdict>,
+    status: ProfileStatus,
+}
+
+/// A declared-but-broken profile rolled up across the fleet.
+#[derive(Serialize)]
+struct ProfileGap {
+    /// Canonical profile letter (`S` / `T` / `G`).
+    profile: String,
+    /// Worst assessed verdict seen (`partial` / `unsupported`).
+    verdict: &'static str,
+    count: usize,
+    sample_models: Vec<String>,
+}
+
 /// The same fault seen across devices, collapsed by its grouping key (subcode →
 /// fault code → reason) — the cross-brand normalization payoff.
 #[derive(Serialize)]
@@ -283,6 +318,14 @@ struct Summary {
     /// Distinct faults, most frequent first.
     fault_groups: Vec<FaultGroup>,
     likely_cause_totals: CauseTotals,
+    /// Profiles a device declares (via scopes) but that failed assessment —
+    /// the "self-certified but broken" cases, most frequent first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    declared_but_broken: Vec<ProfileGap>,
+    /// Profiles declared but not assessed by oxvif (M/A/C/D/K), keyed by letter
+    /// → number of devices declaring it. Informational, not a failure.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    declared_unverified: BTreeMap<String, usize>,
 }
 
 #[derive(Serialize)]
@@ -315,6 +358,8 @@ pub fn HealthOverviewView() -> Element {
     let gcreds_open = use_signal(|| false);
     let dev_creds_open = use_signal(|| false);
     let dev_creds_addr = use_signal(String::new);
+    // Per-device drill-down: addr of the device whose full report modal is open.
+    let mut detail_open = use_signal(|| None::<String>);
 
     let busy = *running.read();
     let devices = ctx.devices.read().clone();
@@ -536,9 +581,10 @@ pub fn HealthOverviewView() -> Element {
         if do_redact {
             json = redact_ipv4(&json);
         }
+        let file_name = format!("oxdm-health-report-{}.json", now_file_stamp());
         spawn(async move {
             let Some(handle) = rfd::AsyncFileDialog::new()
-                .set_file_name("oxdm-health-report.json")
+                .set_file_name(&file_name)
                 .add_filter("JSON", &["json"])
                 .save_file()
                 .await
@@ -756,6 +802,10 @@ pub fn HealthOverviewView() -> Element {
                                     }
                                 },
                                 on_pointerdown: move |_| {},
+                                on_details: {
+                                    let addr = row.addr.clone();
+                                    move |_| detail_open.set(Some(addr.clone()))
+                                },
                             }
                         }
                     }
@@ -804,6 +854,10 @@ pub fn HealthOverviewView() -> Element {
                                     };
                                     move |(x, y)| drag_start.call((r.clone(), x, y))
                                 },
+                                on_details: {
+                                    let addr = d.addr.clone();
+                                    move |_| detail_open.set(Some(addr.clone()))
+                                },
                             }
                         }
                     }
@@ -820,6 +874,116 @@ pub fn HealthOverviewView() -> Element {
                     open: dev_creds_open,
                     group_id: active_group_id.clone(),
                     addr: dev_creds_addr.read().clone(),
+                }
+            }
+
+            // Per-device drill-down: full check list for the clicked device.
+            {
+                let open = detail_open.read().clone();
+                open.and_then(|addr| match results.read().get(&addr) {
+                    Some(RunState::Done(r)) => Some((**r).clone()),
+                    _ => None,
+                })
+                .map(|res| rsx! {
+                    HealthDetailModal {
+                        locale,
+                        result: Box::new(res),
+                        on_close: move |_| detail_open.set(None),
+                    }
+                })
+            }
+        }
+    }
+}
+
+/// Full per-check report for one device, opened from a batch row. Reuses the
+/// single-device tab's row rendering, and adds the declared-vs-assessed profile
+/// reconciliation that the batch export surfaces.
+#[component]
+fn HealthDetailModal(
+    locale: crate::state::Locale,
+    result: Box<DeviceResult>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let r = &*result;
+    rsx! {
+        DialogOverlay {
+            on_close: move |_| on_close.call(()),
+            inner_class: "dialog dialog--detail".to_string(),
+            div { class: "hdetail",
+                div { class: "hdetail-head",
+                    div { class: "hdetail-ident",
+                        h3 { class: "hdetail-title", "{r.name}" }
+                        span { class: "hbatch-addr", "{r.display_addr}" }
+                    }
+                    button {
+                        class: "btn btn-ghost btn-sm",
+                        title: i18n::t(locale, "btn_close"),
+                        onclick: move |_| on_close.call(()),
+                        Icon { name: "x", size: 14 }
+                    }
+                }
+
+                if let Some(fp) = r.fingerprint.as_ref() {
+                    div { class: "hdetail-fp", {format!("{} {} · fw {}", fp.manufacturer, fp.model, fp.firmware_version)} }
+                }
+
+                if let Some(rep) = r.report.as_ref() {
+                    // Declared profiles + reconciliation vs assessed.
+                    {
+                        let declared: Vec<ProfileState> = reconcile_profiles(rep)
+                            .into_iter()
+                            .filter(|ps| ps.status != ProfileStatus::Extra)
+                            .collect();
+                        (!declared.is_empty()).then(|| rsx! {
+                            div { class: "health-group",
+                                div { class: "health-group-title", {i18n::t(locale, "health_declared_profiles")} }
+                                div { class: "hbatch-declared",
+                                    for ps in declared {
+                                        span {
+                                            class: match ps.status {
+                                                ProfileStatus::Ok => "hbatch-badge health-pass",
+                                                ProfileStatus::Broken => "hbatch-badge health-fail",
+                                                _ => "hbatch-badge hbatch-muted",
+                                            },
+                                            if matches!(ps.status, ProfileStatus::Broken) {
+                                                {format!("{} {}", ps.profile, i18n::t(locale, "hbatch_declared_broken"))}
+                                            } else {
+                                                {ps.profile.clone()}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                    }
+
+                    // Per-category check list (same rendering as the single-device tab).
+                    for (category , checks) in group_by_category(rep) {
+                        div { class: "health-group",
+                            div { class: "health-group-title", "{category}" }
+                            for c in checks {
+                                div { class: "health-row {status_class(&c.status)}",
+                                    span { class: "health-row-status",
+                                        Icon { name: status_icon(&c.status), size: 14 }
+                                    }
+                                    span { class: "health-row-name", "{c.id}" }
+                                    span { class: "health-row-time", "{c.elapsed.as_millis()} ms" }
+                                    span { class: "health-row-detail", "{row_message(c)}" }
+                                }
+                            }
+                        }
+                    }
+
+                    // Assessed profile verdicts.
+                    div { class: "health-group",
+                        div { class: "health-group-title", {i18n::t(locale, "health_profiles")} }
+                        div { class: "hbatch-profiles",
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                        }
+                    }
                 }
             }
         }
@@ -843,8 +1007,10 @@ fn DeviceRow(
     on_key: EventHandler<()>,
     on_remove: EventHandler<()>,
     on_pointerdown: EventHandler<(f64, f64)>,
+    on_details: EventHandler<()>,
 ) -> Element {
     let ctx = use_context::<Ctx>();
+    let has_result = matches!(&state, Some(RunState::Done(_)));
     rsx! {
         div {
             class: if offline { "hbatch-row hbatch-row--offline" } else { "hbatch-row" },
@@ -885,6 +1051,16 @@ fn DeviceRow(
                     title: i18n::t(locale, "hgroups_remove"),
                     onclick: move |_| on_remove.call(()),
                     Icon { name: "x", size: 12 }
+                }
+            }
+            if has_result {
+                button {
+                    class: "btn btn-ghost btn-sm hbatch-key-btn",
+                    title: i18n::t(locale, "hbatch_details"),
+                    // Stop the pointer event reaching the row's drag handler.
+                    onpointerdown: move |e: Event<PointerData>| e.stop_propagation(),
+                    onclick: move |_| on_details.call(()),
+                    Icon { name: "list", size: 12 }
                 }
             }
             div { class: "hbatch-outcome",
@@ -943,6 +1119,29 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
                     span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
                     span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
                     span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                }
+
+                // Declared-vs-assessed: surface "declares X but broken" (the
+                // headline diagnostic) + declared-but-unverified profiles.
+                {
+                    let notable: Vec<ProfileState> = reconcile_profiles(rep)
+                        .into_iter()
+                        .filter(|ps| matches!(ps.status, ProfileStatus::Broken | ProfileStatus::Unverified))
+                        .collect();
+                    (!notable.is_empty()).then(|| rsx! {
+                        span { class: "hbatch-declared",
+                            span { class: "hbatch-declared-label", {i18n::t(locale, "hbatch_declared")} }
+                            for ps in notable {
+                                if matches!(ps.status, ProfileStatus::Broken) {
+                                    span { class: "hbatch-badge health-fail",
+                                        {format!("{} {}", ps.profile, i18n::t(locale, "hbatch_declared_broken"))}
+                                    }
+                                } else {
+                                    span { class: "hbatch-badge hbatch-muted", {ps.profile.clone()} }
+                                }
+                            }
+                        }
+                    })
                 }
             }
 
@@ -1161,12 +1360,62 @@ fn record_fault(
     }
 }
 
+/// Raw (untranslated) verdict token for the export JSON.
+fn verdict_str(v: ProfileVerdict) -> &'static str {
+    match v {
+        ProfileVerdict::Conformant => "conformant",
+        ProfileVerdict::Partial => "partial",
+        ProfileVerdict::Unsupported => "unsupported",
+    }
+}
+
+/// Reconcile a report's *declared* profiles (from scopes) against oxvif's
+/// *assessed* verdicts. Only the S/T/G assessed set is compared; declared
+/// profiles oxvif can't assess come back `Unverified`. Rows with nothing to say
+/// (not declared, not conformant) are omitted.
+fn reconcile_profiles(rep: &HealthReport) -> Vec<ProfileState> {
+    let declared: HashSet<&str> = rep.declared_profiles.iter().map(String::as_str).collect();
+    let assessed = [
+        ("S", rep.profiles.profile_s.0),
+        ("T", rep.profiles.profile_t.0),
+        ("G", rep.profiles.profile_g.0),
+    ];
+    let mut out = Vec::new();
+    for (p, v) in assessed {
+        let is_declared = declared.contains(p);
+        let status = match (is_declared, v) {
+            (true, ProfileVerdict::Conformant) => ProfileStatus::Ok,
+            (true, _) => ProfileStatus::Broken,
+            (false, ProfileVerdict::Conformant) => ProfileStatus::Extra,
+            (false, _) => continue,
+        };
+        out.push(ProfileState {
+            profile: p.to_string(),
+            assessed: Some(v),
+            status,
+        });
+    }
+    for p in &rep.declared_profiles {
+        if !matches!(p.as_str(), "S" | "T" | "G") {
+            out.push(ProfileState {
+                profile: p.clone(),
+                assessed: None,
+                status: ProfileStatus::Unverified,
+            });
+        }
+    }
+    out
+}
+
 /// Build the fleet-wide [`Summary`] from the per-device results.
 fn build_summary(devices: &[DeviceResult]) -> Summary {
     let mut checks: BTreeMap<String, StatusTally> = BTreeMap::new();
     let mut profiles = ProfileTallies::default();
     let mut cause_totals = CauseTotals::default();
     let mut groups: HashMap<String, (LikelyCause, usize, Vec<String>)> = HashMap::new();
+    // Declared-vs-assessed reconciliation rollups.
+    let mut broken: HashMap<String, (ProfileVerdict, usize, Vec<String>)> = HashMap::new();
+    let mut unverified: BTreeMap<String, usize> = BTreeMap::new();
     let timed_out = devices.iter().filter(|d| d.timed_out).count();
 
     fn bump(t: &mut VerdictTally, v: &ProfileVerdict) {
@@ -1204,6 +1453,31 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
                     record_fault(&mut groups, &mut cause_totals, key, lc, &model);
                 }
             }
+
+            for ps in reconcile_profiles(rep) {
+                match ps.status {
+                    ProfileStatus::Broken => {
+                        let entry = broken.entry(ps.profile).or_insert((
+                            ps.assessed.unwrap_or(ProfileVerdict::Unsupported),
+                            0,
+                            Vec::new(),
+                        ));
+                        // Unsupported is "more broken" than Partial.
+                        if matches!(ps.assessed, Some(ProfileVerdict::Unsupported)) {
+                            entry.0 = ProfileVerdict::Unsupported;
+                        }
+                        entry.1 += 1;
+                        if !model.is_empty()
+                            && entry.2.len() < 5
+                            && !entry.2.iter().any(|m| m == &model)
+                        {
+                            entry.2.push(model.clone());
+                        }
+                    }
+                    ProfileStatus::Unverified => *unverified.entry(ps.profile).or_insert(0) += 1,
+                    ProfileStatus::Ok | ProfileStatus::Extra => {}
+                }
+            }
         }
 
         // Probe / fingerprint errors are already classified in oxdm.
@@ -1231,6 +1505,21 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
         .collect();
     fault_groups.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
 
+    let mut declared_but_broken: Vec<ProfileGap> = broken
+        .into_iter()
+        .map(|(profile, (verdict, count, sample_models))| ProfileGap {
+            profile,
+            verdict: verdict_str(verdict),
+            count,
+            sample_models,
+        })
+        .collect();
+    declared_but_broken.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.profile.cmp(&b.profile))
+    });
+
     Summary {
         device_count: devices.len(),
         timed_out,
@@ -1238,6 +1527,8 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
         checks,
         fault_groups,
         likely_cause_totals: cause_totals,
+        declared_but_broken,
+        declared_unverified: unverified,
     }
 }
 
@@ -1253,6 +1544,22 @@ fn now_iso() -> String {
     let (oh, om) = (off.abs() / 3600, (off.abs() % 3600) / 60);
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{sign}{oh:02}:{om:02}",
+        t.year(),
+        u8::from(t.month()),
+        t.day(),
+        t.hour(),
+        t.minute(),
+        t.second(),
+    )
+}
+
+/// Filesystem-safe local timestamp (`YYYYMMDD-HHMMSS`) for export file names —
+/// no colons, so it is valid on Windows/macOS/Linux and sorts chronologically.
+fn now_file_stamp() -> String {
+    use time::OffsetDateTime;
+    let t = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    format!(
+        "{:04}{:02}{:02}-{:02}{:02}{:02}",
         t.year(),
         u8::from(t.month()),
         t.day(),
@@ -1335,5 +1642,85 @@ mod tests {
             None,
         );
         assert_eq!(e.likely_cause, LikelyCause::Transport);
+    }
+
+    fn rep_with(
+        declared: &[&str],
+        s: ProfileVerdict,
+        t: ProfileVerdict,
+        g: ProfileVerdict,
+    ) -> HealthReport {
+        HealthReport {
+            target: "http://x/onvif".into(),
+            total_elapsed: Duration::from_millis(1),
+            checks: vec![],
+            profiles: oxvif::health::ProfileAssessment {
+                profile_s: (s, vec![]),
+                profile_t: (t, vec![]),
+                profile_g: (g, vec![]),
+            },
+            clock_skew_s: None,
+            declared_profiles: declared.iter().map(|p| p.to_string()).collect(),
+        }
+    }
+
+    fn status_of<'a>(states: &'a [ProfileState], p: &str) -> Option<&'a ProfileState> {
+        states.iter().find(|s| s.profile == p)
+    }
+
+    #[test]
+    fn reconcile_separates_broken_extra_and_unverified() {
+        use ProfileVerdict::*;
+        // Declared G but assessed Unsupported → Broken (the headline case).
+        // Declared M (not assessable) → Unverified.
+        // S conformant but not declared → Extra.
+        let rep = rep_with(&["G", "M"], Conformant, Unsupported, Unsupported);
+        let states = reconcile_profiles(&rep);
+
+        assert_eq!(
+            status_of(&states, "S").unwrap().status,
+            ProfileStatus::Extra
+        );
+        assert_eq!(
+            status_of(&states, "G").unwrap().status,
+            ProfileStatus::Broken
+        );
+        assert_eq!(
+            status_of(&states, "M").unwrap().status,
+            ProfileStatus::Unverified
+        );
+        // T: not declared and not conformant → nothing to say, omitted.
+        assert!(status_of(&states, "T").is_none());
+    }
+
+    #[test]
+    fn summary_rolls_up_declared_but_broken() {
+        use ProfileVerdict::*;
+        let dev = DeviceResult {
+            target: "t".into(),
+            display_addr: "d".into(),
+            name: "n".into(),
+            fingerprint: Some(Fingerprint {
+                manufacturer: "GeoVision".into(),
+                model: "GV-X".into(),
+                firmware_version: "1".into(),
+                serial_number: String::new(),
+                hardware_id: String::new(),
+            }),
+            fingerprint_error: None,
+            connectivity: connectivity(None),
+            timed_out: false,
+            report: Some(rep_with(&["G", "M"], Conformant, Conformant, Unsupported)),
+            profile_g_probe: ProfileGProbe::default(),
+        };
+        let sum = build_summary(std::slice::from_ref(&dev));
+
+        assert_eq!(sum.declared_but_broken.len(), 1);
+        let gap = &sum.declared_but_broken[0];
+        assert_eq!(gap.profile, "G");
+        assert_eq!(gap.verdict, "unsupported");
+        assert_eq!(gap.count, 1);
+        assert_eq!(gap.sample_models, ["GV-X"]);
+        assert_eq!(sum.declared_unverified.get("M"), Some(&1));
     }
 }
