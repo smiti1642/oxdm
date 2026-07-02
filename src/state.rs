@@ -262,6 +262,29 @@ pub fn new_group_id(existing: &[HealthGroup]) -> String {
     id
 }
 
+/// Append a device ref to a group's list unless an equivalent one is already
+/// present (match by endpoint when non-empty, else addr).
+pub(crate) fn push_deduped(devices: &mut Vec<HealthDeviceRef>, r: HealthDeviceRef) {
+    let dup = devices
+        .iter()
+        .any(|x| (!r.endpoint.is_empty() && x.endpoint == r.endpoint) || x.addr == r.addr);
+    if !dup {
+        devices.push(r);
+    }
+}
+
+/// A drag captured on `onpointerdown` but not yet promoted to an active drag.
+/// We use pointer events rather than native HTML5 DnD because Dioxus desktop
+/// (wry/WebView2) never fires `ondragover`/`ondrop` and leaves a stuck no-drop
+/// cursor. The candidate is promoted into `Ctx::dragging` only once the pointer
+/// moves past a small threshold, so a stationary press still reads as a click.
+#[derive(Clone)]
+pub struct DragPending {
+    pub start_x: f64,
+    pub start_y: f64,
+    pub payload: Vec<HealthDeviceRef>,
+}
+
 // ── Global context ──────────────────────────────────────────────────────────
 
 /// Global app state passed via context to all components.
@@ -283,9 +306,17 @@ pub struct Ctx {
     /// Which target the Health Overview shows (All devices / a specific group).
     /// Set by the sidebar Groups tab and the topbar Health button.
     pub health_list: Signal<HealthListSel>,
-    /// Devices currently being dragged onto a group (empty = no drag in
-    /// progress). Set on `ondragstart`, consumed on a group's `ondrop`.
+    /// Devices in an *active* pointer drag (empty = no active drag). Set once a
+    /// pending drag passes the movement threshold; drives the drop-zone
+    /// highlight + grabbing cursor; consumed by `finish_drag_at` on pointerup.
     pub dragging: Signal<Vec<HealthDeviceRef>>,
+    /// A drag captured on pointerdown, awaiting the movement threshold before it
+    /// promotes into `dragging`. `None` = no press in progress.
+    pub drag_pending: Signal<Option<DragPending>>,
+    /// Set true on the pointerup that completes a drag, so the source element's
+    /// `onclick` (which fires right after) skips its select action. Reset on the
+    /// next pointerdown.
+    pub drag_just_finished: Signal<bool>,
     /// Currently selected media profile token (for NVT operations).
     pub selected_profile: Signal<Option<String>>,
     /// Persist tracing output to disk. Toggled in the About dialog,
@@ -340,16 +371,18 @@ impl Ctx {
     }
 
     /// Credentials to use when health-checking `device` as part of `group`:
-    /// per-device-in-group override → group-level creds → app default
-    /// (`credentials_for`). An override with an empty username is treated as
+    /// group-level creds → per-device-in-group snapshot → app default
+    /// (`credentials_for`). Group-level creds are an explicit "test this account
+    /// across the whole group" override, so they win over each member's own
+    /// snapshotted credentials. An entry with an empty username is treated as
     /// unset so it transparently falls through to the next tier.
     pub fn group_credentials_for(&self, group: &HealthGroup, device: &DeviceEntry) -> Credentials {
-        if let Some(c) = group.device_credentials.get(&device.addr) {
+        if let Some(c) = &group.credentials {
             if !c.username.is_empty() {
                 return c.clone();
             }
         }
-        if let Some(c) = &group.credentials {
+        if let Some(c) = group.device_credentials.get(&device.addr) {
             if !c.username.is_empty() {
                 return c.clone();
             }
@@ -361,19 +394,128 @@ impl Ctx {
     /// per-row source badge.
     pub fn group_cred_source(&self, group: &HealthGroup, device: &DeviceEntry) -> CredSource {
         if group
-            .device_credentials
-            .get(&device.addr)
-            .is_some_and(|c| !c.username.is_empty())
-        {
-            return CredSource::Device;
-        }
-        if group
             .credentials
             .as_ref()
             .is_some_and(|c| !c.username.is_empty())
         {
             return CredSource::Group;
         }
+        if group
+            .device_credentials
+            .get(&device.addr)
+            .is_some_and(|c| !c.username.is_empty())
+        {
+            return CredSource::Device;
+        }
         CredSource::App
+    }
+
+    /// The credentials to snapshot for a device joining a group: its currently
+    /// effective (own → global) credentials, if the username is non-empty. Even
+    /// discovered devices on the global account get pinned, so every group
+    /// member carries explicit, known-good credentials.
+    fn member_creds_snapshot(&self, device: &DeviceEntry) -> Option<Credentials> {
+        let c = self.credentials_for(device);
+        (!c.username.is_empty()).then_some(c)
+    }
+
+    /// Resolve dragged refs to live devices and snapshot each one's effective
+    /// credentials, keyed by addr — for pinning onto a group on add.
+    fn resolve_member_creds(&self, refs: &[HealthDeviceRef]) -> Vec<(String, Credentials)> {
+        let devices = self.devices.peek();
+        refs.iter()
+            .filter_map(|r| {
+                let d = devices.iter().find(|d| {
+                    (!r.endpoint.is_empty() && d.endpoint == r.endpoint) || d.addr == r.addr
+                })?;
+                self.member_creds_snapshot(d).map(|c| (d.addr.clone(), c))
+            })
+            .collect()
+    }
+
+    /// Append the currently-dragged devices to the group with id `gid`.
+    /// Reads `dragging` but does not clear it — the caller (`finish_drag_at`)
+    /// owns the clear.
+    pub fn add_dragging_to_group(&self, gid: &str) {
+        let refs = self.dragging.peek().clone();
+        if refs.is_empty() {
+            return;
+        }
+        // Snapshot each member's effective creds before taking the write guard.
+        let snaps = self.resolve_member_creds(&refs);
+        let mut hg = self.health_groups;
+        let mut groups = hg.write();
+        if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
+            for r in refs {
+                push_deduped(&mut g.devices, r);
+            }
+            for (addr, creds) in snaps {
+                g.device_credentials.entry(addr).or_insert(creds);
+            }
+        }
+    }
+
+    /// Create a new group seeded with the currently-dragged devices, then
+    /// select it. `new_group_label` is the localized "New group" base (the
+    /// index is appended) — passed in because `state` is also compiled
+    /// standalone by the integration tests, which don't pull in `i18n`. Reads
+    /// `dragging` but does not clear it.
+    pub fn create_group_from_dragging(&self, new_group_label: &str) {
+        let refs = self.dragging.peek().clone();
+        if refs.is_empty() {
+            return;
+        }
+        let snaps = self.resolve_member_creds(&refs);
+        let mut hg = self.health_groups;
+        let new_id = {
+            let mut groups = hg.write();
+            let name = format!("{} {}", new_group_label, groups.len() + 1);
+            let id = new_group_id(&groups);
+            let mut devices = Vec::new();
+            for r in refs {
+                push_deduped(&mut devices, r);
+            }
+            let device_credentials = snaps.into_iter().collect();
+            groups.push(HealthGroup {
+                id: id.clone(),
+                name,
+                devices,
+                device_credentials,
+                ..Default::default()
+            });
+            id
+        };
+        self.health_list.clone().set(HealthListSel::Group(new_id));
+    }
+
+    /// Complete a drag by hit-testing whatever is under the release point.
+    ///
+    /// Dioxus desktop (wry/WebView2) never fires `ondragover`/`ondrop` for
+    /// `draggable` elements — only `ondragstart`/`ondragend`. So instead of a
+    /// native drop, every drag source calls this from `ondragend`: we ask the
+    /// webview for `elementFromPoint(x, y)`, walk up to the nearest
+    /// `data-drop-group` / `data-drop-newgroup` marker, and dispatch. Always
+    /// clears `dragging` at the end.
+    pub fn finish_drag_at(&self, x: f64, y: f64, new_group_label: String) {
+        let ctx = *self;
+        spawn(async move {
+            let script = format!(
+                "let el = document.elementFromPoint({x}, {y});\
+                 while (el && !(el.dataset && (el.dataset.dropGroup !== undefined || el.dataset.dropNewgroup !== undefined))) el = el.parentElement;\
+                 let out = '';\
+                 if (el) {{ out = el.dataset.dropNewgroup !== undefined ? '__new__' : ('g:' + el.dataset.dropGroup); }}\
+                 dioxus.send(out);"
+            );
+            let target = document::eval(&script)
+                .recv::<String>()
+                .await
+                .unwrap_or_default();
+            if target == "__new__" {
+                ctx.create_group_from_dragging(&new_group_label);
+            } else if let Some(gid) = target.strip_prefix("g:") {
+                ctx.add_dragging_to_group(gid);
+            }
+            ctx.dragging.clone().set(Vec::new());
+        });
     }
 }

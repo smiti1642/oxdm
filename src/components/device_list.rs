@@ -7,11 +7,12 @@ use crate::{
     },
     i18n,
     state::{
-        AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, HealthDeviceRef, ToastLevel,
-        View,
+        AuthStatus, ConfirmDialog, Ctx, DeviceEntry, DeviceListTab, DragPending, HealthDeviceRef,
+        ToastLevel, View,
     },
     util,
 };
+use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
 
 /// Which subset of the device list to show. Pairs with the tab filter.
@@ -630,8 +631,12 @@ fn DeviceCard(
     rsx! {
         div {
             class: card_class,
-            draggable: true,
             onclick: move |_| {
+                // A pointer drag fires `onclick` on release too; skip the select
+                // when we just completed a drag (flag reset on next pointerdown).
+                if *ctx.drag_just_finished.peek() {
+                    return;
+                }
                 sel.set(Some(index));
                 view.set(View::DeviceSettings);
             },
@@ -640,16 +645,26 @@ fn DeviceCard(
                 let coords = e.data().client_coordinates();
                 ctx_menu.set(Some((coords.x, coords.y)));
             },
-            ondragstart: move |_| {
+            // Start a pending drag; the root promotes it once the pointer moves
+            // past the threshold (see App's onpointermove/onpointerup).
+            onpointerdown: move |e: Event<PointerData>| {
+                if e.data().trigger_button() != Some(MouseButton::Primary) {
+                    return;
+                }
+                ctx.drag_just_finished.clone().set(false);
+                let c = e.data().client_coordinates();
                 if let Some(d) = ctx.devices.peek().get(index) {
-                    ctx.dragging.clone().set(vec![HealthDeviceRef {
-                        endpoint: d.endpoint.clone(),
-                        addr: d.addr.clone(),
-                        name: d.name.clone(),
-                    }]);
+                    ctx.drag_pending.clone().set(Some(DragPending {
+                        start_x: c.x,
+                        start_y: c.y,
+                        payload: vec![HealthDeviceRef {
+                            endpoint: d.endpoint.clone(),
+                            addr: d.addr.clone(),
+                            name: d.name.clone(),
+                        }],
+                    }));
                 }
             },
-            ondragend: move |_| ctx.dragging.clone().set(Vec::new()),
             div { class: "device-card-header",
                 span { class: dot_class }
                 span { class: "device-name", "{name}" }

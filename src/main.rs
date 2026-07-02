@@ -167,6 +167,8 @@ fn App() -> Element {
         health_groups: use_signal(|| saved_groups),
         health_list: use_signal(|| crate::state::HealthListSel::AllDevices),
         dragging: use_signal(Vec::new),
+        drag_pending: use_signal(|| None),
+        drag_just_finished: use_signal(|| false),
         selected_profile: use_signal(|| None),
         keyboard_action: use_signal(|| None),
         log_to_file: use_signal(|| cfg.log_to_file),
@@ -216,6 +218,17 @@ fn App() -> Element {
     });
 
     let theme_class = ctx.theme.read().css_class();
+    // While a pointer drag is active, force the grabbing cursor + suppress text
+    // selection app-wide (CSS `.dragging-active`), so there's no stuck no-drop
+    // cursor like native HTML5 DnD leaves on desktop.
+    let dragging_class = if ctx.dragging.read().is_empty() {
+        ""
+    } else {
+        " dragging-active"
+    };
+    // Squared px distance a press must travel before it becomes a drag (5px);
+    // squared to avoid a sqrt on every pointermove.
+    const DRAG_THRESHOLD_SQ: f64 = 25.0;
 
     rsx! {
         document::Style { {MAIN_CSS} }
@@ -232,9 +245,35 @@ fn App() -> Element {
                 }
             },
             div {
-                class: theme_class,
+                class: "{theme_class}{dragging_class}",
                 tabindex: "-1",
                 autofocus: true,
+                // Pointer-based drag-and-drop (native HTML5 DnD is broken on
+                // desktop wry). Sources set `drag_pending` on pointerdown; here
+                // at the root we promote it to an active drag once it moves, and
+                // complete it on release via `finish_drag_at`'s hit-test.
+                onpointermove: move |e: Event<PointerData>| {
+                    if ctx.dragging.peek().is_empty() {
+                        if let Some(p) = ctx.drag_pending.peek().clone() {
+                            let c = e.data().client_coordinates();
+                            let (dx, dy) = (c.x - p.start_x, c.y - p.start_y);
+                            if dx * dx + dy * dy >= DRAG_THRESHOLD_SQ {
+                                ctx.dragging.clone().set(p.payload);
+                            }
+                        }
+                    }
+                },
+                onpointerup: move |e: Event<PointerData>| {
+                    let active = !ctx.dragging.peek().is_empty();
+                    ctx.drag_pending.clone().set(None);
+                    if active {
+                        let c = e.data().client_coordinates();
+                        let label =
+                            i18n::t(*ctx.locale.peek(), "hgroups_new_group").to_string();
+                        ctx.drag_just_finished.clone().set(true);
+                        ctx.finish_drag_at(c.x, c.y, label);
+                    }
+                },
                 // App-level shortcuts. Esc is handled per-modal because each
                 // dialog has its own close semantics; the keys here are the
                 // ones that should always work no matter what's focused.

@@ -407,6 +407,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_added" => "Added to group.",
         "hgroups_already" => "Already in that group.",
         "hgroups_group_creds" => "Group credentials",
+        "hgroups_group_creds_override" => "Group credentials override each device's own login for this run.",
         "hgroups_group_creds_title" => "Group credentials",
         "hgroups_device_creds_title" => "Device credentials (in group)",
         "hgroups_creds_hint" => "Used only for this group's health checks. Leave blank to fall back to the device / global credentials.",

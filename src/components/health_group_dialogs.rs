@@ -37,6 +37,12 @@ pub fn AddToGroupDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
             addr: d.addr.clone(),
             name: d.name.clone(),
         };
+        // Snapshot the device's effective creds so it joins with its own
+        // known-good credentials pinned (see Ctx::group_credentials_for).
+        let snap = {
+            let c = ctx.credentials_for(&d);
+            (!c.username.is_empty()).then(|| (d.addr.clone(), c))
+        };
         let present = |g: &HealthGroup| {
             g.devices
                 .iter()
@@ -53,6 +59,9 @@ pub fn AddToGroupDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                             already = true;
                         } else {
                             g.devices.push(dref);
+                            if let Some((addr, creds)) = snap {
+                                g.device_credentials.entry(addr).or_insert(creds);
+                            }
                         }
                     }
                 }
@@ -66,6 +75,7 @@ pub fn AddToGroupDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                         id,
                         name,
                         devices: vec![dref],
+                        device_credentials: snap.into_iter().collect(),
                         ..Default::default()
                     });
                 }

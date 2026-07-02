@@ -323,7 +323,7 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.9.9"`, pinned to the crates.io registry, with the
+Currently `oxvif = "0.11.0"`, pinned to the crates.io registry, with the
 `health` feature enabled in `[dependencies]` and `mock-server, health` in
 `[dev-dependencies]` (the latter only for `tests/healthtab_smoke.rs`; the
 release binary never pulls axum). Notable surfaces oxdm relies on:
@@ -355,7 +355,7 @@ release binary never pulls axum). Notable surfaces oxdm relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.9.9", path = "../oxvif", features = ["health"] }
+oxvif = { version = "0.11.0", path = "../oxvif", features = ["health"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to

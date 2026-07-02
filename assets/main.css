@@ -2004,6 +2004,17 @@ a      { color: var(--blue); text-decoration: none; }
   gap: 8px;
   flex-wrap: wrap;
 }
+.hbatch-cred-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
 .hbatch-filter-label {
   font-size: 12px;
   color: var(--subtext0);
@@ -2088,6 +2099,13 @@ a      { color: var(--blue); text-decoration: none; }
   outline-offset: -2px;
   border-radius: 6px;
   background: var(--surface0);
+}
+/* While a pointer drag is in progress, force the grabbing cursor everywhere
+   (no native HTML5 DnD, so no stuck no-drop cursor) and stop text selection. */
+.dragging-active,
+.dragging-active * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 .hbatch-header {
   display: flex;

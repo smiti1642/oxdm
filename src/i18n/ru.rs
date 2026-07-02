@@ -406,6 +406,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_added" => "Добавлено в группу.",
         "hgroups_already" => "Уже в этой группе.",
         "hgroups_group_creds" => "Учётные данные группы",
+        "hgroups_group_creds_override" => "Учётные данные группы заменяют собственный вход каждого устройства в этом запуске.",
         "hgroups_group_creds_title" => "Учётные данные группы",
         "hgroups_device_creds_title" => "Учётные данные устройства (в группе)",
         "hgroups_creds_hint" => "Используются только для проверок этой группы. Оставьте пустым для отката к учётным данным устройства / глобальным.",

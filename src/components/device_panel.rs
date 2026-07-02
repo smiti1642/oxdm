@@ -96,22 +96,6 @@ fn HealthGroupsPanel() -> Element {
         }
     }
 
-    // Drop the dragged devices into an existing group.
-    let drop_into = use_callback(move |gid: String| {
-        let refs = ctx.dragging.peek().clone();
-        ctx.dragging.clone().set(Vec::new());
-        if refs.is_empty() {
-            return;
-        }
-        let mut hg = ctx.health_groups;
-        let mut groups = hg.write();
-        if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
-            for r in refs {
-                push_deduped(&mut g.devices, r);
-            }
-        }
-    });
-
     // Create a group from the typed name (or an auto-name), optionally seeding
     // it with the dragged devices; then select it.
     let create_group = use_callback(move |with_dragged: bool| {
@@ -194,14 +178,9 @@ fn HealthGroupsPanel() -> Element {
                                     ctx_menu.set(Some((c.x, c.y, gid.clone())));
                                 }
                             },
-                            ondragover: move |e: Event<DragData>| e.prevent_default(),
-                            ondrop: {
-                                let gid = g.id.clone();
-                                move |e: Event<DragData>| {
-                                    e.prevent_default();
-                                    drop_into.call(gid.clone());
-                                }
-                            },
+                            // Drop target marker for the pointer-drag hit-test
+                            // (Ctx::finish_drag_at → elementFromPoint on pointerup).
+                            "data-drop-group": g.id.clone(),
                             span { class: "group-sb-icon", Icon { name: "folder", size: 14 } }
                             span { class: "group-sb-name", {format!("{} ({})", g.name, g.devices.len())} }
                         }
@@ -209,11 +188,7 @@ fn HealthGroupsPanel() -> Element {
                 }
                 div {
                     class: if is_dragging { "hgroups-new-row hgroups-drop-zone" } else { "hgroups-new-row" },
-                    ondragover: move |e: Event<DragData>| e.prevent_default(),
-                    ondrop: move |e: Event<DragData>| {
-                        e.prevent_default();
-                        create_group.call(true);
-                    },
+                    "data-drop-newgroup": "1",
                     input {
                         class: "form-input form-input--flex",
                         r#type: "text",

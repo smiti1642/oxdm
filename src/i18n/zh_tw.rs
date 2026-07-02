@@ -406,6 +406,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hgroups_added" => "已加入群組。",
         "hgroups_already" => "已在該群組中。",
         "hgroups_group_creds" => "群組帳密",
+        "hgroups_group_creds_override" => "本次執行將以群組帳密覆蓋各裝置自己的登入。",
         "hgroups_group_creds_title" => "群組帳密",
         "hgroups_device_creds_title" => "單台帳密（群組內）",
         "hgroups_creds_hint" => "僅用於此群組的健康檢查。留空則回退到裝置／全域帳密。",
