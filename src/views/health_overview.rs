@@ -272,6 +272,10 @@ enum DeviceVerdict {
 struct DeviceResult {
     target: String,
     display_addr: String,
+    /// Stable, salted pseudonym for this device (see [`device_ref`]) — lets a
+    /// reader correlate the same device across scans even under redaction,
+    /// without exposing its real address or serial.
+    device_ref: String,
     name: String,
     /// One-line roll-up of the whole result (see [`DeviceVerdict`]).
     verdict: DeviceVerdict,
@@ -592,10 +596,12 @@ pub fn HealthOverviewView() -> Element {
         pending.set(targets.len());
         running.set(true);
 
+        // Load the per-user pseudonym salt once; it's Copy, so each task gets it.
+        let salt = crate::persist::health_ref_salt();
         for (d, creds) in targets {
             spawn(async move {
                 results.write().insert(d.addr.clone(), RunState::Running);
-                let outcome = run_one(&d, &creds).await;
+                let outcome = run_one(&d, &creds, salt).await;
                 results.write().insert(d.addr.clone(), outcome);
                 let remaining = {
                     let mut p = pending.write();
@@ -612,19 +618,21 @@ pub fn HealthOverviewView() -> Element {
     let export = move |_| {
         let res = results.peek();
         let mut done: Vec<DeviceResult> = Vec::new();
+        // Same per-user salt the run used, so timed-out devices get a stable ref.
+        let salt = crate::persist::health_ref_salt();
         for (addr, state) in res.iter() {
             match state {
                 RunState::Done(r) => done.push((**r).clone()),
                 // Record timed-out devices too (a hanging brand is itself a
                 // finding) — build a minimal result from the live device.
                 RunState::TimedOut => {
-                    let (name, display_addr) = ctx
+                    let (name, display_addr, endpoint) = ctx
                         .devices
                         .peek()
                         .iter()
                         .find(|d| &d.addr == addr)
-                        .map(|d| (d.name.clone(), d.display_addr.clone()))
-                        .unwrap_or_else(|| (addr.clone(), addr.clone()));
+                        .map(|d| (d.name.clone(), d.display_addr.clone(), d.endpoint.clone()))
+                        .unwrap_or_else(|| (addr.clone(), addr.clone(), String::new()));
                     let identity = Identity {
                         manufacturer: String::new(),
                         model: String::new(),
@@ -635,9 +643,12 @@ pub fn HealthOverviewView() -> Element {
                         },
                         name: name.clone(),
                     };
+                    let dev_ref =
+                        device_ref(salt, if endpoint.is_empty() { addr } else { &endpoint });
                     done.push(DeviceResult {
                         target: addr.clone(),
                         display_addr,
+                        device_ref: dev_ref,
                         name,
                         verdict: DeviceVerdict::Unreachable,
                         identity,
@@ -1324,7 +1335,7 @@ fn b64_bytes(b64: &str) -> usize {
 
 // ── Per-device run ──────────────────────────────────────────────────────────
 
-async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
+async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
     let fut = async {
         // oxvif's HealthCheck is read-only and infallible (errors become Fail
         // rows inside the report). Run it first so its measured clock skew can
@@ -1436,9 +1447,20 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
 
         let conn = connectivity(Some(&report));
         let verdict = device_verdict(&conn, Some(&report), false);
+        // Most durable id first: the discovery endpoint UUID is stable across IP
+        // changes; else the serial; else the address.
+        let stable_id = if !d.endpoint.is_empty() {
+            d.endpoint.as_str()
+        } else if let Some(fp) = fingerprint.as_ref().filter(|f| !f.serial_number.is_empty()) {
+            fp.serial_number.as_str()
+        } else {
+            d.addr.as_str()
+        };
+        let dev_ref = device_ref(salt, stable_id);
         DeviceResult {
             target: d.addr.clone(),
             display_addr: d.display_addr.clone(),
+            device_ref: dev_ref,
             name: d.name.clone(),
             verdict,
             identity,
@@ -1601,6 +1623,20 @@ fn device_verdict(
         return DeviceVerdict::Degraded;
     }
     DeviceVerdict::Ok
+}
+
+/// A stable, salted pseudonym for a device. `stable_id` should be its most
+/// durable identifier (WS-Discovery endpoint UUID, else serial, else address).
+/// FNV-1a keyed by the secret per-user `salt`, so the same device yields the
+/// same ref across scans, but the ref can't be reversed to the id (nor linked
+/// across users) without the salt. Non-cryptographic — a pseudonym, not a MAC.
+fn device_ref(salt: u64, stable_id: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ salt;
+    for b in stable_id.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:012x}", h & 0xffff_ffff_ffff)
 }
 
 /// A short, stable id for one export, derived from its timestamp and the set of
@@ -2006,6 +2042,7 @@ mod tests {
         let dev = DeviceResult {
             target: "t".into(),
             display_addr: "d".into(),
+            device_ref: "ref".into(),
             name: "n".into(),
             verdict: DeviceVerdict::Ok,
             identity: Identity {
@@ -2104,6 +2141,7 @@ mod tests {
             DeviceResult {
                 target: target.into(),
                 display_addr: String::new(),
+                device_ref: String::new(),
                 name: String::new(),
                 verdict: DeviceVerdict::Unreachable,
                 identity: Identity {
@@ -2152,5 +2190,17 @@ mod tests {
         // No name/hardware scopes → empties (falls back to discovery upstream).
         let (n, m) = identity_from_scopes(&["onvif://www.onvif.org/location/lobby".to_string()]);
         assert!(n.is_empty() && m.is_empty());
+    }
+
+    #[test]
+    fn device_ref_is_stable_salted_and_id_sensitive() {
+        let id = "urn:uuid:1419d68a-1dd2-11b2-a105-abc";
+        // Same salt + id → same ref (stable across scans).
+        assert_eq!(device_ref(42, id), device_ref(42, id));
+        assert_eq!(device_ref(42, id).len(), 12);
+        // Different salt → different ref (unlinkable across users).
+        assert_ne!(device_ref(42, id), device_ref(43, id));
+        // Different id → different ref.
+        assert_ne!(device_ref(42, id), device_ref(42, "urn:uuid:other"));
     }
 }

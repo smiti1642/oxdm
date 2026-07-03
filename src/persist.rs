@@ -89,6 +89,46 @@ fn ensure_dir() {
     }
 }
 
+// ── Health report device-ref salt ───────────────────────────────────────────
+
+fn ref_salt_path() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("health-ref-salt"))
+}
+
+/// A fresh 64-bit value seeded from OS entropy (`RandomState` seeds from the
+/// platform CSPRNG). Used to bootstrap the persisted salt.
+fn random_u64() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u8(0);
+    h.finish()
+}
+
+/// A stable, secret, per-user salt for pseudonymising device references in
+/// exported health reports. Generated once and persisted to
+/// `~/.oxdm/health-ref-salt`; it never leaves the machine. This keeps a
+/// device's `device_ref` stable across scans (so a reader can track "was this
+/// fixed since last time?") while being unlinkable across users and not
+/// brute-forceable back to a real address/serial the way a bare hash would be.
+pub fn health_ref_salt() -> u64 {
+    let Some(path) = ref_salt_path() else {
+        // No home dir: fall back to a per-run salt — redaction still holds, the
+        // ref just won't be stable across runs.
+        return random_u64();
+    };
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        if let Ok(v) = u64::from_str_radix(s.trim(), 16) {
+            return v;
+        }
+    }
+    let salt = random_u64();
+    ensure_dir();
+    if let Err(e) = std::fs::write(&path, format!("{salt:016x}")) {
+        warn!(error = %e, "could not persist health-ref salt; device_refs won't be stable across runs");
+    }
+    salt
+}
+
 // ── Health baselines (one JSON report per device) ───────────────────────────
 
 /// Directory where per-device baseline `HealthReport`s live. One file per
