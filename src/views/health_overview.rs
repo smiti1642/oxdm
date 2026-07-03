@@ -34,7 +34,7 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v3";
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v3.1";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -159,7 +159,10 @@ struct ExportError {
     subcode: Option<String>,
     reason: String,
     likely_cause: LikelyCause,
-    raw: String,
+    /// The verbatim oxvif error string, kept only when it adds information over
+    /// `reason` (i.e. differs from it) — otherwise omitted to avoid duplication.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    raw: Option<String>,
 }
 
 impl std::fmt::Display for ExportError {
@@ -217,11 +220,32 @@ struct ProfileSProbe {
     rtsp_error: Option<ExportError>,
 }
 
+/// A single roll-up of a device's whole result, so a reader can triage the
+/// fleet before opening any one device. Crucially distinguishes `Unverified`
+/// (auth blocked / never tested — conformance *unknown*) from `Broken`
+/// (tested and genuinely failing), which a naive pass/fail count conflates.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DeviceVerdict {
+    /// Reachable, authenticated, no failing checks.
+    Ok,
+    /// Works but has warnings or a declared-but-broken profile.
+    Degraded,
+    /// Authenticated and a check genuinely failed (a real, testable fault).
+    Broken,
+    /// Reachable but auth blocked (or no report) — conformance not verified.
+    Unverified,
+    /// Never reached (connect failed or timed out).
+    Unreachable,
+}
+
 #[derive(Clone, PartialEq, Serialize)]
 struct DeviceResult {
     target: String,
     display_addr: String,
     name: String,
+    /// One-line roll-up of the whole result (see [`DeviceVerdict`]).
+    verdict: DeviceVerdict,
     fingerprint: Option<Fingerprint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fingerprint_error: Option<ExportError>,
@@ -330,7 +354,12 @@ struct FaultGroup {
 /// Fleet-wide rollup so a reader can triage before opening any single device.
 #[derive(Serialize)]
 struct Summary {
+    /// Devices in the run (requested).
     device_count: usize,
+    /// Devices whose initial `GetCapabilities` succeeded (reachable).
+    responded: usize,
+    /// Requested but never reached (connect failed or timed out).
+    unreachable: usize,
     timed_out: usize,
     profiles: ProfileTallies,
     /// Per-check-id status tally, keyed by check id (sorted).
@@ -354,6 +383,8 @@ struct ReportBundle {
     oxdm_version: &'static str,
     oxvif_version: &'static str,
     generated_at: String,
+    /// Short id of this export (timestamp + targets) for cross-file correlation.
+    run_id: String,
     redacted: bool,
     summary: Summary,
     devices: Vec<DeviceResult>,
@@ -565,6 +596,7 @@ pub fn HealthOverviewView() -> Element {
                         target: addr.clone(),
                         display_addr,
                         name,
+                        verdict: DeviceVerdict::Unreachable,
                         fingerprint: None,
                         fingerprint_error: None,
                         connectivity: connectivity(None),
@@ -589,11 +621,14 @@ pub fn HealthOverviewView() -> Element {
             }
         }
         let summary = build_summary(&done);
+        let generated_at = now_iso();
+        let run_id = run_id(&generated_at, &done);
         let bundle = ReportBundle {
             schema: BUNDLE_SCHEMA,
             oxdm_version: env!("CARGO_PKG_VERSION"),
             oxvif_version: crate::components::OXVIF_VERSION,
-            generated_at: now_iso(),
+            generated_at,
+            run_id,
             redacted: do_redact,
             summary,
             devices: done,
@@ -1288,13 +1323,16 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
             }
         }
 
+        let conn = connectivity(Some(&report));
+        let verdict = device_verdict(&conn, Some(&report), false);
         DeviceResult {
             target: d.addr.clone(),
             display_addr: d.display_addr.clone(),
             name: d.name.clone(),
+            verdict,
             fingerprint,
             fingerprint_error,
-            connectivity: connectivity(Some(&report)),
+            connectivity: conn,
             timed_out: false,
             report: Some(report),
             profile_g_probe: probe,
@@ -1378,8 +1416,8 @@ fn classify(raw: &str, skew: Option<i64>) -> ExportError {
         fault_code,
         subcode: None,
         likely_cause: likely_cause(class, None, &reason, skew),
+        raw: (raw != reason).then(|| raw.to_string()),
         reason,
-        raw: raw.to_string(),
     }
 }
 
@@ -1413,6 +1451,60 @@ fn connectivity(report: Option<&HealthReport>) -> Connectivity {
         clock_skew_s: skew,
         auth_blocked_by_skew: has_auth_fail && skew.is_some_and(|s| s.abs() > SKEW_BREAKS_WSSEC),
     }
+}
+
+/// Roll one device's whole result into a single triage verdict. Auth-aware: a
+/// device whose checks failed only because auth was blocked is `Unverified`
+/// (conformance unknown), not `Broken` (see [`DeviceVerdict`]).
+fn device_verdict(
+    conn: &Connectivity,
+    report: Option<&HealthReport>,
+    timed_out: bool,
+) -> DeviceVerdict {
+    if timed_out || !conn.reachable {
+        return DeviceVerdict::Unreachable;
+    }
+    // Any auth-class fault means we couldn't fully exercise the device.
+    if !conn.authenticated {
+        return DeviceVerdict::Unverified;
+    }
+    let Some(rep) = report else {
+        return DeviceVerdict::Unverified;
+    };
+    if rep
+        .checks
+        .iter()
+        .any(|c| matches!(c.status, CheckStatus::Fail(_)))
+    {
+        return DeviceVerdict::Broken;
+    }
+    let has_warn = rep
+        .checks
+        .iter()
+        .any(|c| matches!(c.status, CheckStatus::Warn(_)));
+    let has_broken_profile = reconcile_profiles(rep)
+        .iter()
+        .any(|ps| ps.status == ProfileStatus::Broken);
+    if has_warn || has_broken_profile {
+        return DeviceVerdict::Degraded;
+    }
+    DeviceVerdict::Ok
+}
+
+/// A short, stable id for one export, derived from its timestamp and the set of
+/// targets — lets a reader correlate re-exports of the same batch across files.
+/// FNV-1a (non-cryptographic; identifies, doesn't authenticate).
+fn run_id(generated_at: &str, devices: &[DeviceResult]) -> String {
+    let mut targets: Vec<&str> = devices.iter().map(|d| d.target.as_str()).collect();
+    targets.sort_unstable();
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for chunk in std::iter::once(generated_at).chain(targets) {
+        for b in chunk.bytes().chain(std::iter::once(0)) {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{:012x}", h & 0xffff_ffff_ffff)
 }
 
 /// Grouping key for a fault: subcode → fault code → truncated reason.
@@ -1610,8 +1702,11 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             .then_with(|| a.profile.cmp(&b.profile))
     });
 
+    let responded = devices.iter().filter(|d| d.connectivity.reachable).count();
     Summary {
         device_count: devices.len(),
+        responded,
+        unreachable: devices.len() - responded,
         timed_out,
         profiles,
         checks,
@@ -1800,6 +1895,7 @@ mod tests {
             target: "t".into(),
             display_addr: "d".into(),
             name: "n".into(),
+            verdict: DeviceVerdict::Ok,
             fingerprint: Some(Fingerprint {
                 manufacturer: "GeoVision".into(),
                 model: "GV-X".into(),
@@ -1823,5 +1919,97 @@ mod tests {
         assert_eq!(gap.count, 1);
         assert_eq!(gap.sample_models, ["GV-X"]);
         assert_eq!(sum.declared_unverified.get("M"), Some(&1));
+    }
+
+    fn conn(reachable: bool, authenticated: bool) -> Connectivity {
+        Connectivity {
+            reachable,
+            authenticated,
+            clock_skew_s: None,
+            auth_blocked_by_skew: false,
+        }
+    }
+
+    fn fail_check() -> oxvif::health::CheckResult {
+        oxvif::health::CheckResult {
+            id: "get_profiles".into(),
+            category: oxvif::health::Category::Media,
+            status: CheckStatus::Fail("boom".into()),
+            detail: String::new(),
+            error: None,
+            elapsed: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn device_verdict_distinguishes_unverified_from_broken() {
+        use ProfileVerdict::*;
+        let all_ok = rep_with(&[], Conformant, Conformant, Conformant);
+
+        // Never reached — timed out or connect failed.
+        assert_eq!(
+            device_verdict(&conn(false, false), None, false),
+            DeviceVerdict::Unreachable
+        );
+        assert_eq!(
+            device_verdict(&conn(true, true), None, true),
+            DeviceVerdict::Unreachable
+        );
+        // Reachable but auth blocked → conformance unknown, NOT broken.
+        assert_eq!(
+            device_verdict(&conn(true, false), Some(&all_ok), false),
+            DeviceVerdict::Unverified
+        );
+        // Authenticated but a check genuinely failed → broken.
+        let mut with_fail = rep_with(&[], Conformant, Conformant, Conformant);
+        with_fail.checks.push(fail_check());
+        assert_eq!(
+            device_verdict(&conn(true, true), Some(&with_fail), false),
+            DeviceVerdict::Broken
+        );
+        // Declared G but assessed Unsupported, nothing failing → degraded.
+        let broken_profile = rep_with(&["G"], Conformant, Conformant, Unsupported);
+        assert_eq!(
+            device_verdict(&conn(true, true), Some(&broken_profile), false),
+            DeviceVerdict::Degraded
+        );
+        // Clean.
+        assert_eq!(
+            device_verdict(&conn(true, true), Some(&all_ok), false),
+            DeviceVerdict::Ok
+        );
+    }
+
+    #[test]
+    fn run_id_is_stable_order_independent_and_sensitive() {
+        fn dev(target: &str) -> DeviceResult {
+            DeviceResult {
+                target: target.into(),
+                display_addr: String::new(),
+                name: String::new(),
+                verdict: DeviceVerdict::Unreachable,
+                fingerprint: None,
+                fingerprint_error: None,
+                connectivity: connectivity(None),
+                timed_out: false,
+                report: None,
+                profile_g_probe: ProfileGProbe::default(),
+                profile_s_probe: ProfileSProbe::default(),
+            }
+        }
+        let ts = "2026-07-03T10:00:00+08:00";
+        let ab = run_id(ts, &[dev("http://a/onvif"), dev("http://b/onvif")]);
+        let ba = run_id(ts, &[dev("http://b/onvif"), dev("http://a/onvif")]);
+        assert_eq!(ab, ba, "order must not change the id");
+        assert_eq!(ab.len(), 12);
+        // Different timestamp or target set → different id.
+        assert_ne!(
+            ab,
+            run_id(
+                "2026-07-03T10:00:01+08:00",
+                &[dev("http://a/onvif"), dev("http://b/onvif")]
+            )
+        );
+        assert_ne!(ab, run_id(ts, &[dev("http://a/onvif")]));
     }
 }
