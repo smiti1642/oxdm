@@ -130,6 +130,35 @@ struct Fingerprint {
     hardware_id: String,
 }
 
+/// Where a device's [`Identity`] came from — the reader can weigh how much to
+/// trust the make/model (authenticated info beats a discovery scope).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum IdentitySource {
+    /// Authenticated `GetDeviceInformation` (richest, includes manufacturer).
+    DeviceInformation,
+    /// Unauthenticated `GetScopes` `name`/`hardware` scopes.
+    Scopes,
+    /// Only the WS-Discovery display name was available.
+    Discovery,
+    /// Nothing beyond the address.
+    None,
+}
+
+/// Always-present make/model, so an auth-failed device still carries enough to
+/// place it in the cross-brand corpus (fields blank when a source didn't supply
+/// them; `manufacturer` is only known from authenticated device info).
+#[derive(Clone, PartialEq, Serialize)]
+struct Identity {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    manufacturer: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    model: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    name: String,
+    source: IdentitySource,
+}
+
 /// The maintainer-facing interpretation of a failure — lets a reader triage
 /// "this is my fault (auth/clock)" vs "this is a real brand quirk" at a glance.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -246,6 +275,10 @@ struct DeviceResult {
     name: String,
     /// One-line roll-up of the whole result (see [`DeviceVerdict`]).
     verdict: DeviceVerdict,
+    /// Best-effort make/model, always present — recovered from unauthenticated
+    /// scopes when the authenticated `fingerprint` is missing, so an auth-failed
+    /// device is never fully anonymous in the corpus.
+    identity: Identity,
     fingerprint: Option<Fingerprint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fingerprint_error: Option<ExportError>,
@@ -592,11 +625,22 @@ pub fn HealthOverviewView() -> Element {
                         .find(|d| &d.addr == addr)
                         .map(|d| (d.name.clone(), d.display_addr.clone()))
                         .unwrap_or_else(|| (addr.clone(), addr.clone()));
+                    let identity = Identity {
+                        manufacturer: String::new(),
+                        model: String::new(),
+                        source: if name.is_empty() {
+                            IdentitySource::None
+                        } else {
+                            IdentitySource::Discovery
+                        },
+                        name: name.clone(),
+                    };
                     done.push(DeviceResult {
                         target: addr.clone(),
                         display_addr,
                         name,
                         verdict: DeviceVerdict::Unreachable,
+                        identity,
                         fingerprint: None,
                         fingerprint_error: None,
                         connectivity: connectivity(None),
@@ -1251,6 +1295,27 @@ fn check_detail<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a str> {
         .map(|c| c.detail.as_str())
 }
 
+/// Best-effort `(name, model)` from ONVIF scope URIs. Scopes look like
+/// `onvif://www.onvif.org/name/<X>` and `.../hardware/<Y>`, with the value
+/// percent-encoded (e.g. `Bosch%20NBN`). Returns empties when absent.
+fn identity_from_scopes(scopes: &[String]) -> (String, String) {
+    let seg = |s: &str, marker: &str| -> Option<String> {
+        s.split_once(marker)
+            .map(|(_, rest)| crate::util::urldecode(rest.split('/').next().unwrap_or(rest)))
+            .filter(|v| !v.is_empty())
+    };
+    let mut name = String::new();
+    let mut model = String::new();
+    for s in scopes {
+        if let Some(v) = seg(s, "/name/") {
+            name = v;
+        } else if let Some(v) = seg(s, "/hardware/") {
+            model = v;
+        }
+    }
+    (name, model)
+}
+
 /// Decoded byte length of a (padded, newline-free) base64 payload.
 fn b64_bytes(b64: &str) -> usize {
     let pad = b64.bytes().rev().take_while(|&b| b == b'=').count().min(2);
@@ -1279,6 +1344,52 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
                 None,
             ),
             Err(e) => (None, Some(classify(&e, skew))),
+        };
+
+        // Always-present identity. Prefer the authenticated fingerprint; when it
+        // failed (usually auth), fall back to GetScopes, which most devices serve
+        // unauthenticated, so the device still carries a make/model in the corpus.
+        let identity = match &fingerprint {
+            Some(fp) => Identity {
+                manufacturer: fp.manufacturer.clone(),
+                model: fp.model.clone(),
+                name: d.name.clone(),
+                source: IdentitySource::DeviceInformation,
+            },
+            None => match api::get_scopes(&d.addr, creds).await {
+                Ok(scopes) => {
+                    let (name, model) = identity_from_scopes(&scopes);
+                    let source = if name.is_empty() && model.is_empty() {
+                        if d.name.is_empty() {
+                            IdentitySource::None
+                        } else {
+                            IdentitySource::Discovery
+                        }
+                    } else {
+                        IdentitySource::Scopes
+                    };
+                    Identity {
+                        manufacturer: String::new(),
+                        model,
+                        name: if name.is_empty() {
+                            d.name.clone()
+                        } else {
+                            name
+                        },
+                        source,
+                    }
+                }
+                Err(_) => Identity {
+                    manufacturer: String::new(),
+                    model: String::new(),
+                    name: d.name.clone(),
+                    source: if d.name.is_empty() {
+                        IdentitySource::None
+                    } else {
+                        IdentitySource::Discovery
+                    },
+                },
+            },
         };
 
         // Active Profile G probe — the part oxvif's health check does not do.
@@ -1330,6 +1441,7 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials) -> RunState {
             display_addr: d.display_addr.clone(),
             name: d.name.clone(),
             verdict,
+            identity,
             fingerprint,
             fingerprint_error,
             connectivity: conn,
@@ -1896,6 +2008,12 @@ mod tests {
             display_addr: "d".into(),
             name: "n".into(),
             verdict: DeviceVerdict::Ok,
+            identity: Identity {
+                manufacturer: "GeoVision".into(),
+                model: "GV-X".into(),
+                name: "n".into(),
+                source: IdentitySource::DeviceInformation,
+            },
             fingerprint: Some(Fingerprint {
                 manufacturer: "GeoVision".into(),
                 model: "GV-X".into(),
@@ -1988,6 +2106,12 @@ mod tests {
                 display_addr: String::new(),
                 name: String::new(),
                 verdict: DeviceVerdict::Unreachable,
+                identity: Identity {
+                    manufacturer: String::new(),
+                    model: String::new(),
+                    name: String::new(),
+                    source: IdentitySource::None,
+                },
                 fingerprint: None,
                 fingerprint_error: None,
                 connectivity: connectivity(None),
@@ -2011,5 +2135,22 @@ mod tests {
             )
         );
         assert_ne!(ab, run_id(ts, &[dev("http://a/onvif")]));
+    }
+
+    #[test]
+    fn identity_from_scopes_extracts_name_and_hardware() {
+        let scopes = vec![
+            "onvif://www.onvif.org/type/Network_Video_Transmitter".to_string(),
+            "onvif://www.onvif.org/name/Bosch%20NBN-40012".to_string(),
+            "onvif://www.onvif.org/hardware/NBN-40012-V3".to_string(),
+            "onvif://www.onvif.org/Profile/Streaming".to_string(),
+        ];
+        let (name, model) = identity_from_scopes(&scopes);
+        assert_eq!(name, "Bosch NBN-40012");
+        assert_eq!(model, "NBN-40012-V3");
+
+        // No name/hardware scopes → empties (falls back to discovery upstream).
+        let (n, m) = identity_from_scopes(&["onvif://www.onvif.org/location/lobby".to_string()]);
+        assert!(n.is_empty() && m.is_empty());
     }
 }
