@@ -352,6 +352,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "health_conformant" => "соответствует",
         "health_partial" => "частично",
         "health_unsupported" => "не поддерж.",
+        "health_inconclusive" => "не проверено",
         "health_missing" => "отсутствует",
         "health_save_baseline" => "Сохранить как базовый",
         "health_baseline_saved" => "Базовый отчёт сохранён.",

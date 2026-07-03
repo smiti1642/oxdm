@@ -26,7 +26,7 @@ path = "src/main.rs"
 
 [dependencies]
 dioxus = { version = "=0.7.9", features = ["desktop", "router"] }
-oxvif = { version = "0.11.0", features = ["health"] }
+oxvif = { version = "0.12.0", path = "../oxvif", features = ["health"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -64,7 +64,7 @@ winresource = "0.1"
 # Pull in oxvif's mock-server feature so tests/healthtab_smoke.rs can
 # drive a real bound-port ONVIF mock without needing a camera. Test
 # builds only; the release binary doesn't carry axum.
-oxvif = { version = "0.11.0", features = ["mock-server", "health"] }
+oxvif = { version = "0.12.0", path = "../oxvif", features = ["mock-server", "health"] }
 
 [profile.wasm-dev]
 inherits = "dev"

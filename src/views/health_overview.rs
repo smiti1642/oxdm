@@ -34,7 +34,7 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v3.1";
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v4";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -326,6 +326,9 @@ struct VerdictTally {
     conformant: usize,
     partial: usize,
     unsupported: usize,
+    /// Required checks couldn't be tested (auth-blocked / skipped) — unknown,
+    /// not a failure. Kept separate so it doesn't inflate the failure tallies.
+    inconclusive: usize,
 }
 
 #[derive(Serialize, Default)]
@@ -1079,7 +1082,7 @@ fn HealthDetailModal(
                                         Icon { name: status_icon(&c.status), size: 14 }
                                     }
                                     span { class: "health-row-name", "{c.id}" }
-                                    span { class: "health-row-time", "{c.elapsed.as_millis()} ms" }
+                                    span { class: "health-row-time", "{c.elapsed.unwrap_or_default().as_millis()} ms" }
                                     span { class: "health-row-detail", "{row_message(c)}" }
                                 }
                             }
@@ -1090,9 +1093,9 @@ fn HealthDetailModal(
                     div { class: "health-group",
                         div { class: "health-group-title", {i18n::t(locale, "health_profiles")} }
                         div { class: "hbatch-profiles",
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.verdict)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.verdict))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.verdict)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.verdict))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.verdict)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.verdict))} }
                         }
                     }
                 }
@@ -1227,9 +1230,9 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
             // Profile S/T/G verdict badges.
             if let Some(rep) = result.report.as_ref() {
                 span { class: "hbatch-profiles",
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.verdict)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.verdict))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.verdict)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.verdict))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.verdict)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.verdict))} }
                 }
 
                 // Declared-vs-assessed: surface "declares X but broken" (the
@@ -1694,6 +1697,7 @@ fn verdict_str(v: ProfileVerdict) -> &'static str {
         ProfileVerdict::Conformant => "conformant",
         ProfileVerdict::Partial => "partial",
         ProfileVerdict::Unsupported => "unsupported",
+        ProfileVerdict::Inconclusive => "inconclusive",
     }
 }
 
@@ -1704,15 +1708,19 @@ fn verdict_str(v: ProfileVerdict) -> &'static str {
 fn reconcile_profiles(rep: &HealthReport) -> Vec<ProfileState> {
     let declared: HashSet<&str> = rep.declared_profiles.iter().map(String::as_str).collect();
     let assessed = [
-        ("S", rep.profiles.profile_s.0),
-        ("T", rep.profiles.profile_t.0),
-        ("G", rep.profiles.profile_g.0),
+        ("S", rep.profiles.profile_s.verdict),
+        ("T", rep.profiles.profile_t.verdict),
+        ("G", rep.profiles.profile_g.verdict),
     ];
     let mut out = Vec::new();
     for (p, v) in assessed {
         let is_declared = declared.contains(p);
         let status = match (is_declared, v) {
             (true, ProfileVerdict::Conformant) => ProfileStatus::Ok,
+            // Declared but couldn't be verified (auth-blocked / skipped) — not a
+            // failure. Consume oxvif's authoritative Inconclusive rather than
+            // guessing from connectivity.
+            (true, ProfileVerdict::Inconclusive) => ProfileStatus::Unverified,
             (true, _) => ProfileStatus::Broken,
             (false, ProfileVerdict::Conformant) => ProfileStatus::Extra,
             (false, _) => continue,
@@ -1751,6 +1759,7 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             ProfileVerdict::Conformant => t.conformant += 1,
             ProfileVerdict::Partial => t.partial += 1,
             ProfileVerdict::Unsupported => t.unsupported += 1,
+            ProfileVerdict::Inconclusive => t.inconclusive += 1,
         }
     }
 
@@ -1763,9 +1772,9 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             .unwrap_or_else(|| d.name.clone());
 
         if let Some(rep) = &d.report {
-            bump(&mut profiles.s, &rep.profiles.profile_s.0);
-            bump(&mut profiles.t, &rep.profiles.profile_t.0);
-            bump(&mut profiles.g, &rep.profiles.profile_g.0);
+            bump(&mut profiles.s, &rep.profiles.profile_s.verdict);
+            bump(&mut profiles.t, &rep.profiles.profile_t.verdict);
+            bump(&mut profiles.g, &rep.profiles.profile_g.verdict);
             let skew = rep.clock_skew_s;
             for c in &rep.checks {
                 let tally = checks.entry(c.id.clone()).or_default();
@@ -1993,14 +2002,19 @@ mod tests {
         t: ProfileVerdict,
         g: ProfileVerdict,
     ) -> HealthReport {
+        let state = |verdict| oxvif::health::ProfileState {
+            verdict,
+            missing: vec![],
+            unverified: vec![],
+        };
         HealthReport {
             target: "http://x/onvif".into(),
             total_elapsed: Duration::from_millis(1),
             checks: vec![],
             profiles: oxvif::health::ProfileAssessment {
-                profile_s: (s, vec![]),
-                profile_t: (t, vec![]),
-                profile_g: (g, vec![]),
+                profile_s: state(s),
+                profile_t: state(t),
+                profile_g: state(g),
             },
             clock_skew_s: None,
             declared_profiles: declared.iter().map(|p| p.to_string()).collect(),
@@ -2092,7 +2106,7 @@ mod tests {
             status: CheckStatus::Fail("boom".into()),
             detail: String::new(),
             error: None,
-            elapsed: Duration::ZERO,
+            elapsed: None,
         }
     }
 

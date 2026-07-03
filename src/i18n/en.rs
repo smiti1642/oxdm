@@ -353,6 +353,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "health_conformant" => "conformant",
         "health_partial" => "partial",
         "health_unsupported" => "unsupported",
+        "health_inconclusive" => "inconclusive",
         "health_missing" => "missing",
         "health_save_baseline" => "Save as baseline",
         "health_baseline_saved" => "Baseline saved.",

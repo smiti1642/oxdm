@@ -3534,9 +3534,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "oxvif"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b7054c6a5a49d75bc16ee9711701a66325f736cc43bf4143a27a053bb6e6fd4"
+version = "0.12.0"
 dependencies = [
  "async-stream",
  "async-trait",

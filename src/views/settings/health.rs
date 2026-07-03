@@ -136,7 +136,7 @@ pub fn HealthTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element 
                                             Icon { name: status_icon(&c.status), size: 14 }
                                         }
                                         span { class: "health-row-name", "{c.id}" }
-                                        span { class: "health-row-time", "{c.elapsed.as_millis()} ms" }
+                                        span { class: "health-row-time", "{c.elapsed.unwrap_or_default().as_millis()} ms" }
                                         span { class: "health-row-detail", "{row_message(c)}" }
                                     }
                                 }
@@ -145,9 +145,9 @@ pub fn HealthTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element 
 
                         div { class: "health-group",
                             div { class: "health-group-title", {i18n::t(locale, "health_profiles")} }
-                            ProfileRow { locale, name: "Profile S", verdict: rep.profiles.profile_s.0, missing: rep.profiles.profile_s.1.clone() }
-                            ProfileRow { locale, name: "Profile T", verdict: rep.profiles.profile_t.0, missing: rep.profiles.profile_t.1.clone() }
-                            ProfileRow { locale, name: "Profile G", verdict: rep.profiles.profile_g.0, missing: rep.profiles.profile_g.1.clone() }
+                            ProfileRow { locale, name: "Profile S", verdict: rep.profiles.profile_s.verdict, missing: rep.profiles.profile_s.missing.clone() }
+                            ProfileRow { locale, name: "Profile T", verdict: rep.profiles.profile_t.verdict, missing: rep.profiles.profile_t.missing.clone() }
+                            ProfileRow { locale, name: "Profile G", verdict: rep.profiles.profile_g.verdict, missing: rep.profiles.profile_g.missing.clone() }
                         }
 
                         // Diff vs baseline — only when one was loaded.
@@ -325,6 +325,8 @@ pub(crate) fn verdict_class(v: &ProfileVerdict) -> &'static str {
         ProfileVerdict::Conformant => "health-pass",
         ProfileVerdict::Partial => "health-warn",
         ProfileVerdict::Unsupported => "health-skip",
+        // Couldn't verify (auth-blocked / skipped) — a warning, not a failure.
+        ProfileVerdict::Inconclusive => "health-warn",
     }
 }
 
@@ -333,5 +335,6 @@ pub(crate) fn verdict_label(locale: crate::state::Locale, v: &ProfileVerdict) ->
         ProfileVerdict::Conformant => i18n::t(locale, "health_conformant"),
         ProfileVerdict::Partial => i18n::t(locale, "health_partial"),
         ProfileVerdict::Unsupported => i18n::t(locale, "health_unsupported"),
+        ProfileVerdict::Inconclusive => i18n::t(locale, "health_inconclusive"),
     }
 }

@@ -40,8 +40,8 @@ async fn healthcheck_against_mock_round_trips_json_and_diffs_clean() {
 
     // The mock advertises Media/Imaging/PTZ/Events — neither Profile S
     // nor Profile T should come back Unsupported.
-    assert_ne!(report.profiles.profile_s.0, ProfileVerdict::Unsupported);
-    assert_ne!(report.profiles.profile_t.0, ProfileVerdict::Unsupported);
+    assert_ne!(report.profiles.profile_s.verdict, ProfileVerdict::Unsupported);
+    assert_ne!(report.profiles.profile_t.verdict, ProfileVerdict::Unsupported);
 
     // JSON round-trip (the contract oxdm's persist::write_baseline /
     // persist::read_baseline depends on).
@@ -50,7 +50,7 @@ async fn healthcheck_against_mock_round_trips_json_and_diffs_clean() {
         serde_json::from_str(&json).expect("HealthReport JSON round-trips");
     assert_eq!(rehydrated.target, report.target);
     assert_eq!(rehydrated.checks.len(), report.checks.len());
-    assert_eq!(rehydrated.profiles.profile_s.0, report.profiles.profile_s.0);
+    assert_eq!(rehydrated.profiles.profile_s.verdict, report.profiles.profile_s.verdict);
 
     // Pretty form parses to the same value.
     let pretty = report.to_json_pretty();

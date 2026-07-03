@@ -352,6 +352,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "health_conformant" => "符合",
         "health_partial" => "部分符合",
         "health_unsupported" => "不支援",
+        "health_inconclusive" => "無法驗證",
         "health_missing" => "缺少",
         "health_save_baseline" => "存為基準",
         "health_baseline_saved" => "基準已儲存。",
