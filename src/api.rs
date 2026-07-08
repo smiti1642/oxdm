@@ -665,63 +665,6 @@ async fn snapshot_response_to_data_uri(
     Ok(format!("data:{content_type};base64,{b64}"))
 }
 
-/// Non-destructive RTSP reachability probe: open a TCP connection to the stream
-/// endpoint and send an `OPTIONS` request. Confirms the RTSP server actually
-/// answers (a returned stream URI is no guarantee it does). `200` is ideal; a
-/// `401` still proves the server is alive (it just wants auth), so both count as
-/// reachable. Read-only — never issues `DESCRIBE`/`SETUP`/`PLAY`.
-///
-/// IPv4/hostname authorities only; an IPv6 literal authority is not parsed.
-#[instrument(fields(rtsp_url))]
-pub async fn probe_rtsp_options(rtsp_url: &str) -> Result<(), ApiError> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-    use tokio::time::timeout;
-
-    let authority = rtsp_url
-        .strip_prefix("rtsp://")
-        .ok_or_else(|| "RTSP: not an rtsp:// url".to_string())?
-        .split('/')
-        .next()
-        .unwrap_or("");
-    // Drop any userinfo, then split host:port (default 554).
-    let hostport = authority.rsplit('@').next().unwrap_or(authority);
-    let (host, port) = match hostport.rsplit_once(':') {
-        Some((h, p)) => (h, p.parse::<u16>().unwrap_or(554)),
-        None => (hostport, 554u16),
-    };
-    if host.is_empty() {
-        return Err("RTSP: empty host".to_string());
-    }
-
-    let mut stream = timeout(Duration::from_secs(5), TcpStream::connect((host, port)))
-        .await
-        .map_err(|_| "RTSP connect timed out".to_string())?
-        .map_err(|e| format!("RTSP connect failed: {e}"))?;
-
-    let req = format!(
-        "OPTIONS {rtsp_url} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: oxdm\r\nAccept: */*\r\n\r\n"
-    );
-    stream
-        .write_all(req.as_bytes())
-        .await
-        .map_err(|e| format!("RTSP write failed: {e}"))?;
-
-    let mut buf = [0u8; 256];
-    let n = timeout(Duration::from_secs(5), stream.read(&mut buf))
-        .await
-        .map_err(|_| "RTSP read timed out".to_string())?
-        .map_err(|e| format!("RTSP read failed: {e}"))?;
-
-    let head = String::from_utf8_lossy(&buf[..n]);
-    let status = head.lines().next().unwrap_or("").trim();
-    if status.contains(" 200") || status.contains(" 401") {
-        Ok(())
-    } else {
-        Err(format!("RTSP OPTIONS refused: {status}"))
-    }
-}
-
 /// Fetch RTSP stream URI for a specific profile.
 #[allow(dead_code)]
 #[instrument(skip(creds), fields(addr, profile_token))]
@@ -1604,7 +1547,7 @@ pub async fn get_replay_uri(
 /// [`oxvif::health::HealthReport`], not as an `Err`.
 #[instrument(skip(creds), fields(addr))]
 pub async fn run_health_check(addr: &str, creds: &Credentials) -> oxvif::health::HealthReport {
-    let mut hc = oxvif::health::HealthCheck::new(addr);
+    let mut hc = oxvif::health::HealthCheck::new(addr).with_liveness_probes(true);
     if !creds.username.is_empty() {
         hc = hc.with_credentials(creds.username.clone(), creds.password.clone());
     }

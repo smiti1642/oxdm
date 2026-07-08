@@ -34,7 +34,7 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v4";
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v5";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -1300,13 +1300,51 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
     }
 }
 
-/// The `detail` of a passing check by id (the media checks stash the resolved
-/// snapshot/stream URL there), or `None` when the check didn't pass.
-fn check_detail<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a str> {
-    rep.checks
-        .iter()
-        .find(|c| c.id == id && matches!(c.status, CheckStatus::Pass))
-        .map(|c| c.detail.as_str())
+/// The full check result for an id, whatever its status.
+fn find_check<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a oxvif::health::CheckResult> {
+    rep.checks.iter().find(|c| c.id == id)
+}
+
+/// Convert oxvif's structured [`oxvif::health::CheckError`] (carried on a failing
+/// health check) into the export's [`ExportError`]. This replaces the old
+/// string re-parse now that the liveness probe results arrive structured inside
+/// the report — the ONVIF `subcode` is preserved for cross-brand grouping.
+fn export_error(ce: &oxvif::health::CheckError, skew: Option<i64>) -> ExportError {
+    ExportError {
+        class: ce.class,
+        fault_code: ce.fault_code.clone(),
+        subcode: ce.subcode.clone(),
+        likely_cause: likely_cause(ce.class, ce.subcode.as_deref(), &ce.reason, skew),
+        raw: ce.detail.clone(),
+        reason: ce.reason.clone(),
+    }
+}
+
+/// A liveness probe (RTSP `OPTIONS` / snapshot fetch) failed: oxvif records that
+/// as a `Warn` with a plain reason rather than a structured ONVIF fault (it
+/// isn't one). Wrap that reason as a transport-class export error.
+fn probe_warn_error(reason: &str, skew: Option<i64>) -> ExportError {
+    ExportError {
+        class: ErrorClass::Http,
+        fault_code: None,
+        subcode: None,
+        likely_cause: likely_cause(ErrorClass::Http, None, reason, skew),
+        raw: None,
+        reason: reason.to_string(),
+    }
+}
+
+/// Leading integer of a detail like `"12 recording(s) found"`.
+fn parse_leading_count(detail: &str) -> Option<usize> {
+    detail.split_whitespace().next()?.parse().ok()
+}
+
+/// KB count from a snapshot check detail like `"http://… (123 KB image)"`,
+/// returned as bytes.
+fn parse_snapshot_bytes(detail: &str) -> Option<usize> {
+    let after = detail.rsplit_once('(')?.1;
+    let kb: usize = after.split_whitespace().next()?.parse().ok()?;
+    Some(kb * 1024)
 }
 
 /// Best-effort `(name, model)` from ONVIF scope URIs. Scopes look like
@@ -1330,13 +1368,63 @@ fn identity_from_scopes(scopes: &[String]) -> (String, String) {
     (name, model)
 }
 
-/// Decoded byte length of a (padded, newline-free) base64 payload.
-fn b64_bytes(b64: &str) -> usize {
-    let pad = b64.bytes().rev().take_while(|&b| b == b'=').count().min(2);
-    b64.len() / 4 * 3 - pad
+// ── Per-device run ──────────────────────────────────────────────────────────
+
+/// Build the Profile G probe view from oxvif's liveness-exercised report checks
+/// (`search` / `replay`). Structured faults become classified [`ExportError`]s.
+fn profile_g_probe(rep: &HealthReport, skew: Option<i64>) -> ProfileGProbe {
+    let mut p = ProfileGProbe::default();
+    if let Some(c) = find_check(rep, "search") {
+        match &c.status {
+            CheckStatus::Pass => p.search_recordings = parse_leading_count(&c.detail),
+            CheckStatus::Fail(_) => {
+                p.search_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            _ => {}
+        }
+    }
+    if let Some(c) = find_check(rep, "replay") {
+        match &c.status {
+            CheckStatus::Pass => p.replay_uri = Some(c.detail.clone()),
+            CheckStatus::Fail(_) => {
+                p.replay_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            _ => {}
+        }
+    }
+    p
 }
 
-// ── Per-device run ──────────────────────────────────────────────────────────
+/// Build the Profile S probe view from oxvif's liveness-exercised report checks
+/// (`get_stream_uri` RTSP OPTIONS + `get_snapshot_uri` byte fetch). A liveness
+/// failure is a `Warn` (transport); a SOAP fault is a `Fail` (structured).
+fn profile_s_probe(rep: &HealthReport, skew: Option<i64>) -> ProfileSProbe {
+    let mut p = ProfileSProbe::default();
+    if let Some(c) = find_check(rep, "get_snapshot_uri") {
+        match &c.status {
+            CheckStatus::Pass => {
+                p.snapshot_ok = true;
+                p.snapshot_bytes = parse_snapshot_bytes(&c.detail);
+            }
+            CheckStatus::Warn(reason) => p.snapshot_error = Some(probe_warn_error(reason, skew)),
+            CheckStatus::Fail(_) => {
+                p.snapshot_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            CheckStatus::Skip(_) => {}
+        }
+    }
+    if let Some(c) = find_check(rep, "get_stream_uri") {
+        match &c.status {
+            CheckStatus::Pass => p.rtsp_ok = true,
+            CheckStatus::Warn(reason) => p.rtsp_error = Some(probe_warn_error(reason, skew)),
+            CheckStatus::Fail(_) => {
+                p.rtsp_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            CheckStatus::Skip(_) => {}
+        }
+    }
+    p
+}
 
 async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
     let fut = async {
@@ -1357,7 +1445,16 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
                 }),
                 None,
             ),
-            Err(e) => (None, Some(classify(&e, skew))),
+            Err(e) => {
+                // Source the structured error from the report's own
+                // get_device_info check; fall back to the raw string if that
+                // check somehow passed while this separate call failed.
+                let err = find_check(&report, "get_device_info")
+                    .and_then(|c| c.error.as_ref())
+                    .map(|ce| export_error(ce, skew))
+                    .unwrap_or_else(|| probe_warn_error(&e, skew));
+                (None, Some(err))
+            }
         };
 
         // Always-present identity. Prefer the authenticated fingerprint; when it
@@ -1406,47 +1503,12 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
             },
         };
 
-        // Active Profile G probe — the part oxvif's health check does not do.
-        let mut probe = ProfileGProbe::default();
-        match api::search_recordings(&d.addr, creds).await {
-            Ok(recs) => {
-                probe.search_recordings = Some(recs.len());
-                if let Some(first) = recs.first() {
-                    match api::get_replay_uri(&d.addr, creds, &first.recording_token).await {
-                        Ok(uri) => probe.replay_uri = Some(uri),
-                        Err(e) => probe.replay_error = Some(classify(&e, skew)),
-                    }
-                }
-            }
-            Err(e) => probe.search_error = Some(classify(&e, skew)),
-        }
-
-        // Active Profile S probe — actually exercise the stream/snapshot the
-        // health check only resolved URIs for. The URIs are taken from the
-        // report's passing media checks, so no extra SOAP round-trips.
-        let mut s_probe = ProfileSProbe::default();
-        let snap_url = check_detail(&report, "get_snapshot_uri")
-            .filter(|u| u.starts_with("http"))
-            .map(str::to_string);
-        if let Some(url) = snap_url {
-            match api::fetch_snapshot_data_uri(&url, creds).await {
-                Ok(data_uri) => {
-                    s_probe.snapshot_ok = true;
-                    s_probe.snapshot_bytes =
-                        data_uri.split_once(',').map(|(_, b64)| b64_bytes(b64));
-                }
-                Err(e) => s_probe.snapshot_error = Some(classify(&e, skew)),
-            }
-        }
-        let rtsp_url = check_detail(&report, "get_stream_uri")
-            .filter(|u| u.starts_with("rtsp"))
-            .map(str::to_string);
-        if let Some(url) = rtsp_url {
-            match api::probe_rtsp_options(&url).await {
-                Ok(()) => s_probe.rtsp_ok = true,
-                Err(e) => s_probe.rtsp_error = Some(classify(&e, skew)),
-            }
-        }
+        // Profile G + S results now come from oxvif's liveness probes, which run
+        // inside the health check (with_liveness_probes) — no extra api calls,
+        // and probe faults arrive structured (with ONVIF subcodes) in the report
+        // rather than as re-parsed strings.
+        let probe = profile_g_probe(&report, skew);
+        let s_probe = profile_s_probe(&report, skew);
 
         let conn = connectivity(Some(&report));
         let verdict = device_verdict(&conn, Some(&report), false);
@@ -1520,41 +1582,6 @@ fn likely_cause(
                 (false, _) => LikelyCause::BrandQuirk,
             }
         }
-    }
-}
-
-/// Parse an oxvif error string (it crosses the `ApiError = String` boundary as
-/// the error's `Display`) back into a classified [`ExportError`]. Health
-/// `checks[]` don't need this — they arrive structured from oxvif — but the
-/// Profile G probe and fingerprint calls do.
-fn classify(raw: &str, skew: Option<i64>) -> ExportError {
-    let (class, fault_code, reason) = if let Some(rest) = raw.strip_prefix("SOAP fault [") {
-        match rest.split_once("]: ") {
-            Some((code, reason)) => (
-                ErrorClass::SoapFault,
-                Some(code.to_string()),
-                reason.to_string(),
-            ),
-            None => (ErrorClass::SoapFault, None, rest.to_string()),
-        }
-    } else if raw.starts_with("Missing required field") {
-        (ErrorClass::Precondition, None, raw.to_string())
-    } else if raw.contains("HTTP request failed")
-        || raw.contains("error sending request")
-        || raw.starts_with("HTTP ")
-        || raw.starts_with("RTSP")
-    {
-        (ErrorClass::Http, None, raw.to_string())
-    } else {
-        (ErrorClass::Parse, None, raw.to_string())
-    };
-    ExportError {
-        class,
-        fault_code,
-        subcode: None,
-        likely_cause: likely_cause(class, None, &reason, skew),
-        raw: (raw != reason).then(|| raw.to_string()),
-        reason,
     }
 }
 
@@ -1948,52 +1975,58 @@ fn is_ipv4(t: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn classify_normalizes_auth_and_separates_causes() {
-        // The three brand spellings of "not authorized" all resolve to Auth.
-        for raw in [
-            "SOAP fault [SOAP-ENV:Sender]: ter:NotAuthorized",
-            "SOAP fault [SOAP-ENV:Sender]: Sender not Authorized",
-            "SOAP fault [SOAP-ENV:Sender]: The security token could not be authenticated or authorized",
-        ] {
-            let e = classify(raw, None);
-            assert_eq!(e.class, ErrorClass::SoapFault, "raw: {raw}");
-            assert_eq!(e.likely_cause, LikelyCause::Auth, "raw: {raw}");
+    fn check_err(
+        class: ErrorClass,
+        subcode: Option<&str>,
+        reason: &str,
+    ) -> oxvif::health::CheckError {
+        oxvif::health::CheckError {
+            class,
+            fault_code: None,
+            subcode: subcode.map(str::to_string),
+            reason: reason.to_string(),
+            detail: None,
         }
+    }
+
+    #[test]
+    fn export_error_preserves_subcode_and_derives_cause() {
+        // A structured auth fault → Auth, with the ONVIF subcode carried through
+        // (the cross-brand grouping key the old string re-parse could not recover).
+        let e = export_error(
+            &check_err(ErrorClass::SoapFault, Some("ter:NotAuthorized"), "denied"),
+            None,
+        );
+        assert_eq!(e.subcode.as_deref(), Some("ter:NotAuthorized"));
+        assert_eq!(e.likely_cause, LikelyCause::Auth);
 
         // Same auth fault under a large clock skew → ClockSkew (spurious auth).
-        let e = classify(
-            "SOAP fault [SOAP-ENV:Sender]: ter:NotAuthorized",
+        let e = export_error(
+            &check_err(ErrorClass::SoapFault, Some("ter:NotAuthorized"), "denied"),
             Some(-100_000),
         );
         assert_eq!(e.likely_cause, LikelyCause::ClockSkew);
 
-        // Unadvertised service precondition → Unsupported, not a device fault.
-        let e = classify("Missing required field: Search service URL", None);
-        assert_eq!(e.class, ErrorClass::Precondition);
-        assert_eq!(e.likely_cause, LikelyCause::Unsupported);
-
-        // A non-auth device fault is the interesting cross-brand case.
-        let e = classify("SOAP fault [SOAP-ENV:Receiver]: Action Failed", None);
-        assert_eq!(e.fault_code.as_deref(), Some("SOAP-ENV:Receiver"));
-        assert_eq!(e.likely_cause, LikelyCause::BrandQuirk);
-
-        // Transport failure.
-        let e = classify(
-            "HTTP request failed: error sending request for url (http://x/onvif)",
+        // A client-side precondition (service not advertised) → Unsupported.
+        let e = export_error(
+            &check_err(ErrorClass::Precondition, None, "Missing required field"),
             None,
         );
+        assert_eq!(e.likely_cause, LikelyCause::Unsupported);
+
+        // A liveness probe warn (no ONVIF fault) → transport-class.
+        let e = probe_warn_error("RTSP not reachable: connect failed", None);
+        assert_eq!(e.class, ErrorClass::Http);
         assert_eq!(e.likely_cause, LikelyCause::Transport);
     }
 
     #[test]
-    fn b64_bytes_accounts_for_padding() {
-        use base64::Engine;
-        let enc = base64::engine::general_purpose::STANDARD;
-        for len in [0usize, 1, 2, 3, 10, 48_213] {
-            let raw = vec![0u8; len];
-            assert_eq!(b64_bytes(&enc.encode(&raw)), len, "len={len}");
-        }
+    fn parses_probe_details_from_report_format() {
+        assert_eq!(parse_leading_count("12 recording(s) found"), Some(12));
+        assert_eq!(
+            parse_snapshot_bytes("http://cam/snap.jpg (48 KB image)"),
+            Some(48 * 1024)
+        );
     }
 
     fn rep_with(
