@@ -374,6 +374,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_running" => "執行中…",
         "hbatch_export" => "匯出報告",
         "hbatch_redact" => "遮蔽 IP／序號",
+        "hbatch_force" => "強制驗證未宣告",
+        "hbatch_force_hint" => "對裝置未宣告的服務,嘗試慣例 URL,能回應的標記為「未宣告卻可用」。盡力而為,不保證完整。",
         "hbatch_no_devices" => "沒有裝置。請先掃描或新增裝置。",
         "hbatch_idle" => "未執行",
         "hbatch_pending" => "等待中",

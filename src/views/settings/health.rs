@@ -40,7 +40,7 @@ pub fn HealthTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element 
         let creds = creds.peek().clone();
         running.set(true);
         spawn(async move {
-            let r = api::run_health_check(&addr, &creds).await;
+            let r = api::run_health_check(&addr, &creds, false).await;
             report.set(Some(r));
             running.set(false);
         });

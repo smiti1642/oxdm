@@ -1546,8 +1546,14 @@ pub async fn get_replay_uri(
 /// problems surface as failed checks inside the returned
 /// [`oxvif::health::HealthReport`], not as an `Err`.
 #[instrument(skip(creds), fields(addr))]
-pub async fn run_health_check(addr: &str, creds: &Credentials) -> oxvif::health::HealthReport {
-    let mut hc = oxvif::health::HealthCheck::new(addr).with_liveness_probes(true);
+pub async fn run_health_check(
+    addr: &str,
+    creds: &Credentials,
+    force_unsupported: bool,
+) -> oxvif::health::HealthReport {
+    let mut hc = oxvif::health::HealthCheck::new(addr)
+        .with_liveness_probes(true)
+        .with_force_unsupported(force_unsupported);
     if !creds.username.is_empty() {
         hc = hc.with_credentials(creds.username.clone(), creds.password.clone());
     }

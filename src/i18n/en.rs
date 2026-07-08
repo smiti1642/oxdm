@@ -375,6 +375,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_running" => "Running…",
         "hbatch_export" => "Export report",
         "hbatch_redact" => "Redact IP / serial",
+        "hbatch_force" => "Force-verify undeclared",
+        "hbatch_force_hint" => "For services the device doesn't advertise, try conventional URLs and flag any that respond (under-declared). Best-effort.",
         "hbatch_no_devices" => "No devices. Scan or add a device first.",
         "hbatch_idle" => "not run",
         "hbatch_pending" => "pending",
