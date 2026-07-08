@@ -374,6 +374,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_run" => "Run selected",
         "hbatch_running" => "Running…",
         "hbatch_export" => "Export report",
+        "hbatch_export_junit" => "Export JUnit",
+        "hbatch_export_junit_hint" => "Export as JUnit XML — the test-result format CI systems and dashboards ingest.",
         "hbatch_redact" => "Redact IP / serial",
         "hbatch_force" => "Force-verify undeclared",
         "hbatch_force_hint" => "For services the device doesn't advertise, try conventional URLs and flag any that respond (under-declared). Best-effort.",

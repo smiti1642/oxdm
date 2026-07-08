@@ -373,6 +373,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_run" => "執行所選",
         "hbatch_running" => "執行中…",
         "hbatch_export" => "匯出報告",
+        "hbatch_export_junit" => "匯出 JUnit",
+        "hbatch_export_junit_hint" => "匯出成 JUnit XML —— CI 系統與儀表板可直接讀取的測試結果格式。",
         "hbatch_redact" => "遮蔽 IP／序號",
         "hbatch_force" => "強制驗證未宣告",
         "hbatch_force_hint" => "對裝置未宣告的服務,嘗試慣例 URL,能回應的標記為「未宣告卻可用」。盡力而為,不保證完整。",

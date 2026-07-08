@@ -621,55 +621,9 @@ pub fn HealthOverviewView() -> Element {
     };
 
     let export = move |_| {
-        let res = results.peek();
-        let mut done: Vec<DeviceResult> = Vec::new();
         // Same per-user salt the run used, so timed-out devices get a stable ref.
         let salt = crate::persist::health_ref_salt();
-        for (addr, state) in res.iter() {
-            match state {
-                RunState::Done(r) => done.push((**r).clone()),
-                // Record timed-out devices too (a hanging brand is itself a
-                // finding) — build a minimal result from the live device.
-                RunState::TimedOut => {
-                    let (name, display_addr, endpoint) = ctx
-                        .devices
-                        .peek()
-                        .iter()
-                        .find(|d| &d.addr == addr)
-                        .map(|d| (d.name.clone(), d.display_addr.clone(), d.endpoint.clone()))
-                        .unwrap_or_else(|| (addr.clone(), addr.clone(), String::new()));
-                    let identity = Identity {
-                        manufacturer: String::new(),
-                        model: String::new(),
-                        source: if name.is_empty() {
-                            IdentitySource::None
-                        } else {
-                            IdentitySource::Discovery
-                        },
-                        name: name.clone(),
-                    };
-                    let dev_ref =
-                        device_ref(salt, if endpoint.is_empty() { addr } else { &endpoint });
-                    done.push(DeviceResult {
-                        target: addr.clone(),
-                        display_addr,
-                        device_ref: dev_ref,
-                        name,
-                        verdict: DeviceVerdict::Unreachable,
-                        identity,
-                        fingerprint: None,
-                        fingerprint_error: None,
-                        connectivity: connectivity(None),
-                        timed_out: true,
-                        report: None,
-                        profile_g_probe: ProfileGProbe::default(),
-                        profile_s_probe: ProfileSProbe::default(),
-                    });
-                }
-                _ => {}
-            }
-        }
-        drop(res);
+        let mut done = collect_done(&results.peek(), &ctx.devices.peek(), salt);
         if done.is_empty() {
             ctx.push_toast(ToastLevel::Info, i18n::t(locale, "hbatch_export_nothing"));
             return;
@@ -709,6 +663,47 @@ pub fn HealthOverviewView() -> Element {
             };
             let path = handle.path().to_path_buf();
             match std::fs::write(&path, json.as_bytes()) {
+                Ok(()) => ctx.push_toast(
+                    ToastLevel::Success,
+                    format!("{}: {}", i18n::t(locale, "hbatch_exported"), path.display()),
+                ),
+                Err(e) => ctx.push_toast(
+                    ToastLevel::Error,
+                    format!("{}: {e}", i18n::t(locale, "hbatch_export_failed")),
+                ),
+            }
+        });
+    };
+
+    let export_junit = move |_| {
+        let salt = crate::persist::health_ref_salt();
+        let mut done = collect_done(&results.peek(), &ctx.devices.peek(), salt);
+        if done.is_empty() {
+            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "hbatch_export_nothing"));
+            return;
+        }
+        let do_redact = *redact.peek();
+        if do_redact {
+            for d in &mut done {
+                d.redact();
+            }
+        }
+        let mut xml = junit_document(&done, do_redact);
+        if do_redact {
+            xml = redact_ipv4(&xml);
+        }
+        let file_name = format!("oxdm-health-report-{}.xml", now_file_stamp());
+        spawn(async move {
+            let Some(handle) = rfd::AsyncFileDialog::new()
+                .set_file_name(&file_name)
+                .add_filter("JUnit XML", &["xml"])
+                .save_file()
+                .await
+            else {
+                return;
+            };
+            let path = handle.path().to_path_buf();
+            match std::fs::write(&path, xml.as_bytes()) {
                 Ok(()) => ctx.push_toast(
                     ToastLevel::Success,
                     format!("{}: {}", i18n::t(locale, "hbatch_exported"), path.display()),
@@ -821,6 +816,14 @@ pub fn HealthOverviewView() -> Element {
                             onclick: export,
                             Icon { name: "download", size: 14 }
                             {i18n::t(locale, "hbatch_export")}
+                        }
+                        button {
+                            class: "btn btn-md btn-secondary",
+                            disabled: busy || !has_results,
+                            title: i18n::t(locale, "hbatch_export_junit_hint"),
+                            onclick: export_junit,
+                            Icon { name: "download", size: 14 }
+                            {i18n::t(locale, "hbatch_export_junit")}
                         }
                         button {
                             class: "btn btn-md btn-primary",
@@ -1558,6 +1561,99 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64, force: bool) -
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Collect finished device results for export, including a minimal record for
+/// timed-out devices (a hanging brand is itself a finding).
+fn collect_done(
+    results: &HashMap<String, RunState>,
+    devices: &[DeviceEntry],
+    salt: u64,
+) -> Vec<DeviceResult> {
+    let mut done = Vec::new();
+    for (addr, state) in results.iter() {
+        match state {
+            RunState::Done(r) => done.push((**r).clone()),
+            RunState::TimedOut => {
+                let (name, display_addr, endpoint) = devices
+                    .iter()
+                    .find(|d| &d.addr == addr)
+                    .map(|d| (d.name.clone(), d.display_addr.clone(), d.endpoint.clone()))
+                    .unwrap_or_else(|| (addr.clone(), addr.clone(), String::new()));
+                let identity = Identity {
+                    manufacturer: String::new(),
+                    model: String::new(),
+                    source: if name.is_empty() {
+                        IdentitySource::None
+                    } else {
+                        IdentitySource::Discovery
+                    },
+                    name: name.clone(),
+                };
+                let dev_ref = device_ref(salt, if endpoint.is_empty() { addr } else { &endpoint });
+                done.push(DeviceResult {
+                    target: addr.clone(),
+                    display_addr,
+                    device_ref: dev_ref,
+                    name,
+                    verdict: DeviceVerdict::Unreachable,
+                    identity,
+                    fingerprint: None,
+                    fingerprint_error: None,
+                    connectivity: connectivity(None),
+                    timed_out: true,
+                    report: None,
+                    profile_g_probe: ProfileGProbe::default(),
+                    profile_s_probe: ProfileSProbe::default(),
+                });
+            }
+            _ => {}
+        }
+    }
+    done
+}
+
+/// Minimal escape for a JUnit attribute value (device names / addresses).
+fn xml_attr_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A one-testcase JUnit `<testsuite>` for a device that never produced a report
+/// (timed out / unreachable).
+fn junit_unreachable_suite(name: &str) -> String {
+    format!(
+        "  <testsuite name=\"{}\" tests=\"1\" failures=\"1\" skipped=\"0\">\n    \
+         <testcase name=\"connect\" classname=\"Connectivity\">\n      \
+         <failure message=\"unreachable or timed out\" type=\"timeout\"/>\n    \
+         </testcase>\n  </testsuite>\n",
+        xml_attr_escape(name),
+    )
+}
+
+/// Build a JUnit XML document over all device results — one `<testsuite>` per
+/// device (via oxvif's `to_junit_testsuite`), a minimal errored suite for
+/// timed-out ones. `redacted` selects the pseudonym as the suite name.
+fn junit_document(devices: &[DeviceResult], redacted: bool) -> String {
+    let mut suites = String::new();
+    for d in devices {
+        let name = if redacted {
+            d.device_ref.as_str()
+        } else if !d.display_addr.is_empty() {
+            d.display_addr.as_str()
+        } else {
+            d.target.as_str()
+        };
+        match &d.report {
+            Some(r) => suites.push_str(&r.to_junit_testsuite(name)),
+            None => suites.push_str(&junit_unreachable_suite(name)),
+        }
+    }
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"oxdm-health\">\n{suites}</testsuites>\n"
+    )
+}
 
 fn counts(rep: &HealthReport) -> (usize, usize, usize, usize) {
     (
