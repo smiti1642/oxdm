@@ -26,14 +26,20 @@ Bundles for each release are attached to the corresponding
 | Windows (x86-64) — portable | `oxdm-<version>-windows-x86_64-portable.zip` | unzip and run `oxdm.exe` |
 | Linux — Ubuntu / Debian (x86-64) | `oxdm-<version>-ubuntu-x86_64.deb` | `sudo apt install ./<file>.deb` |
 
+The bundles are **not code-signed**, so every OS shows a first-run warning.
 Notes:
 
-- **macOS is Apple Silicon (`aarch64`) only.** The `aarch64` build will not run
-  on an Intel Mac; on Intel, build from source. Apple Silicon has been the
-  standard since 2020 and macOS is phasing out Intel, so a separate Intel build
-  is not shipped.
-- **Windows** bundles rely on the **WebView2 runtime**, preinstalled on
-  Windows 10/11. If the window stays blank on an older or stripped-down system,
+- **macOS: "oxdm is damaged and can't be opened".** The app is not damaged —
+  this is Gatekeeper blocking an unsigned, un-notarized app. Drag **oxdm** to
+  **Applications**, then clear the quarantine flag and launch normally:
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/oxdm.app
+  ```
+  Apple Silicon (`aarch64`) only — the build will not run on an Intel Mac; on
+  Intel, build from source.
+- **Windows: SmartScreen "Windows protected your PC".** Click **More info** →
+  **Run anyway**. The bundles rely on the **WebView2 runtime**, preinstalled on
+  Windows 10/11; if the window stays blank on an older or stripped-down system,
   install the WebView2 runtime from Microsoft.
 - **Fedora / RHEL-based distributions are not yet supported** as a prebuilt
   package (a different WebKitGTK layout, no `.deb`). Native support is planned
