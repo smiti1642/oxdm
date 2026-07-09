@@ -323,10 +323,26 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.11.0"`, pinned to the crates.io registry, with the
-`health` feature enabled in `[dependencies]` and `mock-server, health` in
-`[dev-dependencies]` (the latter only for `tests/healthtab_smoke.rs`; the
-release binary never pulls axum). Notable surfaces oxdm relies on:
+Currently pinned to the published registry crate `oxvif = "0.12.0"` (0.12.0 is
+on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
+(`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
+branch (CI has no `../oxvif`). `health` feature in `[dependencies]`,
+`mock-server, health` in `[dev-dependencies]` (the latter only for
+`tests/healthtab_smoke.rs`; the release binary never pulls axum). Notable
+surfaces oxdm relies on:
+
+- `oxvif::health::HealthCheck::with_liveness_probes(true)` — enabled in
+  `api::run_health_check`. oxvif then runs the RTSP `OPTIONS` / snapshot-byte /
+  real-Profile-G probes itself, so `run_one` in `views/health_overview.rs` reads
+  the Profile G/S probe results straight out of `report.checks` (via
+  `profile_g_probe` / `profile_s_probe`) instead of re-firing its own probes.
+  Probe faults arrive as structured `oxvif::health::CheckError` (with ONVIF
+  `subcode`), mapped to the export's `ExportError` by `export_error` — the old
+  string-parsing `classify()` is gone. Export schema is `oxdm-health-batch/v5`.
+- `oxvif::health::CheckError` / `Category::Security` — the health report now
+  carries an `auth_enforcement` check (Category `Security`) and stronger Profile
+  T gating (`media2` + `event_motion_topic` checks); these render through the
+  existing per-check table with no oxdm-side changes.
 
 - `oxvif::{RelayOutput, DigitalInput}` — IO Control view (`views/io_control.rs`)
   reads both via `api::get_relay_outputs` / `api::get_digital_inputs` and
@@ -355,7 +371,7 @@ release binary never pulls axum). Notable surfaces oxdm relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.11.0", path = "../oxvif", features = ["health"] }
+oxvif = { version = "0.12.0", path = "../oxvif", features = ["health"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to

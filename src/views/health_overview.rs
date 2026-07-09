@@ -34,7 +34,7 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v3.1";
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v5";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -326,6 +326,9 @@ struct VerdictTally {
     conformant: usize,
     partial: usize,
     unsupported: usize,
+    /// Required checks couldn't be tested (auth-blocked / skipped) — unknown,
+    /// not a failure. Kept separate so it doesn't inflate the failure tallies.
+    inconclusive: usize,
 }
 
 #[derive(Serialize, Default)]
@@ -443,6 +446,7 @@ pub fn HealthOverviewView() -> Element {
     let mut pending = use_signal(|| 0usize);
     // Default ON: these exports are meant to be pasted into public issues.
     let mut redact = use_signal(|| true);
+    let mut force_unsupported = use_signal(|| false);
     let gcreds_open = use_signal(|| false);
     let dev_creds_open = use_signal(|| false);
     let dev_creds_addr = use_signal(String::new);
@@ -598,10 +602,11 @@ pub fn HealthOverviewView() -> Element {
 
         // Load the per-user pseudonym salt once; it's Copy, so each task gets it.
         let salt = crate::persist::health_ref_salt();
+        let force = *force_unsupported.peek();
         for (d, creds) in targets {
             spawn(async move {
                 results.write().insert(d.addr.clone(), RunState::Running);
-                let outcome = run_one(&d, &creds, salt).await;
+                let outcome = run_one(&d, &creds, salt, force).await;
                 results.write().insert(d.addr.clone(), outcome);
                 let remaining = {
                     let mut p = pending.write();
@@ -616,55 +621,9 @@ pub fn HealthOverviewView() -> Element {
     };
 
     let export = move |_| {
-        let res = results.peek();
-        let mut done: Vec<DeviceResult> = Vec::new();
         // Same per-user salt the run used, so timed-out devices get a stable ref.
         let salt = crate::persist::health_ref_salt();
-        for (addr, state) in res.iter() {
-            match state {
-                RunState::Done(r) => done.push((**r).clone()),
-                // Record timed-out devices too (a hanging brand is itself a
-                // finding) — build a minimal result from the live device.
-                RunState::TimedOut => {
-                    let (name, display_addr, endpoint) = ctx
-                        .devices
-                        .peek()
-                        .iter()
-                        .find(|d| &d.addr == addr)
-                        .map(|d| (d.name.clone(), d.display_addr.clone(), d.endpoint.clone()))
-                        .unwrap_or_else(|| (addr.clone(), addr.clone(), String::new()));
-                    let identity = Identity {
-                        manufacturer: String::new(),
-                        model: String::new(),
-                        source: if name.is_empty() {
-                            IdentitySource::None
-                        } else {
-                            IdentitySource::Discovery
-                        },
-                        name: name.clone(),
-                    };
-                    let dev_ref =
-                        device_ref(salt, if endpoint.is_empty() { addr } else { &endpoint });
-                    done.push(DeviceResult {
-                        target: addr.clone(),
-                        display_addr,
-                        device_ref: dev_ref,
-                        name,
-                        verdict: DeviceVerdict::Unreachable,
-                        identity,
-                        fingerprint: None,
-                        fingerprint_error: None,
-                        connectivity: connectivity(None),
-                        timed_out: true,
-                        report: None,
-                        profile_g_probe: ProfileGProbe::default(),
-                        profile_s_probe: ProfileSProbe::default(),
-                    });
-                }
-                _ => {}
-            }
-        }
-        drop(res);
+        let mut done = collect_done(&results.peek(), &ctx.devices.peek(), salt);
         if done.is_empty() {
             ctx.push_toast(ToastLevel::Info, i18n::t(locale, "hbatch_export_nothing"));
             return;
@@ -704,6 +663,47 @@ pub fn HealthOverviewView() -> Element {
             };
             let path = handle.path().to_path_buf();
             match std::fs::write(&path, json.as_bytes()) {
+                Ok(()) => ctx.push_toast(
+                    ToastLevel::Success,
+                    format!("{}: {}", i18n::t(locale, "hbatch_exported"), path.display()),
+                ),
+                Err(e) => ctx.push_toast(
+                    ToastLevel::Error,
+                    format!("{}: {e}", i18n::t(locale, "hbatch_export_failed")),
+                ),
+            }
+        });
+    };
+
+    let export_junit = move |_| {
+        let salt = crate::persist::health_ref_salt();
+        let mut done = collect_done(&results.peek(), &ctx.devices.peek(), salt);
+        if done.is_empty() {
+            ctx.push_toast(ToastLevel::Info, i18n::t(locale, "hbatch_export_nothing"));
+            return;
+        }
+        let do_redact = *redact.peek();
+        if do_redact {
+            for d in &mut done {
+                d.redact();
+            }
+        }
+        let mut xml = junit_document(&done, do_redact);
+        if do_redact {
+            xml = redact_ipv4(&xml);
+        }
+        let file_name = format!("oxdm-health-report-{}.xml", now_file_stamp());
+        spawn(async move {
+            let Some(handle) = rfd::AsyncFileDialog::new()
+                .set_file_name(&file_name)
+                .add_filter("JUnit XML", &["xml"])
+                .save_file()
+                .await
+            else {
+                return;
+            };
+            let path = handle.path().to_path_buf();
+            match std::fs::write(&path, xml.as_bytes()) {
                 Ok(()) => ctx.push_toast(
                     ToastLevel::Success,
                     format!("{}: {}", i18n::t(locale, "hbatch_exported"), path.display()),
@@ -800,12 +800,30 @@ pub fn HealthOverviewView() -> Element {
                             }
                             {i18n::t(locale, "hbatch_redact")}
                         }
+                        label {
+                            class: "hbatch-redact",
+                            title: i18n::t(locale, "hbatch_force_hint"),
+                            input {
+                                r#type: "checkbox",
+                                checked: *force_unsupported.read(),
+                                onchange: move |e| force_unsupported.set(e.checked()),
+                            }
+                            {i18n::t(locale, "hbatch_force")}
+                        }
                         button {
                             class: "btn btn-md btn-secondary",
                             disabled: busy || !has_results,
                             onclick: export,
                             Icon { name: "download", size: 14 }
                             {i18n::t(locale, "hbatch_export")}
+                        }
+                        button {
+                            class: "btn btn-md btn-secondary",
+                            disabled: busy || !has_results,
+                            title: i18n::t(locale, "hbatch_export_junit_hint"),
+                            onclick: export_junit,
+                            Icon { name: "download", size: 14 }
+                            {i18n::t(locale, "hbatch_export_junit")}
                         }
                         button {
                             class: "btn btn-md btn-primary",
@@ -1079,7 +1097,7 @@ fn HealthDetailModal(
                                         Icon { name: status_icon(&c.status), size: 14 }
                                     }
                                     span { class: "health-row-name", "{c.id}" }
-                                    span { class: "health-row-time", "{c.elapsed.as_millis()} ms" }
+                                    span { class: "health-row-time", "{c.elapsed.unwrap_or_default().as_millis()} ms" }
                                     span { class: "health-row-detail", "{row_message(c)}" }
                                 }
                             }
@@ -1090,9 +1108,9 @@ fn HealthDetailModal(
                     div { class: "health-group",
                         div { class: "health-group-title", {i18n::t(locale, "health_profiles")} }
                         div { class: "hbatch-profiles",
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
-                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.verdict)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.verdict))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.verdict)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.verdict))} }
+                            span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.verdict)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.verdict))} }
                         }
                     }
                 }
@@ -1227,9 +1245,9 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
             // Profile S/T/G verdict badges.
             if let Some(rep) = result.report.as_ref() {
                 span { class: "hbatch-profiles",
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.0)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.0))} }
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.0)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.0))} }
-                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.0)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.0))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_s.verdict)}", {format!("S {}", verdict_label(locale, &rep.profiles.profile_s.verdict))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_t.verdict)}", {format!("T {}", verdict_label(locale, &rep.profiles.profile_t.verdict))} }
+                    span { class: "hbatch-badge {verdict_class(&rep.profiles.profile_g.verdict)}", {format!("G {}", verdict_label(locale, &rep.profiles.profile_g.verdict))} }
                 }
 
                 // Declared-vs-assessed: surface "declares X but broken" (the
@@ -1297,13 +1315,51 @@ fn DoneOutcome(locale: crate::state::Locale, result: Box<DeviceResult>) -> Eleme
     }
 }
 
-/// The `detail` of a passing check by id (the media checks stash the resolved
-/// snapshot/stream URL there), or `None` when the check didn't pass.
-fn check_detail<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a str> {
-    rep.checks
-        .iter()
-        .find(|c| c.id == id && matches!(c.status, CheckStatus::Pass))
-        .map(|c| c.detail.as_str())
+/// The full check result for an id, whatever its status.
+fn find_check<'a>(rep: &'a HealthReport, id: &str) -> Option<&'a oxvif::health::CheckResult> {
+    rep.checks.iter().find(|c| c.id == id)
+}
+
+/// Convert oxvif's structured [`oxvif::health::CheckError`] (carried on a failing
+/// health check) into the export's [`ExportError`]. This replaces the old
+/// string re-parse now that the liveness probe results arrive structured inside
+/// the report — the ONVIF `subcode` is preserved for cross-brand grouping.
+fn export_error(ce: &oxvif::health::CheckError, skew: Option<i64>) -> ExportError {
+    ExportError {
+        class: ce.class,
+        fault_code: ce.fault_code.clone(),
+        subcode: ce.subcode.clone(),
+        likely_cause: likely_cause(ce.class, ce.subcode.as_deref(), &ce.reason, skew),
+        raw: ce.detail.clone(),
+        reason: ce.reason.clone(),
+    }
+}
+
+/// A liveness probe (RTSP `OPTIONS` / snapshot fetch) failed: oxvif records that
+/// as a `Warn` with a plain reason rather than a structured ONVIF fault (it
+/// isn't one). Wrap that reason as a transport-class export error.
+fn probe_warn_error(reason: &str, skew: Option<i64>) -> ExportError {
+    ExportError {
+        class: ErrorClass::Http,
+        fault_code: None,
+        subcode: None,
+        likely_cause: likely_cause(ErrorClass::Http, None, reason, skew),
+        raw: None,
+        reason: reason.to_string(),
+    }
+}
+
+/// Leading integer of a detail like `"12 recording(s) found"`.
+fn parse_leading_count(detail: &str) -> Option<usize> {
+    detail.split_whitespace().next()?.parse().ok()
+}
+
+/// KB count from a snapshot check detail like `"http://… (123 KB image)"`,
+/// returned as bytes.
+fn parse_snapshot_bytes(detail: &str) -> Option<usize> {
+    let after = detail.rsplit_once('(')?.1;
+    let kb: usize = after.split_whitespace().next()?.parse().ok()?;
+    Some(kb * 1024)
 }
 
 /// Best-effort `(name, model)` from ONVIF scope URIs. Scopes look like
@@ -1327,20 +1383,70 @@ fn identity_from_scopes(scopes: &[String]) -> (String, String) {
     (name, model)
 }
 
-/// Decoded byte length of a (padded, newline-free) base64 payload.
-fn b64_bytes(b64: &str) -> usize {
-    let pad = b64.bytes().rev().take_while(|&b| b == b'=').count().min(2);
-    b64.len() / 4 * 3 - pad
-}
-
 // ── Per-device run ──────────────────────────────────────────────────────────
 
-async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
+/// Build the Profile G probe view from oxvif's liveness-exercised report checks
+/// (`search` / `replay`). Structured faults become classified [`ExportError`]s.
+fn profile_g_probe(rep: &HealthReport, skew: Option<i64>) -> ProfileGProbe {
+    let mut p = ProfileGProbe::default();
+    if let Some(c) = find_check(rep, "search") {
+        match &c.status {
+            CheckStatus::Pass => p.search_recordings = parse_leading_count(&c.detail),
+            CheckStatus::Fail(_) => {
+                p.search_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            _ => {}
+        }
+    }
+    if let Some(c) = find_check(rep, "replay") {
+        match &c.status {
+            CheckStatus::Pass => p.replay_uri = Some(c.detail.clone()),
+            CheckStatus::Fail(_) => {
+                p.replay_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            _ => {}
+        }
+    }
+    p
+}
+
+/// Build the Profile S probe view from oxvif's liveness-exercised report checks
+/// (`get_stream_uri` RTSP OPTIONS + `get_snapshot_uri` byte fetch). A liveness
+/// failure is a `Warn` (transport); a SOAP fault is a `Fail` (structured).
+fn profile_s_probe(rep: &HealthReport, skew: Option<i64>) -> ProfileSProbe {
+    let mut p = ProfileSProbe::default();
+    if let Some(c) = find_check(rep, "get_snapshot_uri") {
+        match &c.status {
+            CheckStatus::Pass => {
+                p.snapshot_ok = true;
+                p.snapshot_bytes = parse_snapshot_bytes(&c.detail);
+            }
+            CheckStatus::Warn(reason) => p.snapshot_error = Some(probe_warn_error(reason, skew)),
+            CheckStatus::Fail(_) => {
+                p.snapshot_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            CheckStatus::Skip(_) => {}
+        }
+    }
+    if let Some(c) = find_check(rep, "get_stream_uri") {
+        match &c.status {
+            CheckStatus::Pass => p.rtsp_ok = true,
+            CheckStatus::Warn(reason) => p.rtsp_error = Some(probe_warn_error(reason, skew)),
+            CheckStatus::Fail(_) => {
+                p.rtsp_error = c.error.as_ref().map(|ce| export_error(ce, skew))
+            }
+            CheckStatus::Skip(_) => {}
+        }
+    }
+    p
+}
+
+async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64, force: bool) -> RunState {
     let fut = async {
         // oxvif's HealthCheck is read-only and infallible (errors become Fail
         // rows inside the report). Run it first so its measured clock skew can
         // inform how we classify the probe / fingerprint auth failures.
-        let report = api::run_health_check(&d.addr, creds).await;
+        let report = api::run_health_check(&d.addr, creds, force).await;
         let skew = report.clock_skew_s;
 
         let (fingerprint, fingerprint_error) = match api::get_device_info(&d.addr, creds).await {
@@ -1354,7 +1460,16 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
                 }),
                 None,
             ),
-            Err(e) => (None, Some(classify(&e, skew))),
+            Err(e) => {
+                // Source the structured error from the report's own
+                // get_device_info check; fall back to the raw string if that
+                // check somehow passed while this separate call failed.
+                let err = find_check(&report, "get_device_info")
+                    .and_then(|c| c.error.as_ref())
+                    .map(|ce| export_error(ce, skew))
+                    .unwrap_or_else(|| probe_warn_error(&e, skew));
+                (None, Some(err))
+            }
         };
 
         // Always-present identity. Prefer the authenticated fingerprint; when it
@@ -1403,47 +1518,12 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
             },
         };
 
-        // Active Profile G probe — the part oxvif's health check does not do.
-        let mut probe = ProfileGProbe::default();
-        match api::search_recordings(&d.addr, creds).await {
-            Ok(recs) => {
-                probe.search_recordings = Some(recs.len());
-                if let Some(first) = recs.first() {
-                    match api::get_replay_uri(&d.addr, creds, &first.recording_token).await {
-                        Ok(uri) => probe.replay_uri = Some(uri),
-                        Err(e) => probe.replay_error = Some(classify(&e, skew)),
-                    }
-                }
-            }
-            Err(e) => probe.search_error = Some(classify(&e, skew)),
-        }
-
-        // Active Profile S probe — actually exercise the stream/snapshot the
-        // health check only resolved URIs for. The URIs are taken from the
-        // report's passing media checks, so no extra SOAP round-trips.
-        let mut s_probe = ProfileSProbe::default();
-        let snap_url = check_detail(&report, "get_snapshot_uri")
-            .filter(|u| u.starts_with("http"))
-            .map(str::to_string);
-        if let Some(url) = snap_url {
-            match api::fetch_snapshot_data_uri(&url, creds).await {
-                Ok(data_uri) => {
-                    s_probe.snapshot_ok = true;
-                    s_probe.snapshot_bytes =
-                        data_uri.split_once(',').map(|(_, b64)| b64_bytes(b64));
-                }
-                Err(e) => s_probe.snapshot_error = Some(classify(&e, skew)),
-            }
-        }
-        let rtsp_url = check_detail(&report, "get_stream_uri")
-            .filter(|u| u.starts_with("rtsp"))
-            .map(str::to_string);
-        if let Some(url) = rtsp_url {
-            match api::probe_rtsp_options(&url).await {
-                Ok(()) => s_probe.rtsp_ok = true,
-                Err(e) => s_probe.rtsp_error = Some(classify(&e, skew)),
-            }
-        }
+        // Profile G + S results now come from oxvif's liveness probes, which run
+        // inside the health check (with_liveness_probes) — no extra api calls,
+        // and probe faults arrive structured (with ONVIF subcodes) in the report
+        // rather than as re-parsed strings.
+        let probe = profile_g_probe(&report, skew);
+        let s_probe = profile_s_probe(&report, skew);
 
         let conn = connectivity(Some(&report));
         let verdict = device_verdict(&conn, Some(&report), false);
@@ -1482,6 +1562,99 @@ async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64) -> RunState {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Collect finished device results for export, including a minimal record for
+/// timed-out devices (a hanging brand is itself a finding).
+fn collect_done(
+    results: &HashMap<String, RunState>,
+    devices: &[DeviceEntry],
+    salt: u64,
+) -> Vec<DeviceResult> {
+    let mut done = Vec::new();
+    for (addr, state) in results.iter() {
+        match state {
+            RunState::Done(r) => done.push((**r).clone()),
+            RunState::TimedOut => {
+                let (name, display_addr, endpoint) = devices
+                    .iter()
+                    .find(|d| &d.addr == addr)
+                    .map(|d| (d.name.clone(), d.display_addr.clone(), d.endpoint.clone()))
+                    .unwrap_or_else(|| (addr.clone(), addr.clone(), String::new()));
+                let identity = Identity {
+                    manufacturer: String::new(),
+                    model: String::new(),
+                    source: if name.is_empty() {
+                        IdentitySource::None
+                    } else {
+                        IdentitySource::Discovery
+                    },
+                    name: name.clone(),
+                };
+                let dev_ref = device_ref(salt, if endpoint.is_empty() { addr } else { &endpoint });
+                done.push(DeviceResult {
+                    target: addr.clone(),
+                    display_addr,
+                    device_ref: dev_ref,
+                    name,
+                    verdict: DeviceVerdict::Unreachable,
+                    identity,
+                    fingerprint: None,
+                    fingerprint_error: None,
+                    connectivity: connectivity(None),
+                    timed_out: true,
+                    report: None,
+                    profile_g_probe: ProfileGProbe::default(),
+                    profile_s_probe: ProfileSProbe::default(),
+                });
+            }
+            _ => {}
+        }
+    }
+    done
+}
+
+/// Minimal escape for a JUnit attribute value (device names / addresses).
+fn xml_attr_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A one-testcase JUnit `<testsuite>` for a device that never produced a report
+/// (timed out / unreachable).
+fn junit_unreachable_suite(name: &str) -> String {
+    format!(
+        "  <testsuite name=\"{}\" tests=\"1\" failures=\"1\" skipped=\"0\">\n    \
+         <testcase name=\"connect\" classname=\"Connectivity\">\n      \
+         <failure message=\"unreachable or timed out\" type=\"timeout\"/>\n    \
+         </testcase>\n  </testsuite>\n",
+        xml_attr_escape(name),
+    )
+}
+
+/// Build a JUnit XML document over all device results — one `<testsuite>` per
+/// device (via oxvif's `to_junit_testsuite`), a minimal errored suite for
+/// timed-out ones. `redacted` selects the pseudonym as the suite name.
+fn junit_document(devices: &[DeviceResult], redacted: bool) -> String {
+    let mut suites = String::new();
+    for d in devices {
+        let name = if redacted {
+            d.device_ref.as_str()
+        } else if !d.display_addr.is_empty() {
+            d.display_addr.as_str()
+        } else {
+            d.target.as_str()
+        };
+        match &d.report {
+            Some(r) => suites.push_str(&r.to_junit_testsuite(name)),
+            None => suites.push_str(&junit_unreachable_suite(name)),
+        }
+    }
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"oxdm-health\">\n{suites}</testsuites>\n"
+    )
+}
+
 fn counts(rep: &HealthReport) -> (usize, usize, usize, usize) {
     (
         rep.count(|s| matches!(s, CheckStatus::Pass)),
@@ -1517,41 +1690,6 @@ fn likely_cause(
                 (false, _) => LikelyCause::BrandQuirk,
             }
         }
-    }
-}
-
-/// Parse an oxvif error string (it crosses the `ApiError = String` boundary as
-/// the error's `Display`) back into a classified [`ExportError`]. Health
-/// `checks[]` don't need this — they arrive structured from oxvif — but the
-/// Profile G probe and fingerprint calls do.
-fn classify(raw: &str, skew: Option<i64>) -> ExportError {
-    let (class, fault_code, reason) = if let Some(rest) = raw.strip_prefix("SOAP fault [") {
-        match rest.split_once("]: ") {
-            Some((code, reason)) => (
-                ErrorClass::SoapFault,
-                Some(code.to_string()),
-                reason.to_string(),
-            ),
-            None => (ErrorClass::SoapFault, None, rest.to_string()),
-        }
-    } else if raw.starts_with("Missing required field") {
-        (ErrorClass::Precondition, None, raw.to_string())
-    } else if raw.contains("HTTP request failed")
-        || raw.contains("error sending request")
-        || raw.starts_with("HTTP ")
-        || raw.starts_with("RTSP")
-    {
-        (ErrorClass::Http, None, raw.to_string())
-    } else {
-        (ErrorClass::Parse, None, raw.to_string())
-    };
-    ExportError {
-        class,
-        fault_code,
-        subcode: None,
-        likely_cause: likely_cause(class, None, &reason, skew),
-        raw: (raw != reason).then(|| raw.to_string()),
-        reason,
     }
 }
 
@@ -1694,6 +1832,7 @@ fn verdict_str(v: ProfileVerdict) -> &'static str {
         ProfileVerdict::Conformant => "conformant",
         ProfileVerdict::Partial => "partial",
         ProfileVerdict::Unsupported => "unsupported",
+        ProfileVerdict::Inconclusive => "inconclusive",
     }
 }
 
@@ -1704,15 +1843,19 @@ fn verdict_str(v: ProfileVerdict) -> &'static str {
 fn reconcile_profiles(rep: &HealthReport) -> Vec<ProfileState> {
     let declared: HashSet<&str> = rep.declared_profiles.iter().map(String::as_str).collect();
     let assessed = [
-        ("S", rep.profiles.profile_s.0),
-        ("T", rep.profiles.profile_t.0),
-        ("G", rep.profiles.profile_g.0),
+        ("S", rep.profiles.profile_s.verdict),
+        ("T", rep.profiles.profile_t.verdict),
+        ("G", rep.profiles.profile_g.verdict),
     ];
     let mut out = Vec::new();
     for (p, v) in assessed {
         let is_declared = declared.contains(p);
         let status = match (is_declared, v) {
             (true, ProfileVerdict::Conformant) => ProfileStatus::Ok,
+            // Declared but couldn't be verified (auth-blocked / skipped) — not a
+            // failure. Consume oxvif's authoritative Inconclusive rather than
+            // guessing from connectivity.
+            (true, ProfileVerdict::Inconclusive) => ProfileStatus::Unverified,
             (true, _) => ProfileStatus::Broken,
             (false, ProfileVerdict::Conformant) => ProfileStatus::Extra,
             (false, _) => continue,
@@ -1751,6 +1894,7 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             ProfileVerdict::Conformant => t.conformant += 1,
             ProfileVerdict::Partial => t.partial += 1,
             ProfileVerdict::Unsupported => t.unsupported += 1,
+            ProfileVerdict::Inconclusive => t.inconclusive += 1,
         }
     }
 
@@ -1763,9 +1907,9 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             .unwrap_or_else(|| d.name.clone());
 
         if let Some(rep) = &d.report {
-            bump(&mut profiles.s, &rep.profiles.profile_s.0);
-            bump(&mut profiles.t, &rep.profiles.profile_t.0);
-            bump(&mut profiles.g, &rep.profiles.profile_g.0);
+            bump(&mut profiles.s, &rep.profiles.profile_s.verdict);
+            bump(&mut profiles.t, &rep.profiles.profile_t.verdict);
+            bump(&mut profiles.g, &rep.profiles.profile_g.verdict);
             let skew = rep.clock_skew_s;
             for c in &rep.checks {
                 let tally = checks.entry(c.id.clone()).or_default();
@@ -1939,52 +2083,58 @@ fn is_ipv4(t: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn classify_normalizes_auth_and_separates_causes() {
-        // The three brand spellings of "not authorized" all resolve to Auth.
-        for raw in [
-            "SOAP fault [SOAP-ENV:Sender]: ter:NotAuthorized",
-            "SOAP fault [SOAP-ENV:Sender]: Sender not Authorized",
-            "SOAP fault [SOAP-ENV:Sender]: The security token could not be authenticated or authorized",
-        ] {
-            let e = classify(raw, None);
-            assert_eq!(e.class, ErrorClass::SoapFault, "raw: {raw}");
-            assert_eq!(e.likely_cause, LikelyCause::Auth, "raw: {raw}");
+    fn check_err(
+        class: ErrorClass,
+        subcode: Option<&str>,
+        reason: &str,
+    ) -> oxvif::health::CheckError {
+        oxvif::health::CheckError {
+            class,
+            fault_code: None,
+            subcode: subcode.map(str::to_string),
+            reason: reason.to_string(),
+            detail: None,
         }
+    }
+
+    #[test]
+    fn export_error_preserves_subcode_and_derives_cause() {
+        // A structured auth fault → Auth, with the ONVIF subcode carried through
+        // (the cross-brand grouping key the old string re-parse could not recover).
+        let e = export_error(
+            &check_err(ErrorClass::SoapFault, Some("ter:NotAuthorized"), "denied"),
+            None,
+        );
+        assert_eq!(e.subcode.as_deref(), Some("ter:NotAuthorized"));
+        assert_eq!(e.likely_cause, LikelyCause::Auth);
 
         // Same auth fault under a large clock skew → ClockSkew (spurious auth).
-        let e = classify(
-            "SOAP fault [SOAP-ENV:Sender]: ter:NotAuthorized",
+        let e = export_error(
+            &check_err(ErrorClass::SoapFault, Some("ter:NotAuthorized"), "denied"),
             Some(-100_000),
         );
         assert_eq!(e.likely_cause, LikelyCause::ClockSkew);
 
-        // Unadvertised service precondition → Unsupported, not a device fault.
-        let e = classify("Missing required field: Search service URL", None);
-        assert_eq!(e.class, ErrorClass::Precondition);
-        assert_eq!(e.likely_cause, LikelyCause::Unsupported);
-
-        // A non-auth device fault is the interesting cross-brand case.
-        let e = classify("SOAP fault [SOAP-ENV:Receiver]: Action Failed", None);
-        assert_eq!(e.fault_code.as_deref(), Some("SOAP-ENV:Receiver"));
-        assert_eq!(e.likely_cause, LikelyCause::BrandQuirk);
-
-        // Transport failure.
-        let e = classify(
-            "HTTP request failed: error sending request for url (http://x/onvif)",
+        // A client-side precondition (service not advertised) → Unsupported.
+        let e = export_error(
+            &check_err(ErrorClass::Precondition, None, "Missing required field"),
             None,
         );
+        assert_eq!(e.likely_cause, LikelyCause::Unsupported);
+
+        // A liveness probe warn (no ONVIF fault) → transport-class.
+        let e = probe_warn_error("RTSP not reachable: connect failed", None);
+        assert_eq!(e.class, ErrorClass::Http);
         assert_eq!(e.likely_cause, LikelyCause::Transport);
     }
 
     #[test]
-    fn b64_bytes_accounts_for_padding() {
-        use base64::Engine;
-        let enc = base64::engine::general_purpose::STANDARD;
-        for len in [0usize, 1, 2, 3, 10, 48_213] {
-            let raw = vec![0u8; len];
-            assert_eq!(b64_bytes(&enc.encode(&raw)), len, "len={len}");
-        }
+    fn parses_probe_details_from_report_format() {
+        assert_eq!(parse_leading_count("12 recording(s) found"), Some(12));
+        assert_eq!(
+            parse_snapshot_bytes("http://cam/snap.jpg (48 KB image)"),
+            Some(48 * 1024)
+        );
     }
 
     fn rep_with(
@@ -1993,14 +2143,19 @@ mod tests {
         t: ProfileVerdict,
         g: ProfileVerdict,
     ) -> HealthReport {
+        let state = |verdict| oxvif::health::ProfileState {
+            verdict,
+            missing: vec![],
+            unverified: vec![],
+        };
         HealthReport {
             target: "http://x/onvif".into(),
             total_elapsed: Duration::from_millis(1),
             checks: vec![],
             profiles: oxvif::health::ProfileAssessment {
-                profile_s: (s, vec![]),
-                profile_t: (t, vec![]),
-                profile_g: (g, vec![]),
+                profile_s: state(s),
+                profile_t: state(t),
+                profile_g: state(g),
             },
             clock_skew_s: None,
             declared_profiles: declared.iter().map(|p| p.to_string()).collect(),
@@ -2092,7 +2247,7 @@ mod tests {
             status: CheckStatus::Fail("boom".into()),
             detail: String::new(),
             error: None,
-            elapsed: Duration::ZERO,
+            elapsed: None,
         }
     }
 
