@@ -92,7 +92,14 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
   service, plus a Profile S/T/G verdict), with a "Save as baseline" action and
   an automatic diff against the saved baseline on the next run. Regressions to
   FAIL, added or removed checks, and checks that slowed by 2× or more are all
-  flagged in the per-device baseline diff.
+  flagged in the per-device baseline diff. The check actively *verifies* results
+  rather than only confirming the device answered: it opens the RTSP stream,
+  fetches and validates the snapshot as a real image, and exercises Profile G
+  recording search / replay. It also runs a security probe (flags a camera that
+  serves data without authentication) and, optionally, force-verifies services
+  the device does not advertise to catch under-declared capabilities. Batch
+  results across a fleet can be exported as the rich JSON bundle or as **JUnit
+  XML** for CI dashboards.
 - **Localisation and theming** — three themes (Dark / Light / Classic);
   English, 繁體中文, and Русский locales; keyboard shortcuts; an in-app log
   viewer; and an optional on-disk log file.

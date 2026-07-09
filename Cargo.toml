@@ -3,7 +3,7 @@
 # on crates.io by an unrelated crate. The installed command / executable stays
 # `oxdm` via the [[bin]] entry below.
 name = "oxvif-device-manager"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
 authors = ["smiti1642"]
