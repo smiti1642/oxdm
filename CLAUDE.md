@@ -323,9 +323,10 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently `oxvif = "0.12.0"` via a **path dep** (`path = "../oxvif"`) while the
-0.12 line is developed locally — re-pin to the registry version before merging
-to a CI branch (CI has no `../oxvif`). `health` feature in `[dependencies]`,
+Currently pinned to the published registry crate `oxvif = "0.12.0"` (0.12.0 is
+on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
+(`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
+branch (CI has no `../oxvif`). `health` feature in `[dependencies]`,
 `mock-server, health` in `[dev-dependencies]` (the latter only for
 `tests/healthtab_smoke.rs`; the release binary never pulls axum). Notable
 surfaces oxdm relies on:
@@ -370,7 +371,7 @@ surfaces oxdm relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.11.0", path = "../oxvif", features = ["health"] }
+oxvif = { version = "0.12.0", path = "../oxvif", features = ["health"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
