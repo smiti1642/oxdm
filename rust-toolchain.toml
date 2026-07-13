@@ -1,0 +1,10 @@
+# Pin the local dev toolchain to the same channel CI uses
+# (dtolnay/rust-toolchain@stable), so `cargo clippy` / `cargo fmt` locally catch
+# exactly what the CI gate does — no more "passes locally on an old nightly,
+# fails on CI's newer stable clippy". Floating `stable` (not a pinned version)
+# tracks CI, which also resolves `stable` at run time; refresh with
+# `rustup update stable`. clippy + rustfmt are included so the fmt/clippy gate
+# works without extra `rustup component add`.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]
