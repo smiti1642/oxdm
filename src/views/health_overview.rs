@@ -447,6 +447,8 @@ pub fn HealthOverviewView() -> Element {
     // Default ON: these exports are meant to be pasted into public issues.
     let mut redact = use_signal(|| true);
     let mut force_unsupported = use_signal(|| false);
+    // Off by default: the write round-trip performs one (non-destructive) Set.
+    let mut write_checks = use_signal(|| false);
     let gcreds_open = use_signal(|| false);
     let dev_creds_open = use_signal(|| false);
     let dev_creds_addr = use_signal(String::new);
@@ -603,10 +605,11 @@ pub fn HealthOverviewView() -> Element {
         // Load the per-user pseudonym salt once; it's Copy, so each task gets it.
         let salt = crate::persist::health_ref_salt();
         let force = *force_unsupported.peek();
+        let write = *write_checks.peek();
         for (d, creds) in targets {
             spawn(async move {
                 results.write().insert(d.addr.clone(), RunState::Running);
-                let outcome = run_one(&d, &creds, salt, force).await;
+                let outcome = run_one(&d, &creds, salt, force, write).await;
                 results.write().insert(d.addr.clone(), outcome);
                 let remaining = {
                     let mut p = pending.write();
@@ -809,6 +812,16 @@ pub fn HealthOverviewView() -> Element {
                                 onchange: move |e| force_unsupported.set(e.checked()),
                             }
                             {i18n::t(locale, "hbatch_force")}
+                        }
+                        label {
+                            class: "hbatch-redact",
+                            title: i18n::t(locale, "hbatch_write_hint"),
+                            input {
+                                r#type: "checkbox",
+                                checked: *write_checks.read(),
+                                onchange: move |e| write_checks.set(e.checked()),
+                            }
+                            {i18n::t(locale, "hbatch_write")}
                         }
                         button {
                             class: "btn btn-md btn-secondary",
@@ -1441,12 +1454,18 @@ fn profile_s_probe(rep: &HealthReport, skew: Option<i64>) -> ProfileSProbe {
     p
 }
 
-async fn run_one(d: &DeviceEntry, creds: &Credentials, salt: u64, force: bool) -> RunState {
+async fn run_one(
+    d: &DeviceEntry,
+    creds: &Credentials,
+    salt: u64,
+    force: bool,
+    write: bool,
+) -> RunState {
     let fut = async {
         // oxvif's HealthCheck is read-only and infallible (errors become Fail
         // rows inside the report). Run it first so its measured clock skew can
         // inform how we classify the probe / fingerprint auth failures.
-        let report = api::run_health_check(&d.addr, creds, force).await;
+        let report = api::run_health_check(&d.addr, creds, force, write).await;
         let skew = report.clock_skew_s;
 
         let (fingerprint, fingerprint_error) = match api::get_device_info(&d.addr, creds).await {

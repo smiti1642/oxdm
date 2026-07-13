@@ -1537,23 +1537,27 @@ pub async fn get_replay_uri(
     )
 }
 
-/// Run oxvif's read-only ONVIF health / conformance check against a device.
+/// Run oxvif's ONVIF health / conformance check against a device.
 ///
 /// Unlike the other wrappers this does *not* go through the `sessions`
 /// cache — `HealthCheck` builds its own short-lived session internally (it
-/// deliberately tests connectivity from scratch). It never mutates the
-/// device: write probes are left disabled. Infallible — connection/auth
-/// problems surface as failed checks inside the returned
-/// [`oxvif::health::HealthReport`], not as an `Err`.
+/// deliberately tests connectivity from scratch). With `write_checks` on it
+/// performs one non-destructive Set (reads the first video-encoder config and
+/// writes it back unchanged) to catch devices that reject our serialized
+/// request body — a bug read-only probes can't see; otherwise it never mutates
+/// the device. Infallible — connection/auth problems surface as failed checks
+/// inside the returned [`oxvif::health::HealthReport`], not as an `Err`.
 #[instrument(skip(creds), fields(addr))]
 pub async fn run_health_check(
     addr: &str,
     creds: &Credentials,
     force_unsupported: bool,
+    write_checks: bool,
 ) -> oxvif::health::HealthReport {
     let mut hc = oxvif::health::HealthCheck::new(addr)
         .with_liveness_probes(true)
-        .with_force_unsupported(force_unsupported);
+        .with_force_unsupported(force_unsupported)
+        .with_write_checks(write_checks);
     if !creds.username.is_empty() {
         hc = hc.with_credentials(creds.username.clone(), creds.password.clone());
     }

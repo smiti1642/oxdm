@@ -379,6 +379,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_redact" => "Redact IP / serial",
         "hbatch_force" => "Force-verify undeclared",
         "hbatch_force_hint" => "For services the device doesn't advertise, try conventional URLs and flag any that respond (under-declared). Best-effort.",
+        "hbatch_write" => "Write round-trip",
+        "hbatch_write_hint" => "Reads the first video-encoder config and Sets it back unchanged — catches devices that reject our serialized request body (a bug read-only checks can't see). Non-destructive (writes the same values), but it does perform one Set.",
         "hbatch_no_devices" => "No devices. Scan or add a device first.",
         "hbatch_idle" => "not run",
         "hbatch_pending" => "pending",

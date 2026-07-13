@@ -6,6 +6,18 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **"Write round-trip" toggle** in the batch health view (off by default). When
+  enabled, the health check performs one non-destructive Set — it reads the
+  first video-encoder configuration and writes it back unchanged — to catch
+  devices that reject our serialized request body (a class of interop bug that
+  read-only probes can't see). The single-device Diagnostics tab stays
+  read-only.
+
+---
+
 ## [0.1.5] - 2026-07-09
 
 ### Changed

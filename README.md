@@ -103,7 +103,10 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
   fetches and validates the snapshot as a real image, and exercises Profile G
   recording search / replay. It also runs a security probe (flags a camera that
   serves data without authentication) and, optionally, force-verifies services
-  the device does not advertise to catch under-declared capabilities. Batch
+  the device does not advertise to catch under-declared capabilities. A batch
+  run can also opt into a non-destructive **write round-trip** (re-Set the first
+  video-encoder config unchanged) to catch devices that reject our serialized
+  request body — an interop bug read-only probes can't see. Batch
   results across a fleet can be exported as the rich JSON bundle or as **JUnit
   XML** for CI dashboards.
 - **Localisation and theming** — three themes (Dark / Light / Classic);
