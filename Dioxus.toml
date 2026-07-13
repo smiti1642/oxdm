@@ -4,19 +4,16 @@ default_platform = "desktop"
 [bundle]
 identifier = "com.smiti1642.oxdm"
 publisher = "smiti1642"
-# App icons at multiple sizes. The Linux AppImage/deb bundler files each PNG
-# into usr/share/icons/hicolor/<WxH>/apps/ by its pixel dimensions, so shipping
-# the standard sizes (not just 1024) is what lets the desktop-menu / taskbar
-# icon resolve across desktop environments. dx generates the platform formats
-# (.icns/.ico) from this set at bundle time. Regenerate from
+# App icon: a SINGLE 1024 PNG. dx/tao then synthesizes the full .icns ladder
+# itself — including the @2x/Retina slots — which is what keeps the macOS Dock
+# icon sharp. Feeding a multi-size list (icon-32/128/256/512 + 1024, used from
+# 0.1.1 through 0.1.4) made tao fill only the @1x .icns slots, leaving the
+# Retina slots empty, so every modern (Retina) Mac upscaled a smaller rep and
+# the Dock icon rendered blurry. 0.1.0 shipped a single 1024 and was sharp.
+# Trade-off: the Linux .deb desktop-menu icon may resolve less cleanly from a
+# single size — revisit per-platform if that regresses. Regenerate from
 # assets/icons/oxdm.svg via scripts/gen-icons.sh.
-icon = [
-    "assets/icons/icon-32.png",
-    "assets/icons/icon-128.png",
-    "assets/icons/icon-256.png",
-    "assets/icons/icon-512.png",
-    "assets/icons/icon.png",
-]
+icon = ["assets/icons/icon.png"]
 
 # Runtime apt dependencies for the .deb. dx's auto-detection misses these, so
 # `apt install ./oxdm.deb` left libxdo3 unsatisfied and the binary failed with
