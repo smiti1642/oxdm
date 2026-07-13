@@ -14,12 +14,20 @@
     </radialGradient>
   </defs>
 
-  <rect x="5" y="5" width="502" height="502" rx="113" fill="url(#bg)"/>
+  <!-- Inset the whole design to Apple's macOS icon grid: the rounded-rect body
+       fills ~80% of the canvas (824/1024), leaving a ~10% transparent margin on
+       every side. Without this margin a full-bleed icon renders larger than
+       native apps in the Dock/Launchpad and the Dock resamples it (soft edges).
+       Scaling about the centre (0.8207 = 412/502) also keeps the corner-radius
+       ratio at Apple's 0.225. -->
+  <g transform="translate(256 256) scale(0.8207) translate(-256 -256)">
+    <rect x="5" y="5" width="502" height="502" rx="113" fill="url(#bg)"/>
 
-  <circle cx="256" cy="256" r="143" fill="none" stroke="url(#ring)" stroke-width="23"/>
-  <circle cx="256" cy="256" r="110" fill="url(#glass)"/>
-  <circle cx="256" cy="256" r="69" fill="none" stroke="#7eb6ff" stroke-width="13" opacity="0.9"/>
-  <circle cx="256" cy="256" r="26" fill="#101022"/>
+    <circle cx="256" cy="256" r="143" fill="none" stroke="url(#ring)" stroke-width="23"/>
+    <circle cx="256" cy="256" r="110" fill="url(#glass)"/>
+    <circle cx="256" cy="256" r="69" fill="none" stroke="#7eb6ff" stroke-width="13" opacity="0.9"/>
+    <circle cx="256" cy="256" r="26" fill="#101022"/>
 
-  <ellipse cx="210" cy="205" rx="33" ry="18" fill="#ffffff" opacity="0.45" transform="rotate(-38 210 205)"/>
+    <ellipse cx="210" cy="205" rx="33" ry="18" fill="#ffffff" opacity="0.45" transform="rotate(-38 210 205)"/>
+  </g>
 </svg>
