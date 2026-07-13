@@ -216,7 +216,7 @@ fn InterfaceSection(
     let ipv6_prefix_in = use_signal(|| "64".to_string());
     let mtu_in = use_signal(|| mtu.to_string());
 
-    let header = format!("{} ({})", i18n::t(locale, "net_interface"), &iface_name);
+    let header = format!("{} ({})", i18n::t(locale, "net_interface"), iface_name);
     let token_for_save = token.clone();
     let token_for_save_v6 = token.clone();
 
