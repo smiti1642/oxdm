@@ -65,6 +65,17 @@ pub fn stop(url: &str) {
     servers().lock().unwrap().remove(url);
 }
 
+/// Labels (the `FixtureStore::device` of each served clone) of every clone
+/// currently running — so the UI can hide saved clones that are already active.
+pub fn active_labels() -> Vec<String> {
+    servers()
+        .lock()
+        .unwrap()
+        .values()
+        .map(|s| s.store.device().to_string())
+        .collect()
+}
+
 /// The structural quirk report for the clone served at `url`, if running.
 pub fn quirks(url: &str) -> Option<QuirkReport> {
     servers()

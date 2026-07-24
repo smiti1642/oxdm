@@ -238,6 +238,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_clone_failed" => "Ошибка клонирования",
         "clone_suffix" => "mock",
         "clone_badge" => "mock — офлайн-воспроизведение реальной камеры",
+        "saved_mocks" => "Сохранённые mock",
+        "saved_mock_open" => "Открыть (запустить сохранённый клон)",
+        "clone_load_failed" => "Не удалось загрузить сохранённый клон",
         "ctx_edit" => "Редакт.",
 
         // ── Edit Device ─────────────────────────────────────────────────────

@@ -238,6 +238,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_clone_failed" => "複製失敗",
         "clone_suffix" => "mock",
         "clone_badge" => "mock —— 真實相機的離線重播",
+        "saved_mocks" => "已存 mock",
+        "saved_mock_open" => "開啟（啟動這個已存 clone）",
+        "clone_load_failed" => "無法載入已存 clone",
         "ctx_edit" => "編輯",
 
         // ── Edit Device ─────────────────────────────────────────────────────

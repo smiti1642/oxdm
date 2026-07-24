@@ -547,6 +547,9 @@ pub fn DeviceList() -> Element {
                         picker_device_idx,
                     }
                 }
+                if matches!(active_tab, DeviceListTab::Manual) {
+                    SavedMocks {}
+                }
             }
 
             // ── Footer: context-dependent buttons ───────────────────────────
@@ -582,6 +585,97 @@ pub fn DeviceList() -> Element {
         GlobalCredentialsDialog { open: creds_open }
         EditDeviceDialog { open: edit_dialog_open, device_index: edit_device_idx }
         AddToGroupDialog { open: picker_open, device_index: picker_device_idx }
+    }
+}
+
+/// Saved-but-inactive camera clones (mocks) in the Manual tab: one clickable
+/// row per `~/.oxdm/clones/<name>/` that isn't currently being served. Clicking
+/// loads its fixtures, serves a mock replay server, and adds it to the list.
+#[component]
+fn SavedMocks() -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    // Subscribe to device changes so activating / removing a clone refreshes.
+    let _ = ctx.devices.read().len();
+
+    let active: std::collections::HashSet<String> = crate::mock_servers::active_labels()
+        .iter()
+        .map(|l| crate::persist::clone_dir_name(l))
+        .collect();
+    let saved: Vec<String> = crate::persist::list_clones()
+        .into_iter()
+        .filter(|d| !active.contains(d))
+        .collect();
+
+    if saved.is_empty() {
+        return rsx! {};
+    }
+
+    rsx! {
+        div { class: "saved-mocks",
+            div { class: "saved-mocks-head", {i18n::t(locale, "saved_mocks")} }
+            for dir in saved {
+                button {
+                    key: "{dir}",
+                    class: "saved-mock-row",
+                    title: i18n::t(locale, "saved_mock_open"),
+                    onclick: {
+                        let dir = dir.clone();
+                        move |_| {
+                            let dir = dir.clone();
+                            let mut devices = ctx.devices;
+                            spawn(async move {
+                                let Some(path) = crate::persist::clone_dir(&dir) else {
+                                    return;
+                                };
+                                let store = match oxvif::metamorph::FixtureStore::load(&path) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        ctx.push_toast(
+                                            ToastLevel::Error,
+                                            format!("{}: {e}", i18n::t(locale, "clone_load_failed")),
+                                        );
+                                        return;
+                                    }
+                                };
+                                let base_name = store.device().to_string();
+                                match crate::mock_servers::serve(store).await {
+                                    Ok(url) => {
+                                        let mut devs = devices.write();
+                                        devs.push(DeviceEntry {
+                                            name: format!(
+                                                "{base_name} ({})",
+                                                i18n::t(locale, "clone_suffix")
+                                            ),
+                                            addr: url,
+                                            display_addr: base_name.clone(),
+                                            firmware: String::new(),
+                                            location: String::new(),
+                                            online: true,
+                                            auth_status: crate::state::AuthStatus::Unknown,
+                                            manual: true,
+                                            credentials: None,
+                                            endpoint: String::new(),
+                                            clone_of: Some(base_name),
+                                        });
+                                        let idx = devs.len() - 1;
+                                        drop(devs);
+                                        ctx.selected.clone().set(Some(idx));
+                                        ctx.view.clone().set(View::DeviceSettings);
+                                    }
+                                    Err(e) => ctx.push_toast(
+                                        ToastLevel::Error,
+                                        format!("{}: {e}", i18n::t(locale, "ctx_clone_failed")),
+                                    ),
+                                }
+                            });
+                        }
+                    },
+                    span { class: "saved-mock-name", "{dir}" }
+                    span { class: "saved-mock-hint", {i18n::t(locale, "saved_mock_open")} }
+                }
+            }
+        }
     }
 }
 

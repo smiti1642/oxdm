@@ -242,6 +242,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_clone_failed" => "Clone failed",
         "clone_suffix" => "mock",
         "clone_badge" => "mock — offline replay of a real camera",
+        "saved_mocks" => "Saved mocks",
+        "saved_mock_open" => "Open (serve this saved clone)",
+        "clone_load_failed" => "Could not load saved clone",
         "ctx_edit" => "Edit",
 
         // ── Edit Device ─────────────────────────────────────────────────────

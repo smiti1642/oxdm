@@ -188,26 +188,30 @@ pub fn write_baseline(addr: &str, report: &oxvif::HealthReport) -> std::io::Resu
 }
 
 // ── Camera clones (one fixtures.json per cloned device) ──────────────────────
-// Wired into the UI by the clone / replay slice; defined here alongside the
-// baseline helpers they mirror.
+// One subdirectory per clone label, keyed by the sanitized label so a saved
+// clone can be listed and re-served later.
 
 /// Directory holding every recorded clone, one subdirectory per clone label.
-#[allow(dead_code)]
 fn clones_dir() -> Option<PathBuf> {
     oxdm_dir().map(|d| d.join("clones"))
+}
+
+/// The on-disk subdirectory *name* for a clone label (sanitized). Matches the
+/// entries [`list_clones`] returns, so a running clone (whose label is
+/// `FixtureStore::device`) can be correlated with what's saved on disk.
+pub fn clone_dir_name(label: &str) -> String {
+    sanitize_addr_for_file(label)
 }
 
 /// Directory for a single clone's `fixtures.json`, keyed by a sanitized label
 /// (`~/.oxdm/clones/<label>/`). Pass it to
 /// [`oxvif::metamorph::FixtureStore::save`] / `load`.
-#[allow(dead_code)]
 pub fn clone_dir(label: &str) -> Option<PathBuf> {
     clones_dir().map(|d| d.join(sanitize_addr_for_file(label)))
 }
 
-/// Labels of every recorded clone on disk (subdirectories that actually contain
+/// Names of every recorded clone on disk (subdirectories that actually contain
 /// a `fixtures.json`).
-#[allow(dead_code)]
 pub fn list_clones() -> Vec<String> {
     let Some(dir) = clones_dir() else {
         return Vec::new();
