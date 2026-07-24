@@ -2961,3 +2961,15 @@ iframe.live-video-frame {
 .qd-del { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
 .qd-add { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
 .qd-blank { background: var(--mantle, var(--surface0)); }
+/* A changed line: faint row tint, with only the differing words emphasised. */
+.qd-chg { background: color-mix(in srgb, var(--yellow) 10%, transparent); color: var(--subtext0); }
+.qd-seg-del {
+  background: color-mix(in srgb, var(--red) 34%, transparent);
+  color: var(--red);
+  border-radius: 2px;
+}
+.qd-seg-add {
+  background: color-mix(in srgb, var(--green) 34%, transparent);
+  color: var(--green);
+  border-radius: 2px;
+}

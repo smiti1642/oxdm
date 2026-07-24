@@ -17,6 +17,14 @@ pub(crate) fn now_file_stamp() -> String {
     )
 }
 
+/// A run of text within a changed line, flagged as differing or shared — for
+/// intra-line (word-level) highlighting.
+pub(crate) struct Seg {
+    pub text: String,
+    /// `true` = this run is the part that differs from the other side.
+    pub changed: bool,
+}
+
 /// One aligned row of a side-by-side (git-style) line diff.
 pub(crate) enum DiffRow {
     /// Unchanged line, present on both sides.
@@ -25,17 +33,79 @@ pub(crate) enum DiffRow {
     Left(String),
     /// Present only on the right (clone) — an added line.
     Right(String),
+    /// A line that changed: same slot on both sides, with the differing spans
+    /// marked (`left`/`right` are the two sides, word-segmented).
+    Changed { left: Vec<Seg>, right: Vec<Seg> },
 }
 
-/// Align `left` vs `right` line-by-line via an LCS, producing rows for a
-/// side-by-side diff: matched lines pair up; a deletion fills only the left,
-/// an insertion only the right.
+/// Align `left` vs `right` line-by-line via an LCS for a side-by-side diff, then
+/// pair each adjacent delete+insert into a single `Changed` row with the
+/// differing words highlighted (so a line that changed in one token isn't a
+/// wholesale red/green line pair).
 pub(crate) fn line_diff(left: &str, right: &str) -> Vec<DiffRow> {
+    merge_changes(raw_line_diff(left, right))
+}
+
+/// Line-level LCS producing only Equal / Left / Right rows.
+fn raw_line_diff(left: &str, right: &str) -> Vec<DiffRow> {
     let l: Vec<&str> = left.lines().collect();
     let r: Vec<&str> = right.lines().collect();
-    let (n, m) = (l.len(), r.len());
+    let (common_l, common_r) = lcs_flags(&l, &r);
 
-    // dp[i][j] = LCS length of l[i..] and r[j..].
+    let mut rows = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    let (n, m) = (l.len(), r.len());
+    while i < n || j < m {
+        let li_common = i < n && common_l[i];
+        let rj_common = j < m && common_r[j];
+        if i < n && j < m && li_common && rj_common {
+            rows.push(DiffRow::Equal(l[i].to_string()));
+            i += 1;
+            j += 1;
+        } else if i < n && !li_common {
+            rows.push(DiffRow::Left(l[i].to_string()));
+            i += 1;
+        } else {
+            rows.push(DiffRow::Right(r[j].to_string()));
+            j += 1;
+        }
+    }
+    rows
+}
+
+/// Merge each `Left` immediately followed by a `Right` into a `Changed` row with
+/// word-level segments; everything else passes through unchanged.
+fn merge_changes(rows: Vec<DiffRow>) -> Vec<DiffRow> {
+    let mut out = Vec::with_capacity(rows.len());
+    let mut it = rows.into_iter().peekable();
+    while let Some(row) = it.next() {
+        match row {
+            DiffRow::Left(l) if matches!(it.peek(), Some(DiffRow::Right(_))) => {
+                let DiffRow::Right(r) = it.next().unwrap() else {
+                    unreachable!()
+                };
+                let (left, right) = word_segments(&l, &r);
+                out.push(DiffRow::Changed { left, right });
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Word-level diff of two lines → the segments to render on each side, with the
+/// differing runs flagged.
+fn word_segments(left: &str, right: &str) -> (Vec<Seg>, Vec<Seg>) {
+    let lt = tokenize(left);
+    let rt = tokenize(right);
+    let (common_l, common_r) = lcs_flags(&lt, &rt);
+    (coalesce(&lt, &common_l), coalesce(&rt, &common_r))
+}
+
+/// LCS membership flags: `out.0[i]` / `out.1[j]` = true iff that element is part
+/// of the longest common subsequence (i.e. shared, not changed).
+fn lcs_flags<T: PartialEq>(l: &[T], r: &[T]) -> (Vec<bool>, Vec<bool>) {
+    let (n, m) = (l.len(), r.len());
     let mut dp = vec![vec![0usize; m + 1]; n + 1];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
@@ -46,31 +116,64 @@ pub(crate) fn line_diff(left: &str, right: &str) -> Vec<DiffRow> {
             };
         }
     }
-
-    let mut rows = Vec::new();
+    let mut lf = vec![false; n];
+    let mut rf = vec![false; m];
     let (mut i, mut j) = (0, 0);
     while i < n && j < m {
         if l[i] == r[j] {
-            rows.push(DiffRow::Equal(l[i].to_string()));
+            lf[i] = true;
+            rf[j] = true;
             i += 1;
             j += 1;
         } else if dp[i + 1][j] >= dp[i][j + 1] {
-            rows.push(DiffRow::Left(l[i].to_string()));
             i += 1;
         } else {
-            rows.push(DiffRow::Right(r[j].to_string()));
             j += 1;
         }
     }
-    while i < n {
-        rows.push(DiffRow::Left(l[i].to_string()));
-        i += 1;
+    (lf, rf)
+}
+
+/// Merge consecutive tokens with the same changed-flag into one [`Seg`].
+fn coalesce(tokens: &[&str], common: &[bool]) -> Vec<Seg> {
+    let mut segs: Vec<Seg> = Vec::new();
+    for (t, &c) in tokens.iter().zip(common) {
+        let changed = !c;
+        match segs.last_mut() {
+            Some(last) if last.changed == changed => last.text.push_str(t),
+            _ => segs.push(Seg {
+                text: (*t).to_string(),
+                changed,
+            }),
+        }
     }
-    while j < m {
-        rows.push(DiffRow::Right(r[j].to_string()));
-        j += 1;
+    segs
+}
+
+/// Split a line into alternating word / non-word runs (whitespace and XML
+/// punctuation form their own tokens), so an XML value change diffs at word
+/// granularity rather than replacing the whole line.
+fn tokenize(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut chars = s.char_indices().peekable();
+    while let Some(&(start, c)) = chars.peek() {
+        let word = is_word_char(c);
+        let mut end = start;
+        while let Some(&(idx, c2)) = chars.peek() {
+            if is_word_char(c2) == word {
+                end = idx + c2.len_utf8();
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        out.push(&s[start..end]);
     }
-    rows
+    out
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '.' | ':' | '-' | '_')
 }
 
 /// Extract the IP address (or host) from an ONVIF device service URL.
@@ -249,24 +352,53 @@ pub fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn line_diff_aligns_equal_add_remove() {
-        // left  : A B D
-        // right : A C D  → B removed, C added, A/D shared.
-        let rows = line_diff("A\nB\nD", "A\nC\nD");
-        let shape: Vec<&str> = rows
-            .iter()
+    fn shape(rows: &[DiffRow]) -> Vec<&'static str> {
+        rows.iter()
             .map(|r| match r {
                 DiffRow::Equal(_) => "=",
                 DiffRow::Left(_) => "-",
                 DiffRow::Right(_) => "+",
+                DiffRow::Changed { .. } => "~",
             })
-            .collect();
-        // A equal, then B removed and C added (order: left before right), D equal.
-        assert_eq!(shape, ["=", "-", "+", "="]);
-        assert!(matches!(&rows[0], DiffRow::Equal(s) if s == "A"));
-        assert!(matches!(&rows[1], DiffRow::Left(s) if s == "B"));
-        assert!(matches!(&rows[2], DiffRow::Right(s) if s == "C"));
+            .collect()
+    }
+
+    #[test]
+    fn line_diff_merges_adjacent_change_into_a_changed_row() {
+        // left : A B D ; right : A C D → B/C are an adjacent delete+insert, so
+        // they merge into one Changed row between the equal A and D.
+        let rows = line_diff("A\nB\nD", "A\nC\nD");
+        assert_eq!(shape(&rows), ["=", "~", "="]);
+        let DiffRow::Changed { left, right } = &rows[1] else {
+            panic!("expected a Changed row: {:?}", shape(&rows));
+        };
+        assert!(left.iter().all(|s| s.changed) && left.iter().any(|s| s.text == "B"));
+        assert!(right.iter().all(|s| s.changed) && right.iter().any(|s| s.text == "C"));
+    }
+
+    #[test]
+    fn line_diff_highlights_only_the_changed_word() {
+        // Same element, one differing value → the tag stays shared, only the
+        // value is flagged.
+        let rows = line_diff(
+            "  <tt:Manufacturer>oxvif-mock</tt:Manufacturer>",
+            "  <tt:Manufacturer>Hikvision</tt:Manufacturer>",
+        );
+        assert_eq!(shape(&rows), ["~"]);
+        let DiffRow::Changed { left, right } = &rows[0] else {
+            panic!("expected Changed");
+        };
+        // The shared markup is not flagged; the value words are.
+        assert!(left
+            .iter()
+            .any(|s| !s.changed && s.text.contains("Manufacturer")));
+        assert!(left.iter().any(|s| s.changed && s.text.contains("oxvif")));
+        assert!(right
+            .iter()
+            .any(|s| s.changed && s.text.contains("Hikvision")));
+        // Reassembling each side reproduces the original line.
+        let l: String = left.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(l, "  <tt:Manufacturer>oxvif-mock</tt:Manufacturer>");
     }
 
     #[test]

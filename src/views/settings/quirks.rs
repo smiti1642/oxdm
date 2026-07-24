@@ -223,6 +223,26 @@ fn QuirkRow(
                                     div { class: "qd-cell qd-blank" }
                                     div { class: "qd-cell qd-add", "{s}" }
                                 },
+                                DiffRow::Changed { left, right } => rsx! {
+                                    div { class: "qd-cell qd-chg",
+                                        for (k, seg) in left.iter().enumerate() {
+                                            span {
+                                                key: "{k}",
+                                                class: if seg.changed { "qd-seg-del" } else { "" },
+                                                "{seg.text}"
+                                            }
+                                        }
+                                    }
+                                    div { class: "qd-cell qd-chg",
+                                        for (k, seg) in right.iter().enumerate() {
+                                            span {
+                                                key: "{k}",
+                                                class: if seg.changed { "qd-seg-add" } else { "" },
+                                                "{seg.text}"
+                                            }
+                                        }
+                                    }
+                                },
                             }
                         }
                     }
