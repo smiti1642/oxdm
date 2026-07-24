@@ -6,7 +6,10 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
-## [Unreleased]
+## [0.2.0] - 2026-07-24
+
+Headline: **clone a real camera into an in-app mock and inspect its quirks** —
+built on oxvif 0.13's metamorph — plus a raw-SOAP capture toggle in batch health.
 
 ### Added
 - **Clone a camera into an in-app mock.** Right-click a device →
@@ -27,6 +30,15 @@ Changelog tracking starts at 0.1.5.
   devices that reject our serialized request body (a class of interop bug that
   read-only probes can't see). The single-device Diagnostics tab stays
   read-only.
+- **"Capture SOAP" toggle** in the batch health view (off by default) — records
+  the raw request/response of every check that *fails* into the exported report,
+  so the exact evidence of why a brand rejected a call travels with the export.
+  Only failing exchanges are stored, and WS-Security password/nonce are redacted.
+
+### Changed
+- **Upgraded to oxvif 0.13.0** (from crates.io) — the new clone/mock feature is
+  built on oxvif's `metamorph-server`; the dependency moved off the local path to
+  the published crate. The displayed oxvif version is now 0.13.0.
 
 ---
 

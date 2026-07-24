@@ -3,7 +3,7 @@
 # on crates.io by an unrelated crate. The installed command / executable stays
 # `oxdm` via the [[bin]] entry below.
 name = "oxvif-device-manager"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 description = "A cross-platform desktop ONVIF IP camera manager built with Dioxus, on top of oxvif."
 authors = ["smiti1642"]
@@ -26,7 +26,7 @@ path = "src/main.rs"
 
 [dependencies]
 dioxus = { version = "=0.7.9", features = ["desktop", "router"] }
-oxvif = { version = "0.13.0", path = "../oxvif", features = ["health", "metamorph-server"] }
+oxvif = { version = "0.13", features = ["health", "metamorph-server"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -65,7 +65,7 @@ winresource = "0.1"
 # record / serve / diff a clone against a real bound-port ONVIF mock without
 # needing a camera. (metamorph-server is already on for the release binary
 # above; listed here too for clarity.)
-oxvif = { version = "0.13.0", path = "../oxvif", features = ["mock-server", "health", "metamorph-server"] }
+oxvif = { version = "0.13", features = ["mock-server", "health", "metamorph-server"] }
 
 [profile.wasm-dev]
 inherits = "dev"
