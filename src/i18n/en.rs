@@ -224,6 +224,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_delete_confirm" => "Delete device \"{name}\"?",
         "ctx_add_manual" => "Add to Manual",
         "ctx_added_manual" => "Device added to Manual list.",
+        "ctx_clone" => "Clone this camera",
+        "ctx_cloning" => "Cloning {name}…",
+        "ctx_clone_done" => "Clone ready ({n} exchanges) — served locally.",
+        "ctx_clone_failed" => "Clone failed",
+        "clone_suffix" => "clone",
+        "clone_badge" => "🧬 clone (offline replay)",
         "ctx_edit" => "Edit",
 
         // ── Edit Device ─────────────────────────────────────────────────────

@@ -538,6 +538,7 @@ pub fn DeviceList() -> Element {
                         location: dev.location.clone(),
                         online: dev.online,
                         manual: dev.manual,
+                        is_clone: dev.clone_of.is_some(),
                         selected: sel == Some(i),
                         auth_status: dev.auth_status,
                         edit_dialog_open,
@@ -593,6 +594,7 @@ fn DeviceCard(
     location: String,
     online: bool,
     manual: bool,
+    is_clone: bool,
     selected: bool,
     auth_status: crate::state::AuthStatus,
     edit_dialog_open: Signal<bool>,
@@ -677,6 +679,9 @@ fn DeviceCard(
             if !location.is_empty() {
                 div { class: "device-location", "{location}" }
             }
+            if is_clone {
+                div { class: "device-firmware", {i18n::t(locale, "clone_badge")} }
+            }
         }
 
         if let Some((mx, my)) = *ctx_menu.read() {
@@ -710,6 +715,85 @@ fn DeviceCard(
                     },
                 }
 
+                // ── Clone this camera (real devices only) ───────────────
+                if !is_clone {
+                    CtxMenuItem {
+                        icon: "copy",
+                        label: i18n::t(locale, "ctx_clone"),
+                        on_click: move |_| {
+                            ctx_menu.set(None);
+                            let Some(dev) = devices.peek().get(index).cloned() else {
+                                return;
+                            };
+                            let creds = ctx.credentials_for(&dev);
+                            let orig_addr = dev.addr.clone();
+                            let orig_display = dev.display_addr.clone();
+                            let base_name = if dev.name.is_empty() {
+                                dev.display_addr.clone()
+                            } else {
+                                dev.name.clone()
+                            };
+                            ctx.push_toast(
+                                ToastLevel::Info,
+                                i18n::t(locale, "ctx_cloning").replace("{name}", &base_name),
+                            );
+                            let label = base_name.clone();
+                            spawn(async move {
+                                match crate::api::record_clone(&orig_addr, &creds, &label).await {
+                                    Ok(store) => {
+                                        // Best-effort persist so the clone survives a restart.
+                                        if let Some(dir) = crate::persist::clone_dir(&label) {
+                                            let _ = store.save(&dir);
+                                        }
+                                        let n = store.len();
+                                        match crate::mock_servers::serve(store).await {
+                                            Ok(url) => {
+                                                let mut devs = devices.write();
+                                                devs.push(DeviceEntry {
+                                                    name: format!(
+                                                        "{base_name} ({})",
+                                                        i18n::t(locale, "clone_suffix")
+                                                    ),
+                                                    addr: url,
+                                                    display_addr: orig_display,
+                                                    firmware: String::new(),
+                                                    location: String::new(),
+                                                    online: true,
+                                                    auth_status: crate::state::AuthStatus::Unknown,
+                                                    manual: true,
+                                                    credentials: None,
+                                                    endpoint: String::new(),
+                                                    clone_of: Some(orig_addr),
+                                                });
+                                                let idx = devs.len() - 1;
+                                                drop(devs);
+                                                ctx.selected.clone().set(Some(idx));
+                                                ctx.view.clone().set(View::DeviceSettings);
+                                                ctx.push_toast(
+                                                    ToastLevel::Success,
+                                                    i18n::t(locale, "ctx_clone_done")
+                                                        .replace("{n}", &n.to_string()),
+                                                );
+                                            }
+                                            Err(e) => ctx.push_toast(
+                                                ToastLevel::Error,
+                                                format!(
+                                                    "{}: {e}",
+                                                    i18n::t(locale, "ctx_clone_failed")
+                                                ),
+                                            ),
+                                        }
+                                    }
+                                    Err(e) => ctx.push_toast(
+                                        ToastLevel::Error,
+                                        format!("{}: {e}", i18n::t(locale, "ctx_clone_failed")),
+                                    ),
+                                }
+                            });
+                        },
+                    }
+                }
+
                 // ── Manual-only actions ─────────────────────────────────
                 if manual {
                     CtxMenuItem {
@@ -737,6 +821,10 @@ fn DeviceCard(
                                 dangerous: true,
                                 on_confirm: EventHandler::new(move |_| {
                                     let removed = devices.write().remove(index);
+                                    // A served clone: shut its replay server down.
+                                    if removed.clone_of.is_some() {
+                                        crate::mock_servers::stop(&removed.addr);
+                                    }
                                     // Drop any cached session for this addr
                                     // so we don't keep dead sessions around
                                     // for a device the user just deleted.

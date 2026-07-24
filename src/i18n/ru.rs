@@ -220,6 +220,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_delete_confirm" => "Удалить устройство «{name}»?",
         "ctx_add_manual" => "Доб. вручную",
         "ctx_added_manual" => "Добавлено в список.",
+        "ctx_clone" => "Клонировать камеру",
+        "ctx_cloning" => "Клонирование {name}…",
+        "ctx_clone_done" => "Клон готов ({n} обменов) — работает локально.",
+        "ctx_clone_failed" => "Ошибка клонирования",
+        "clone_suffix" => "клон",
+        "clone_badge" => "🧬 клон (офлайн-воспроизведение)",
         "ctx_edit" => "Редакт.",
 
         // ── Edit Device ─────────────────────────────────────────────────────
