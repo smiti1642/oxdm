@@ -109,14 +109,6 @@ pub async fn record_clone(
     trace_result("record_clone", addr, result)
 }
 
-/// Structural quirk diff of a recorded clone against oxvif's synthetic
-/// (spec-ideal) mock: which response element paths the real camera adds or omits
-/// versus the baseline. Structure only (not values) — see
-/// [`oxvif::metamorph::FixtureStore::diff_against_synthetic`]. Infallible.
-pub fn quirk_diff(store: &oxvif::metamorph::FixtureStore) -> oxvif::metamorph::QuirkReport {
-    store.diff_against_synthetic()
-}
-
 // ── Discovery ───────────────────────────────────────────────────────────────
 
 /// Run a single WS-Discovery round across all network interfaces.

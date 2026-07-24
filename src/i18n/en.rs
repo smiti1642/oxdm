@@ -164,6 +164,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_exported" => "Quirks exported",
         "quirk_export_failed" => "Export failed",
         "quirk_export_nothing" => "Nothing selected to export.",
+        "quirk_baseline" => "Baseline (spec-ideal)",
+        "quirk_clone" => "Clone (camera)",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "devices",

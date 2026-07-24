@@ -16,17 +16,17 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use oxvif::metamorph::{FixtureStore, QuirkReport};
+use oxvif::metamorph::{FixtureStore, OperationDiff, QuirkReport};
 use oxvif::mock::MockServer;
 
-/// A served clone: its bound replay server plus the structural quirk report
-/// computed once at serve time, so the Quirks view can render it without the
-/// (now moved-into-replay) fixture store.
+/// A served clone: its bound replay server plus a clone of the fixture store, so
+/// the Quirks view can derive both the structural report and the per-operation
+/// side-by-side diff on demand.
 struct Served {
     /// Held only to keep the bound server alive; dropped (→ shutdown) by `stop`.
     #[allow(dead_code)]
     server: MockServer,
-    quirks: QuirkReport,
+    store: FixtureStore,
 }
 
 /// Running clone servers, keyed by their served device-service URL — the same
@@ -45,14 +45,17 @@ fn servers() -> &'static Mutex<HashMap<String, Served>> {
 /// unrecorded operations fall to synthetic device state, so `Set → Get` still
 /// round-trips.
 pub async fn serve(store: FixtureStore) -> std::io::Result<String> {
-    // Compute the quirk diff before the store is moved into the replay server.
-    let quirks = crate::api::quirk_diff(&store);
+    // Keep a clone for the Quirks view before the store moves into replay.
+    let view = store.clone();
     let server = MockServer::builder().replay(store).start().await?;
     let url = server.device_url().to_string();
-    servers()
-        .lock()
-        .unwrap()
-        .insert(url.clone(), Served { server, quirks });
+    servers().lock().unwrap().insert(
+        url.clone(),
+        Served {
+            server,
+            store: view,
+        },
+    );
     Ok(url)
 }
 
@@ -64,7 +67,21 @@ pub fn stop(url: &str) {
 
 /// The structural quirk report for the clone served at `url`, if running.
 pub fn quirks(url: &str) -> Option<QuirkReport> {
-    servers().lock().unwrap().get(url).map(|s| s.quirks.clone())
+    servers()
+        .lock()
+        .unwrap()
+        .get(url)
+        .map(|s| s.store.diff_against_synthetic())
+}
+
+/// Per-operation side-by-side diff material (baseline vs clone XML) for the
+/// clone served at `url`, if running.
+pub fn details(url: &str) -> Option<Vec<OperationDiff>> {
+    servers()
+        .lock()
+        .unwrap()
+        .get(url)
+        .map(|s| s.store.diff_details())
 }
 
 #[cfg(test)]
@@ -91,16 +108,18 @@ mod tests {
             .expect("record clone");
         assert!(store.len() >= 2, "expected several recorded reads");
 
-        // Structural quirk diff runs (clone == synthetic here, so no drift, but
-        // the call path is exercised).
-        let report = api::quirk_diff(&store);
-        assert!(report.compared >= 2, "diff should compare the recorded ops");
-
         // Serve the clone from the pool and drive it over real HTTP.
         let url = serve(store).await.expect("serve clone");
+
+        // The served clone exposes both the structural report and the
+        // per-operation side-by-side diff material.
+        let report = quirks(&url).expect("served clone exposes a quirk report");
+        assert!(report.compared >= 2, "diff should compare the recorded ops");
+        let details = details(&url).expect("served clone exposes diff details");
+        assert_eq!(details.len(), report.compared, "one detail per recorded op");
         assert!(
-            quirks(&url).is_some(),
-            "a served clone should expose its quirk report"
+            details.iter().all(|d| d.baseline_xml.contains('\n')),
+            "each detail carries multi-line pretty XML"
         );
 
         let client = oxvif::OnvifClient::new(&url);

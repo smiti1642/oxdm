@@ -163,6 +163,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_exported" => "怪癖已匯出",
         "quirk_export_failed" => "匯出失敗",
         "quirk_export_nothing" => "沒有選取任何項目可匯出。",
+        "quirk_baseline" => "基準（規格理想）",
+        "quirk_clone" => "複製（相機）",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "台裝置",

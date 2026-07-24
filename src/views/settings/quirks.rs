@@ -4,13 +4,13 @@ use std::collections::HashSet;
 use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Ctx, ToastLevel};
+use crate::util::{line_diff, DiffRow};
 use dioxus::prelude::*;
 
-/// Quirks tab — shown only for a served clone. Renders the structural quirk diff
-/// (which response element paths the real camera adds `+` or omits `−` versus
-/// oxvif's synthetic baseline) as an expandable, selectable list, with export of
-/// the checked operations to JSON. Structure only, Body shape (the SOAP Header
-/// is excluded upstream).
+/// Quirks tab — shown only for a served clone. Lists the operations whose
+/// response shape drifts from oxvif's synthetic baseline; each row expands into
+/// a git-style **left/right** line diff of the two SOAP responses (baseline vs
+/// camera), and the checked rows export to JSON.
 #[component]
 pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
     let ctx = use_context::<Ctx>();
@@ -18,8 +18,7 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
     let mut selected = use_signal(HashSet::<String>::new);
     let expanded = use_signal(HashSet::<String>::new);
 
-    // Cheap pool lookup + clone each render (no PartialEq on the report, so
-    // `use_memo` doesn't apply).
+    // Cheap pool lookups each render (no PartialEq on the report → no use_memo).
     let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
         return rsx! {
             div { class: "health-view",
@@ -27,6 +26,7 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
             }
         };
     };
+    let details = crate::mock_servers::details(&addr.read()).unwrap_or_default();
 
     let all_keys: Vec<String> = rep.quirks.iter().map(|q| q.key_canon.clone()).collect();
     let sel_count = selected.read().len();
@@ -124,14 +124,24 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
             } else {
                 div { class: "quirk-list",
                     for q in rep.quirks.iter() {
-                        QuirkRow {
-                            key: "{q.key_canon}",
-                            key_canon: q.key_canon.clone(),
-                            op: op_name(&q.action).to_string(),
-                            added: q.only_in_clone.clone(),
-                            removed: q.only_in_synthetic.clone(),
-                            selected,
-                            expanded,
+                        {
+                            let d = details.iter().find(|d| d.key_canon == q.key_canon);
+                            let (baseline, clone) = d
+                                .map(|d| (d.baseline_xml.clone(), d.clone_xml.clone()))
+                                .unwrap_or_default();
+                            rsx! {
+                                QuirkRow {
+                                    key: "{q.key_canon}",
+                                    key_canon: q.key_canon.clone(),
+                                    op: op_name(&q.action).to_string(),
+                                    added_count: q.only_in_clone.len(),
+                                    removed_count: q.only_in_synthetic.len(),
+                                    baseline,
+                                    clone,
+                                    selected,
+                                    expanded,
+                                }
+                            }
                         }
                     }
                 }
@@ -140,17 +150,21 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
     }
 }
 
-/// One operation row: a select checkbox and an expandable header revealing the
-/// added / removed element paths.
+/// One operation row: a select checkbox and an expandable header revealing a
+/// side-by-side (baseline | clone) line diff of the two SOAP responses.
 #[component]
 fn QuirkRow(
     key_canon: String,
     op: String,
-    added: Vec<String>,
-    removed: Vec<String>,
+    added_count: usize,
+    removed_count: usize,
+    baseline: String,
+    clone: String,
     mut selected: Signal<HashSet<String>>,
     mut expanded: Signal<HashSet<String>>,
 ) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
     let is_sel = selected.read().contains(&key_canon);
     let is_exp = expanded.read().contains(&key_canon);
     let k_sel = key_canon.clone();
@@ -179,16 +193,32 @@ fn QuirkRow(
                     },
                     span { class: "quirk-caret", {if is_exp { "▾" } else { "▸" }} }
                     span { class: "quirk-op", "{op}" }
-                    span { class: "quirk-count", {format!("+{} −{}", added.len(), removed.len())} }
+                    span { class: "quirk-count", {format!("+{added_count} \u{2212}{removed_count}")} }
                 }
             }
             if is_exp {
-                div { class: "quirk-detail",
-                    for p in added.iter() {
-                        div { class: "quirk-added", {format!("+ {p}")} }
+                div { class: "quirk-diff",
+                    div { class: "qd-row qd-head",
+                        div { class: "qd-cell", {i18n::t(locale, "quirk_baseline")} }
+                        div { class: "qd-cell", {i18n::t(locale, "quirk_clone")} }
                     }
-                    for p in removed.iter() {
-                        div { class: "quirk-removed", {format!("\u{2212} {p}")} }
+                    for (i, row) in line_diff(&baseline, &clone).iter().enumerate() {
+                        div { key: "{i}", class: "qd-row",
+                            match row {
+                                DiffRow::Equal(s) => rsx! {
+                                    div { class: "qd-cell qd-eq", "{s}" }
+                                    div { class: "qd-cell qd-eq", "{s}" }
+                                },
+                                DiffRow::Left(s) => rsx! {
+                                    div { class: "qd-cell qd-del", "{s}" }
+                                    div { class: "qd-cell qd-blank" }
+                                },
+                                DiffRow::Right(s) => rsx! {
+                                    div { class: "qd-cell qd-blank" }
+                                    div { class: "qd-cell qd-add", "{s}" }
+                                },
+                            }
+                        }
                     }
                 }
             }

@@ -2932,15 +2932,32 @@ iframe.live-video-frame {
   color: var(--overlay1);
   font-variant-numeric: tabular-nums;
 }
-.quirk-detail {
-  padding: 4px 10px 10px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* Side-by-side (baseline | clone) line diff. */
+.quirk-diff {
+  border-top: 1px solid var(--surface1);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
-  word-break: break-all;
-  border-top: 1px solid var(--surface1);
+  overflow-x: auto;
 }
-.quirk-added { color: var(--green); }
-.quirk-removed { color: var(--red); }
+.qd-row { display: flex; align-items: stretch; }
+.qd-head {
+  position: sticky;
+  top: 0;
+  font-weight: 600;
+  background: var(--surface1);
+  color: var(--subtext0);
+}
+.qd-head .qd-cell { white-space: normal; }
+.qd-cell {
+  flex: 1 1 50%;
+  min-width: 0;
+  padding: 1px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-right: 1px solid var(--surface1);
+}
+.qd-cell:last-child { border-right: 0; }
+.qd-eq { color: var(--text); }
+.qd-del { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.qd-add { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.qd-blank { background: var(--mantle, var(--surface0)); }

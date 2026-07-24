@@ -17,6 +17,62 @@ pub(crate) fn now_file_stamp() -> String {
     )
 }
 
+/// One aligned row of a side-by-side (git-style) line diff.
+pub(crate) enum DiffRow {
+    /// Unchanged line, present on both sides.
+    Equal(String),
+    /// Present only on the left (baseline) — a removed line.
+    Left(String),
+    /// Present only on the right (clone) — an added line.
+    Right(String),
+}
+
+/// Align `left` vs `right` line-by-line via an LCS, producing rows for a
+/// side-by-side diff: matched lines pair up; a deletion fills only the left,
+/// an insertion only the right.
+pub(crate) fn line_diff(left: &str, right: &str) -> Vec<DiffRow> {
+    let l: Vec<&str> = left.lines().collect();
+    let r: Vec<&str> = right.lines().collect();
+    let (n, m) = (l.len(), r.len());
+
+    // dp[i][j] = LCS length of l[i..] and r[j..].
+    let mut dp = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if l[i] == r[j] {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
+        }
+    }
+
+    let mut rows = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if l[i] == r[j] {
+            rows.push(DiffRow::Equal(l[i].to_string()));
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            rows.push(DiffRow::Left(l[i].to_string()));
+            i += 1;
+        } else {
+            rows.push(DiffRow::Right(r[j].to_string()));
+            j += 1;
+        }
+    }
+    while i < n {
+        rows.push(DiffRow::Left(l[i].to_string()));
+        i += 1;
+    }
+    while j < m {
+        rows.push(DiffRow::Right(r[j].to_string()));
+        j += 1;
+    }
+    rows
+}
+
 /// Extract the IP address (or host) from an ONVIF device service URL.
 ///
 /// Examples:
@@ -192,6 +248,26 @@ pub fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_diff_aligns_equal_add_remove() {
+        // left  : A B D
+        // right : A C D  → B removed, C added, A/D shared.
+        let rows = line_diff("A\nB\nD", "A\nC\nD");
+        let shape: Vec<&str> = rows
+            .iter()
+            .map(|r| match r {
+                DiffRow::Equal(_) => "=",
+                DiffRow::Left(_) => "-",
+                DiffRow::Right(_) => "+",
+            })
+            .collect();
+        // A equal, then B removed and C added (order: left before right), D equal.
+        assert_eq!(shape, ["=", "-", "+", "="]);
+        assert!(matches!(&rows[0], DiffRow::Equal(s) if s == "A"));
+        assert!(matches!(&rows[1], DiffRow::Left(s) if s == "B"));
+        assert!(matches!(&rows[2], DiffRow::Right(s) if s == "C"));
+    }
 
     #[test]
     fn extract_ip_http() {

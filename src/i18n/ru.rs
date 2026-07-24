@@ -163,6 +163,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_exported" => "Причуды экспортированы",
         "quirk_export_failed" => "Ошибка экспорта",
         "quirk_export_nothing" => "Ничего не выбрано для экспорта.",
+        "quirk_baseline" => "Эталон (идеал)",
+        "quirk_clone" => "Клон (камера)",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "устр.",
