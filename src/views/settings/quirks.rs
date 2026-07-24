@@ -119,6 +119,12 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
                 }
             }
 
+            // Honest scope note — what the quirk finder does and does not cover.
+            div { class: "health-baseline-note",
+                Icon { name: "info", size: 12 }
+                {i18n::t(locale, "quirk_scope")}
+            }
+
             if rep.quirks.is_empty() {
                 div { class: "health-empty", {i18n::t(locale, "quirk_clean")} }
             } else {
