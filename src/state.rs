@@ -100,6 +100,8 @@ pub enum SettingsTab {
     Users,
     Maintenance,
     Health,
+    /// Structural quirk diff — only reachable for a served clone device.
+    Quirks,
 }
 
 // ── Auth status ─────────────────────────────────────────────────────────────

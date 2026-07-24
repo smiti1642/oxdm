@@ -154,6 +154,10 @@ pub fn get(key: &str) -> Option<&'static str> {
         "tab_users" => "使用者",
         "tab_maintenance" => "維護",
         "tab_health" => "健康檢查",
+        "tab_quirks" => "怪癖",
+        "quirk_summary" => "{device}:{compared} 個操作中有 {quirks} 個回應形狀與規格理想基準不同。",
+        "quirk_clean" => "無結構偏離 —— 每筆錄到的回應形狀都與合成基準相符。",
+        "quirk_none_data" => "此裝置沒有怪癖資料。",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "台裝置",

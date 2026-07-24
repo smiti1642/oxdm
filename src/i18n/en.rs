@@ -155,6 +155,10 @@ pub fn get(key: &str) -> Option<&'static str> {
         "tab_users" => "Users",
         "tab_maintenance" => "Maintenance",
         "tab_health" => "Health",
+        "tab_quirks" => "Quirks",
+        "quirk_summary" => "{device}: {quirks} of {compared} operations differ in shape from the spec-ideal baseline.",
+        "quirk_clean" => "No structural drift — every recorded response matches the synthetic baseline's shape.",
+        "quirk_none_data" => "No quirk data for this device.",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "devices",

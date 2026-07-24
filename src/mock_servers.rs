@@ -16,27 +16,43 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use oxvif::metamorph::FixtureStore;
+use oxvif::metamorph::{FixtureStore, QuirkReport};
 use oxvif::mock::MockServer;
+
+/// A served clone: its bound replay server plus the structural quirk report
+/// computed once at serve time, so the Quirks view can render it without the
+/// (now moved-into-replay) fixture store.
+struct Served {
+    /// Held only to keep the bound server alive; dropped (→ shutdown) by `stop`.
+    #[allow(dead_code)]
+    server: MockServer,
+    quirks: QuirkReport,
+}
 
 /// Running clone servers, keyed by their served device-service URL — the same
 /// value that goes into the virtual `DeviceEntry.addr`, so removal can stop the
 /// server by `addr`.
-static SERVERS: OnceLock<Mutex<HashMap<String, MockServer>>> = OnceLock::new();
+static SERVERS: OnceLock<Mutex<HashMap<String, Served>>> = OnceLock::new();
 
-fn servers() -> &'static Mutex<HashMap<String, MockServer>> {
+fn servers() -> &'static Mutex<HashMap<String, Served>> {
     SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Start a bound replay server for `store` and return its device-service URL
 /// (`http://127.0.0.1:<port>/onvif/device`). The server is held alive in the
-/// pool — keyed by that URL — until [`stop`]. Reads replay the clone's recorded
-/// responses; writes and unrecorded operations fall to synthetic device state,
-/// so `Set → Get` still round-trips.
+/// pool — keyed by that URL — until [`stop`], along with the clone's structural
+/// [`quirks`]. Reads replay the clone's recorded responses; writes and
+/// unrecorded operations fall to synthetic device state, so `Set → Get` still
+/// round-trips.
 pub async fn serve(store: FixtureStore) -> std::io::Result<String> {
+    // Compute the quirk diff before the store is moved into the replay server.
+    let quirks = crate::api::quirk_diff(&store);
     let server = MockServer::builder().replay(store).start().await?;
     let url = server.device_url().to_string();
-    servers().lock().unwrap().insert(url.clone(), server);
+    servers()
+        .lock()
+        .unwrap()
+        .insert(url.clone(), Served { server, quirks });
     Ok(url)
 }
 
@@ -46,14 +62,9 @@ pub fn stop(url: &str) {
     servers().lock().unwrap().remove(url);
 }
 
-/// Whether a clone server is currently serving `url`.
-pub fn is_running(url: &str) -> bool {
-    servers().lock().unwrap().contains_key(url)
-}
-
-/// The URLs of every clone server currently running.
-pub fn running() -> Vec<String> {
-    servers().lock().unwrap().keys().cloned().collect()
+/// The structural quirk report for the clone served at `url`, if running.
+pub fn quirks(url: &str) -> Option<QuirkReport> {
+    servers().lock().unwrap().get(url).map(|s| s.quirks.clone())
 }
 
 #[cfg(test)]
@@ -87,8 +98,10 @@ mod tests {
 
         // Serve the clone from the pool and drive it over real HTTP.
         let url = serve(store).await.expect("serve clone");
-        assert!(is_running(&url));
-        assert!(running().contains(&url));
+        assert!(
+            quirks(&url).is_some(),
+            "a served clone should expose its quirk report"
+        );
 
         let client = oxvif::OnvifClient::new(&url);
         let host = client.get_hostname().await.expect("get_hostname on clone");
@@ -100,6 +113,9 @@ mod tests {
 
         // Stopping drops the server; the URL is gone from the pool.
         stop(&url);
-        assert!(!is_running(&url));
+        assert!(
+            quirks(&url).is_none(),
+            "a stopped clone should be gone from the pool"
+        );
     }
 }
