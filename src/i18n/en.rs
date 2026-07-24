@@ -240,8 +240,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_cloning" => "Cloning {name}…",
         "ctx_clone_done" => "Clone ready ({n} exchanges) — served locally.",
         "ctx_clone_failed" => "Clone failed",
-        "clone_suffix" => "clone",
-        "clone_badge" => "🧬 clone (offline replay)",
+        "clone_suffix" => "mock",
+        "clone_badge" => "mock — offline replay of a real camera",
         "ctx_edit" => "Edit",
 
         // ── Edit Device ─────────────────────────────────────────────────────

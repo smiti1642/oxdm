@@ -236,8 +236,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_cloning" => "正在複製 {name}…",
         "ctx_clone_done" => "複製完成（{n} 筆交換）—— 已在本機提供。",
         "ctx_clone_failed" => "複製失敗",
-        "clone_suffix" => "複製",
-        "clone_badge" => "🧬 複製（離線重播）",
+        "clone_suffix" => "mock",
+        "clone_badge" => "mock —— 真實相機的離線重播",
         "ctx_edit" => "編輯",
 
         // ── Edit Device ─────────────────────────────────────────────────────

@@ -236,8 +236,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "ctx_cloning" => "Клонирование {name}…",
         "ctx_clone_done" => "Клон готов ({n} обменов) — работает локально.",
         "ctx_clone_failed" => "Ошибка клонирования",
-        "clone_suffix" => "клон",
-        "clone_badge" => "🧬 клон (офлайн-воспроизведение)",
+        "clone_suffix" => "mock",
+        "clone_badge" => "mock — офлайн-воспроизведение реальной камеры",
         "ctx_edit" => "Редакт.",
 
         // ── Edit Device ─────────────────────────────────────────────────────
