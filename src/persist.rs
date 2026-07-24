@@ -187,6 +187,41 @@ pub fn write_baseline(addr: &str, report: &oxvif::HealthReport) -> std::io::Resu
     Ok(path)
 }
 
+// ── Camera clones (one fixtures.json per cloned device) ──────────────────────
+// Wired into the UI by the clone / replay slice; defined here alongside the
+// baseline helpers they mirror.
+
+/// Directory holding every recorded clone, one subdirectory per clone label.
+#[allow(dead_code)]
+fn clones_dir() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("clones"))
+}
+
+/// Directory for a single clone's `fixtures.json`, keyed by a sanitized label
+/// (`~/.oxdm/clones/<label>/`). Pass it to
+/// [`oxvif::metamorph::FixtureStore::save`] / `load`.
+#[allow(dead_code)]
+pub fn clone_dir(label: &str) -> Option<PathBuf> {
+    clones_dir().map(|d| d.join(sanitize_addr_for_file(label)))
+}
+
+/// Labels of every recorded clone on disk (subdirectories that actually contain
+/// a `fixtures.json`).
+#[allow(dead_code)]
+pub fn list_clones() -> Vec<String> {
+    let Some(dir) = clones_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().join("fixtures.json").exists())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect()
+}
+
 /// File modification time of the saved baseline, formatted for the UI
 /// ("yyyy-mm-dd hh:mm"). Returns `None` if there is no baseline or the
 /// mtime is unavailable / unreadable.

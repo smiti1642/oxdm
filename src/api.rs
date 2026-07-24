@@ -84,6 +84,39 @@ fn trace_result<T>(
     }
 }
 
+// ── Metamorph clone / replay ─────────────────────────────────────────────────
+
+/// Clone a camera's standard read surface into an in-memory
+/// [`FixtureStore`](oxvif::metamorph::FixtureStore) — the "clone this camera"
+/// action. Uses a dedicated recording session (not the shared pool), since the
+/// point is to capture a fresh, isolated snapshot of the device. Credentials in
+/// stream/snapshot URLs and WS-Security are scrubbed before anything is saved.
+///
+/// Persist the result with `store.save(persist::clone_dir(label)?)`; serve it
+/// with [`crate::mock_servers::serve`]; inspect it with [`quirk_diff`].
+#[instrument(skip(creds))]
+pub async fn record_clone(
+    addr: &str,
+    creds: &Credentials,
+    label: &str,
+) -> Result<oxvif::metamorph::FixtureStore, ApiError> {
+    let (u, p) = creds.as_options();
+    let pair = match (u, p) {
+        (Some(u), Some(p)) => Some((u, p)),
+        _ => None,
+    };
+    let result = oxvif::metamorph::record_standard_surface(addr, pair, label).await;
+    trace_result("record_clone", addr, result)
+}
+
+/// Structural quirk diff of a recorded clone against oxvif's synthetic
+/// (spec-ideal) mock: which response element paths the real camera adds or omits
+/// versus the baseline. Structure only (not values) — see
+/// [`oxvif::metamorph::FixtureStore::diff_against_synthetic`]. Infallible.
+pub fn quirk_diff(store: &oxvif::metamorph::FixtureStore) -> oxvif::metamorph::QuirkReport {
+    store.diff_against_synthetic()
+}
+
 // ── Discovery ───────────────────────────────────────────────────────────────
 
 /// Run a single WS-Discovery round across all network interfaces.

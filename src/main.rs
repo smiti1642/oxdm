@@ -5,6 +5,7 @@ mod api;
 mod components;
 mod device_ops;
 mod i18n;
+mod mock_servers;
 mod persist;
 mod sessions;
 mod state;
