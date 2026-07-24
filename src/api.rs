@@ -1586,11 +1586,13 @@ pub async fn run_health_check(
     creds: &Credentials,
     force_unsupported: bool,
     write_checks: bool,
+    capture: bool,
 ) -> oxvif::health::HealthReport {
     let mut hc = oxvif::health::HealthCheck::new(addr)
         .with_liveness_probes(true)
         .with_force_unsupported(force_unsupported)
-        .with_write_checks(write_checks);
+        .with_write_checks(write_checks)
+        .with_capture(capture);
     if !creds.username.is_empty() {
         hc = hc.with_credentials(creds.username.clone(), creds.password.clone());
     }

@@ -381,6 +381,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_force_hint" => "For services the device doesn't advertise, try conventional URLs and flag any that respond (under-declared). Best-effort.",
         "hbatch_write" => "Write round-trip",
         "hbatch_write_hint" => "Reads the first video-encoder config and Sets it back unchanged — catches devices that reject our serialized request body (a bug read-only checks can't see). Non-destructive (writes the same values), but it does perform one Set.",
+        "hbatch_capture" => "Capture SOAP",
+        "hbatch_capture_hint" => "Record the raw SOAP request/response of every check that fails, so the export carries the exact evidence of why a brand rejected a call. Only failing exchanges are stored; WS-Security password/nonce are redacted.",
         "hbatch_no_devices" => "No devices. Scan or add a device first.",
         "hbatch_idle" => "not run",
         "hbatch_pending" => "pending",

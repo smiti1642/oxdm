@@ -380,6 +380,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "hbatch_force_hint" => "對裝置未宣告的服務,嘗試慣例 URL,能回應的標記為「未宣告卻可用」。盡力而為,不保證完整。",
         "hbatch_write" => "寫入回寫測試",
         "hbatch_write_hint" => "讀取第一個視訊編碼設定並原值寫回 —— 抓出裝置拒絕我們序列化請求內容的問題(唯讀檢查看不到的 bug)。非破壞性(寫回相同值),但會執行一次 Set。",
+        "hbatch_capture" => "抓取 SOAP",
+        "hbatch_capture_hint" => "記錄每個失敗檢查的原始 SOAP 請求/回應,讓匯出檔帶有各廠牌拒絕呼叫的確切證據。只儲存失敗的交換;WS-Security 密碼/nonce 會被遮罩。",
         "hbatch_no_devices" => "沒有裝置。請先掃描或新增裝置。",
         "hbatch_idle" => "未執行",
         "hbatch_pending" => "等待中",

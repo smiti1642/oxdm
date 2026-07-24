@@ -34,7 +34,9 @@ use std::time::Duration;
 /// Hard cap so a single non-responsive device can't stall its row forever.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(120);
 
-const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v5";
+// v6: opt-in raw-SOAP capture — failing checks may carry `report.captured`
+// (redacted request + fault response) when the "Capture SOAP" toggle is on.
+const BUNDLE_SCHEMA: &str = "oxdm-health-batch/v6";
 
 /// Clock skew (seconds, absolute) beyond which WS-Security timestamp validation
 /// is likely to reject requests — the usual cause of spurious auth failures.
@@ -338,7 +340,8 @@ struct ProfileTallies {
     g: VerdictTally,
 }
 
-/// How many failures fell into each likely cause across the fleet.
+/// How many distinct device-faults fell into each likely cause across the fleet
+/// (a device counts once per distinct fault key, not once per raw occurrence).
 #[derive(Serialize, Default)]
 struct CauseTotals {
     auth: usize,
@@ -386,6 +389,7 @@ struct ProfileGap {
 struct FaultGroup {
     key: String,
     likely_cause: LikelyCause,
+    /// Number of distinct devices exhibiting this fault (not raw occurrences).
     count: usize,
     /// A few distinct device models exhibiting it (capped).
     sample_models: Vec<String>,
@@ -449,6 +453,7 @@ pub fn HealthOverviewView() -> Element {
     let mut force_unsupported = use_signal(|| false);
     // Off by default: the write round-trip performs one (non-destructive) Set.
     let mut write_checks = use_signal(|| false);
+    let mut capture = use_signal(|| false);
     let gcreds_open = use_signal(|| false);
     let dev_creds_open = use_signal(|| false);
     let dev_creds_addr = use_signal(String::new);
@@ -606,10 +611,11 @@ pub fn HealthOverviewView() -> Element {
         let salt = crate::persist::health_ref_salt();
         let force = *force_unsupported.peek();
         let write = *write_checks.peek();
+        let capture = *capture.peek();
         for (d, creds) in targets {
             spawn(async move {
                 results.write().insert(d.addr.clone(), RunState::Running);
-                let outcome = run_one(&d, &creds, salt, force, write).await;
+                let outcome = run_one(&d, &creds, salt, force, write, capture).await;
                 results.write().insert(d.addr.clone(), outcome);
                 let remaining = {
                     let mut p = pending.write();
@@ -822,6 +828,16 @@ pub fn HealthOverviewView() -> Element {
                                 onchange: move |e| write_checks.set(e.checked()),
                             }
                             {i18n::t(locale, "hbatch_write")}
+                        }
+                        label {
+                            class: "hbatch-redact",
+                            title: i18n::t(locale, "hbatch_capture_hint"),
+                            input {
+                                r#type: "checkbox",
+                                checked: *capture.read(),
+                                onchange: move |e| capture.set(e.checked()),
+                            }
+                            {i18n::t(locale, "hbatch_capture")}
                         }
                         button {
                             class: "btn btn-md btn-secondary",
@@ -1460,12 +1476,13 @@ async fn run_one(
     salt: u64,
     force: bool,
     write: bool,
+    capture: bool,
 ) -> RunState {
     let fut = async {
         // oxvif's HealthCheck is read-only and infallible (errors become Fail
         // rows inside the report). Run it first so its measured clock skew can
         // inform how we classify the probe / fingerprint auth failures.
-        let report = api::run_health_check(&d.addr, creds, force, write).await;
+        let report = api::run_health_check(&d.addr, creds, force, write, capture).await;
         let skew = report.clock_skew_s;
 
         let (fingerprint, fingerprint_error) = match api::get_device_info(&d.addr, creds).await {
@@ -1923,7 +1940,16 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
             .as_ref()
             .map(|f| f.model.clone())
             .filter(|m| !m.is_empty())
+            // Auth-failed devices have no authenticated fingerprint; fall back to
+            // the model recovered from unauthenticated scopes before the
+            // user-assigned name, so the corpus labels the real hardware.
+            .or_else(|| Some(d.identity.model.clone()).filter(|m| !m.is_empty()))
             .unwrap_or_else(|| d.name.clone());
+        // Fault keys are deduplicated per device before recording, so a device
+        // that reports the same subcode across many checks (and its
+        // probe/fingerprint errors) counts once per group — `count` is distinct
+        // devices, not raw occurrences.
+        let mut device_faults: HashMap<String, LikelyCause> = HashMap::new();
 
         if let Some(rep) = &d.report {
             bump(&mut profiles.s, &rep.profiles.profile_s.verdict);
@@ -1941,7 +1967,7 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
                 if let Some(e) = &c.error {
                     let lc = likely_cause(e.class, e.subcode.as_deref(), &e.reason, skew);
                     let key = fault_key(e.subcode.as_deref(), e.fault_code.as_deref(), &e.reason);
-                    record_fault(&mut groups, &mut cause_totals, key, lc, &model);
+                    device_faults.entry(key).or_insert(lc);
                 }
             }
 
@@ -1983,7 +2009,12 @@ fn build_summary(devices: &[DeviceResult]) -> Summary {
         .flatten()
         {
             let key = fault_key(e.subcode.as_deref(), e.fault_code.as_deref(), &e.reason);
-            record_fault(&mut groups, &mut cause_totals, key, e.likely_cause, &model);
+            device_faults.entry(key).or_insert(e.likely_cause);
+        }
+
+        // Fold this device's distinct faults into the fleet rollups — once each.
+        for (key, lc) in device_faults {
+            record_fault(&mut groups, &mut cause_totals, key, lc, &model);
         }
     }
 
@@ -2178,6 +2209,7 @@ mod tests {
             },
             clock_skew_s: None,
             declared_profiles: declared.iter().map(|p| p.to_string()).collect(),
+            captured: vec![],
         }
     }
 
@@ -2248,6 +2280,74 @@ mod tests {
         assert_eq!(gap.count, 1);
         assert_eq!(gap.sample_models, ["GV-X"]);
         assert_eq!(sum.declared_unverified.get("M"), Some(&1));
+    }
+
+    #[test]
+    fn fault_groups_count_devices_and_use_identity_model() {
+        use ProfileVerdict::*;
+        // One device: the same subcode across two checks *and* its fingerprint
+        // error, with no authenticated fingerprint (auth failed).
+        let mut rep = rep_with(&[], Inconclusive, Inconclusive, Unsupported);
+        rep.checks.push(oxvif::health::CheckResult {
+            id: "connect".into(),
+            category: oxvif::health::Category::Connectivity,
+            status: CheckStatus::Pass,
+            detail: String::new(),
+            error: None,
+            elapsed: None,
+        });
+        for id in ["get_stream_uri", "get_snapshot_uri"] {
+            rep.checks.push(oxvif::health::CheckResult {
+                id: id.into(),
+                category: oxvif::health::Category::Media,
+                status: CheckStatus::Fail("Sender not Authorized".into()),
+                detail: String::new(),
+                error: Some(check_err(
+                    ErrorClass::SoapFault,
+                    Some("ter:NotAuthorized"),
+                    "Sender not Authorized",
+                )),
+                elapsed: None,
+            });
+        }
+        let dev = DeviceResult {
+            target: "t".into(),
+            display_addr: "d".into(),
+            device_ref: "r".into(),
+            name: "Front Door".into(),
+            verdict: DeviceVerdict::Unverified,
+            identity: Identity {
+                manufacturer: "Dahua".into(),
+                model: "IPC-HFW5442".into(),
+                name: "IPC-HFW5442".into(),
+                source: IdentitySource::Scopes,
+            },
+            fingerprint: None,
+            fingerprint_error: Some(export_error(
+                &check_err(
+                    ErrorClass::SoapFault,
+                    Some("ter:NotAuthorized"),
+                    "Sender not Authorized",
+                ),
+                None,
+            )),
+            connectivity: conn(true, false),
+            timed_out: false,
+            report: Some(rep),
+            profile_g_probe: ProfileGProbe::default(),
+            profile_s_probe: ProfileSProbe::default(),
+        };
+        let sum = build_summary(std::slice::from_ref(&dev));
+
+        // Three occurrences on one device collapse to a single-device count.
+        assert_eq!(sum.fault_groups.len(), 1);
+        let g = &sum.fault_groups[0];
+        assert_eq!(g.key, "ter:NotAuthorized");
+        assert_eq!(g.count, 1);
+        // The scope-recovered model is used, not the user-assigned device name.
+        assert_eq!(g.sample_models, ["IPC-HFW5442"]);
+        // The cause total likewise counts the device once.
+        assert_eq!(sum.likely_cause_totals.auth, 1);
     }
 
     fn conn(reachable: bool, authenticated: bool) -> Connectivity {

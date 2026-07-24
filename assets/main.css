@@ -2130,8 +2130,9 @@ a      { color: var(--blue); text-decoration: none; }
 .hbatch-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .hbatch-redact {
   display: flex;
