@@ -109,6 +109,18 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
   request body — an interop bug read-only probes can't see. Batch
   results across a fleet can be exported as the rich JSON bundle or as **JUnit
   XML** for CI dashboards.
+- **Camera clones (mocks)** — right-click a device → **"Clone this camera"**
+  records its standard read surface and serves it from an in-app **mock** (an
+  offline replay server), then adds it to the device list labeled "mock". You can
+  operate the clone through every tab — settings, media, PTZ, imaging — with the
+  real camera unplugged. Saved clones persist to `~/.oxdm/clones/`; the **"Saved
+  mocks"** list in the Manual tab reopens them. A mock device also gains a
+  **Quirks** tab: a git-style side-by-side diff of each operation's response
+  against oxvif's reference (baseline) response, with word-level highlighting,
+  and an export of the selected operations to JSON. Scope is honest — the clone
+  covers the standard read surface only, and the Quirks diff is *structural*
+  (which elements are present), not ONVIF-schema conformance. Built on oxvif's
+  `metamorph-server` feature (enabled in the default build).
 - **Localisation and theming** — three themes (Dark / Light / Classic);
   English, 繁體中文, and Русский locales; keyboard shortcuts; an in-app log
   viewer; and an optional on-disk log file.

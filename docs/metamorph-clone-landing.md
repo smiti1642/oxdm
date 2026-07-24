@@ -5,6 +5,13 @@
 > diff** of the clone vs oxvif's synthetic baseline. Companion to oxvif's
 > `docs/active/metamorph-container-and-quirk-diff.md`.
 
+> **Status — shipped.** Both phases below are implemented and on `main`:
+> Phase A (foundation) and Phase B (the full UI slice — clone action, virtual
+> mock device, saved-mocks reopen, and the Quirks tab with a side-by-side,
+> word-level diff and JSON export). The honest-limits section still holds and is
+> surfaced in the UI. Later work: URL rewriting so replayed media/PTZ addresses
+> point at the container instead of the real camera.
+
 ## Design keystone
 
 oxdm is both the **server host** and the **client**: a recorded clone is served
@@ -25,25 +32,39 @@ Feature-gated on oxvif's `metamorph-server`; all additive, all tested.
 | Persistence | `src/persist.rs` | `clone_dir(label)` → `~/.oxdm/clones/<label>/`, `list_clones()` — mirror the baseline helpers. Save/load via `FixtureStore::{save,load}`. |
 | Test | `mock_servers.rs` `#[cfg(test)]` | `record_serve_drive_diff_and_stop` — full loop through the app wrappers against a bound mock camera. `cargo test --bin oxdm`: 81 pass. |
 
-## Phase B — UI slice (remaining)
+## Phase B — UI slice (done)
 
-1. **`DeviceEntry` marker** (`src/state.rs`): add `clone_of: Option<String>`
-   (`Some(original_addr)` = a served clone). A clone entry must be **excluded
-   from `devices.toml` persistence** (`persist.rs::write_devices_file` filters on
-   `manual`) and from scan-offline marking (`device_list.rs::do_scan`). Touches
-   every `DeviceEntry { … }` literal — add the field as the last one.
+1. **`DeviceEntry` marker** (`src/state.rs`): `clone_of: Option<String>`
+   (`Some(original_addr)` = a served clone). Clone entries are **excluded from
+   `devices.toml` persistence** (`persist.rs::write_devices_file` filters on
+   `manual && clone_of.is_none()`) and from scan-offline marking — they are
+   ephemeral loopback devices that live only while served.
 2. **"Clone this camera"** — a `CtxMenuItem` in `DeviceCard`'s context menu
-   (`src/components/device_list.rs`, near "Add to group"): `spawn` →
-   `api::record_clone(addr, creds, label)` with a progress signal →
-   `store.save(persist::clone_dir(label)?)` → success/quirk toast.
-3. **"Serve / open clone"** — load the store, `mock_servers::serve(label, store)`,
-   then push a virtual `DeviceEntry { addr: url, clone_of: Some(addr), manual:
-   true, credentials: None, .. }` into `ctx.devices`. Existing views drive it.
-4. **Quirk view** — render `QuirkReport` (both types are `Serialize`) reusing the
-   `health.rs` row styling (`status_class`/`row_message` are `pub(crate)`); a new
-   `SettingsTab::Quirks` next to `Health`, or a `View::QuirkDiff`. Export JSON like
-   `health_overview.rs`.
-5. **Teardown** — `mock_servers::stop(label)` when the clone entry is removed.
+   (`src/components/device_list.rs`), shown only for real devices (`!is_clone`):
+   `spawn` → `api::record_clone(addr, creds, label)` → best-effort
+   `store.save(persist::clone_dir(label))` → `mock_servers::serve(store)` → push
+   the virtual device and select it. Toasts report progress and the recorded-op
+   count.
+3. **Virtual mock device** — `mock_servers::serve(store)` starts a bound
+   `MockServer` replay server (held in an `OnceLock` pool, keyed by served URL)
+   and returns its device URL. A virtual `DeviceEntry { addr: url, clone_of:
+   Some(addr), manual: true, credentials: None, .. }` is pushed into
+   `ctx.devices`, labeled **"mock"** (`clone_suffix`), and every existing view
+   drives it unchanged.
+4. **Saved-mocks reopen** — the `SavedMocks` list in the Manual tab
+   (`device_list.rs`) shows one row per `~/.oxdm/clones/<name>/` that isn't
+   already being served (`mock_servers::active_labels` filters the running ones
+   out). Clicking a row loads its fixtures, serves a replay server, and adds it
+   as a mock device.
+5. **Quirks tab** — `SettingsTab::Quirks` (`src/views/settings/quirks.rs`),
+   present only for a served clone (gated on `clone_of.is_some()` in
+   `main_content.rs`). It renders `mock_servers::quirks(url)` (a `QuirkReport`)
+   as a list of operations whose response shape drifts from oxvif's reference
+   response; each row expands into a **git-style left/right line diff** of the
+   two SOAP responses with **word-level (intra-line) highlighting**, and checked
+   rows **export to timestamped JSON**. An honest scope note sits above the list.
+6. **Teardown** — `mock_servers::stop(url)` runs when a clone device is removed,
+   dropping its `MockServer` (Drop shuts the bound port down).
 
 ## Honest limits to show in the UI (no-silent-caps)
 

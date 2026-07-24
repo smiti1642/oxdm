@@ -9,6 +9,18 @@ Changelog tracking starts at 0.1.5.
 ## [Unreleased]
 
 ### Added
+- **Clone a camera into an in-app mock.** Right-click a device →
+  **"Clone this camera"** records its standard read surface and serves it from
+  an in-app mock (an offline replay server), then adds it to the device list
+  labeled "mock". The clone drives through every existing tab with the real
+  camera unplugged. Clones persist to `~/.oxdm/clones/`; the **"Saved mocks"**
+  list in the Manual tab reopens them. Removing a mock device stops its server.
+  Requires oxvif's `metamorph-server` feature (enabled in the default build).
+- **Quirks tab** on a mock device — a git-style side-by-side diff of each
+  recorded operation's response against oxvif's reference (baseline) response,
+  with word-level intra-line highlighting, and export of the selected operations
+  to timestamped JSON. Scope is structural (element presence), not ONVIF-schema
+  conformance, and covers the standard read surface only.
 - **"Write round-trip" toggle** in the batch health view (off by default). When
   enabled, the health check performs one non-destructive Set — it reads the
   first video-encoder configuration and writes it back unchanged — to catch
