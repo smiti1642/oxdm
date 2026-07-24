@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use oxvif::metamorph::{FixtureStore, OperationDiff, QuirkReport};
+use oxvif::metamorph::{FixtureStore, OperationDiff, ParseReport, QuirkReport};
 use oxvif::mock::MockServer;
 
 /// A served clone: its bound replay server plus a clone of the fixture store, so
@@ -95,6 +95,21 @@ pub fn details(url: &str) -> Option<Vec<OperationDiff>> {
         .map(|s| s.store.diff_details())
 }
 
+/// The parse-verification report for the clone served at `url`, if running —
+/// runs oxvif's own typed parser over each recorded response (the value/type
+/// half of the quirk diff, joined to [`quirks`]/[`details`] by `key_canon`).
+///
+/// Async: the store is cloned out from under the pool lock, then verified with
+/// no lock held.
+pub async fn parse_report(url: &str) -> Option<ParseReport> {
+    let store = servers()
+        .lock()
+        .unwrap()
+        .get(url)
+        .map(|s| s.store.clone())?;
+    Some(store.verify_parsing().await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +146,18 @@ mod tests {
         assert!(
             details.iter().all(|d| d.baseline_xml.contains('\n')),
             "each detail carries multi-line pretty XML"
+        );
+
+        // Parse verification runs oxvif's own parser over the recorded
+        // responses; a clone of oxvif's own mock must parse cleanly.
+        let parse = parse_report(&url)
+            .await
+            .expect("served clone exposes a parse report");
+        assert!(!parse.verdicts.is_empty(), "parse report covers the reads");
+        assert!(
+            parse.all_parsed(),
+            "oxvif should parse its own mock's responses: {:?}",
+            parse.failures().collect::<Vec<_>>()
         );
 
         let client = oxvif::OnvifClient::new(&url);

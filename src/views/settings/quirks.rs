@@ -1,11 +1,12 @@
 #![allow(non_snake_case)]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::components::Icon;
 use crate::i18n;
 use crate::state::{Ctx, ToastLevel};
 use crate::util::{line_diff, DiffRow};
 use dioxus::prelude::*;
+use oxvif::metamorph::ParseStatus;
 
 /// Quirks tab — shown only for a served clone. Lists the operations whose
 /// response shape drifts from oxvif's synthetic baseline; each row expands into
@@ -18,6 +19,14 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
     let mut selected = use_signal(HashSet::<String>::new);
     let expanded = use_signal(HashSet::<String>::new);
 
+    // Parse verification (value/type layer) runs oxvif's own parser over the
+    // recorded responses — async, so it loads via a resource and is joined to
+    // the structural quirks below by `key_canon`.
+    let parse = use_resource(move || {
+        let url = addr.read().clone();
+        async move { crate::mock_servers::parse_report(&url).await }
+    });
+
     // Cheap pool lookups each render (no PartialEq on the report → no use_memo).
     let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
         return rsx! {
@@ -27,6 +36,27 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
         };
     };
     let details = crate::mock_servers::details(&addr.read()).unwrap_or_default();
+
+    // Verdict per operation (for the row badge) and the failure list (ops oxvif
+    // can't parse — including structurally-clean ones the SOAP diff can't see).
+    let (verdicts, parse_failures): (HashMap<String, ParseStatus>, Vec<(String, String)>) =
+        match &*parse.read_unchecked() {
+            Some(Some(pr)) => (
+                pr.verdicts
+                    .iter()
+                    .map(|v| (v.key_canon.clone(), v.status))
+                    .collect(),
+                pr.failures()
+                    .map(|v| {
+                        (
+                            op_name(&v.action).to_string(),
+                            v.error.clone().unwrap_or_default(),
+                        )
+                    })
+                    .collect(),
+            ),
+            _ => (HashMap::new(), Vec::new()),
+        };
 
     let all_keys: Vec<String> = rep.quirks.iter().map(|q| q.key_canon.clone()).collect();
     let sel_count = selected.read().len();
@@ -125,6 +155,29 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
                 {i18n::t(locale, "quirk_scope")}
             }
 
+            // Parse failures — the highest-value signal (oxvif will choke on
+            // these). Surfaced separately because a value/type failure can land
+            // on an op with no structural drift, invisible in the list below.
+            if !parse_failures.is_empty() {
+                div { class: "quirk-parse-fail",
+                    div { class: "quirk-parse-fail-head",
+                        Icon { name: "alert-triangle", size: 12 }
+                        {i18n::t(locale, "quirk_parse_fail_head")
+                            .replace("{n}", &parse_failures.len().to_string())}
+                    }
+                    ul { class: "quirk-parse-fail-list",
+                        for (i , (op , err)) in parse_failures.iter().enumerate() {
+                            li { key: "{i}",
+                                span { class: "qpf-op", "{op}" }
+                                if !err.is_empty() {
+                                    span { class: "qpf-err", "{err}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if rep.quirks.is_empty() {
                 div { class: "health-empty", {i18n::t(locale, "quirk_clean")} }
             } else {
@@ -142,6 +195,7 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
                                     op: op_name(&q.action).to_string(),
                                     added_count: q.only_in_clone.len(),
                                     removed_count: q.only_in_synthetic.len(),
+                                    parse: verdicts.get(&q.key_canon).copied(),
                                     baseline,
                                     clone,
                                     selected,
@@ -164,6 +218,7 @@ fn QuirkRow(
     op: String,
     added_count: usize,
     removed_count: usize,
+    parse: Option<ParseStatus>,
     baseline: String,
     clone: String,
     mut selected: Signal<HashSet<String>>,
@@ -199,6 +254,15 @@ fn QuirkRow(
                     },
                     span { class: "quirk-caret", {if is_exp { "▾" } else { "▸" }} }
                     span { class: "quirk-op", "{op}" }
+                    match parse {
+                        Some(ParseStatus::Parsed) => rsx! {
+                            span { class: "quirk-badge qb-ok", {i18n::t(locale, "quirk_parse_ok")} }
+                        },
+                        Some(ParseStatus::Failed) => rsx! {
+                            span { class: "quirk-badge qb-fail", {i18n::t(locale, "quirk_parse_bad")} }
+                        },
+                        _ => rsx! {},
+                    }
                     span { class: "quirk-count", {format!("+{added_count} \u{2212}{removed_count}")} }
                 }
             }

@@ -167,6 +167,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_baseline" => "oxvif reference",
         "quirk_scope" => "Scope: the standard read surface only (device info, time, services, capabilities, hostname, network, profiles, stream/snapshot URIs, video encoders/sources, imaging, PTZ nodes). Not writes, events, recording, analytics, or vendor extensions.",
         "quirk_clone" => "Clone (camera)",
+        "quirk_parse_ok" => "parses",
+        "quirk_parse_bad" => "parse fails",
+        "quirk_parse_fail_head" => "oxvif cannot parse {n} response(s) from this device",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "devices",

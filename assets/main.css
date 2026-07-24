@@ -2974,6 +2974,40 @@ iframe.live-video-frame {
   border-radius: 2px;
 }
 
+/* Parse-verification layer: a per-op badge (will oxvif parse this response?)
+   and a banner for failures — including failures on structurally-clean ops the
+   SOAP diff can't see. */
+.quirk-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.qb-ok { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.qb-fail { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.quirk-parse-fail {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.quirk-parse-fail-head { display: flex; align-items: center; gap: 6px; color: var(--red); font-weight: 600; }
+.quirk-parse-fail-list { margin: 0; padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.qpf-op { font-weight: 600; }
+.qpf-err {
+  color: var(--subtext0);
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
 /* ── Saved mocks (inactive clones in the Manual tab) ─────────────────────── */
 .saved-mocks {
   margin: 8px 4px 0;

@@ -166,6 +166,9 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_baseline" => "oxvif 參考",
         "quirk_scope" => "範圍：僅涵蓋標準讀取面（裝置資訊、時間、服務、能力、主機名、網路、profiles、串流/快照 URI、視訊編碼/來源、影像、PTZ 節點）。不含寫入、事件、錄影、分析或廠商擴充。",
         "quirk_clone" => "複製（相機）",
+        "quirk_parse_ok" => "可解析",
+        "quirk_parse_bad" => "解析失敗",
+        "quirk_parse_fail_head" => "oxvif 無法解析此裝置的 {n} 個回應",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "台裝置",
