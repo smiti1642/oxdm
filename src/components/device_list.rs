@@ -261,6 +261,7 @@ pub fn DeviceList() -> Element {
                                 manual: false,
                                 credentials: None,
                                 endpoint: endpoint.clone(),
+                                clone_of: None,
                             });
                         }
                     }
@@ -777,6 +778,7 @@ fn DeviceCard(
                                     manual: true,
                                     credentials: cred,
                                     endpoint: dev.endpoint,
+                                    clone_of: None,
                                 });
                             }
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ctx_added_manual"));

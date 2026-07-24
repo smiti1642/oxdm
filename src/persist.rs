@@ -437,6 +437,7 @@ pub fn load_devices(creds_map: &CredsMap) -> Vec<DeviceEntry> {
                             manual: true,
                             credentials: creds,
                             endpoint: String::new(),
+                            clone_of: None,
                         }
                     })
                     .collect()
@@ -499,7 +500,8 @@ fn write_devices_file(devices: &[DeviceEntry]) {
     let Some(path) = devices_path() else { return };
     let records: Vec<DeviceRecord> = devices
         .iter()
-        .filter(|d| d.manual)
+        // Served clones are ephemeral loopback entries — never persist them.
+        .filter(|d| d.manual && d.clone_of.is_none())
         .map(|d| DeviceRecord {
             name: d.name.clone(),
             addr: d.addr.clone(),

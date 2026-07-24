@@ -195,6 +195,11 @@ pub struct DeviceEntry {
     /// discovered devices. Empty for manually-added entries that have
     /// not yet been correlated with a discovery response.
     pub endpoint: String,
+    /// `Some(original_device_addr)` if this entry is a **served metamorph
+    /// clone** (a replay `MockServer` on a loopback URL), else `None` for a real
+    /// device. Clone entries are ephemeral: never persisted to `devices.toml`,
+    /// never marked offline by a scan, and shown with a "clone" badge.
+    pub clone_of: Option<String>,
 }
 
 // ── HealthCheck groups ──────────────────────────────────────────────────────
