@@ -1,5 +1,22 @@
 //! Shared utility functions.
 
+/// A local-time filename stamp, `YYYYMMDD-HHMMSS` — for export filenames so the
+/// user never has to rename (health reports and quirk exports share it). Falls
+/// back to UTC if the local offset can't be determined.
+pub(crate) fn now_file_stamp() -> String {
+    use time::OffsetDateTime;
+    let t = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    format!(
+        "{:04}{:02}{:02}-{:02}{:02}{:02}",
+        t.year(),
+        u8::from(t.month()),
+        t.day(),
+        t.hour(),
+        t.minute(),
+        t.second(),
+    )
+}
+
 /// Extract the IP address (or host) from an ONVIF device service URL.
 ///
 /// Examples:

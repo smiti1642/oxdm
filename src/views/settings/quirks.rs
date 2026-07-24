@@ -60,9 +60,10 @@ pub fn QuirkTab(addr: ReadSignal<String>) -> Element {
             quirks: chosen,
         })
         .unwrap_or_default();
+        let file_name = format!("oxdm-quirks-{}.json", crate::util::now_file_stamp());
         spawn(async move {
             let Some(handle) = rfd::AsyncFileDialog::new()
-                .set_file_name("oxdm-quirks.json")
+                .set_file_name(&file_name)
                 .add_filter("JSON", &["json"])
                 .save_file()
                 .await

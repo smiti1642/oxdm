@@ -660,7 +660,7 @@ pub fn HealthOverviewView() -> Element {
         if do_redact {
             json = redact_ipv4(&json);
         }
-        let file_name = format!("oxdm-health-report-{}.json", now_file_stamp());
+        let file_name = format!("oxdm-health-report-{}.json", crate::util::now_file_stamp());
         spawn(async move {
             let Some(handle) = rfd::AsyncFileDialog::new()
                 .set_file_name(&file_name)
@@ -701,7 +701,7 @@ pub fn HealthOverviewView() -> Element {
         if do_redact {
             xml = redact_ipv4(&xml);
         }
-        let file_name = format!("oxdm-health-report-{}.xml", now_file_stamp());
+        let file_name = format!("oxdm-health-report-{}.xml", crate::util::now_file_stamp());
         spawn(async move {
             let Some(handle) = rfd::AsyncFileDialog::new()
                 .set_file_name(&file_name)
@@ -2071,22 +2071,6 @@ fn now_iso() -> String {
     let (oh, om) = (off.abs() / 3600, (off.abs() % 3600) / 60);
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{sign}{oh:02}:{om:02}",
-        t.year(),
-        u8::from(t.month()),
-        t.day(),
-        t.hour(),
-        t.minute(),
-        t.second(),
-    )
-}
-
-/// Filesystem-safe local timestamp (`YYYYMMDD-HHMMSS`) for export file names —
-/// no colons, so it is valid on Windows/macOS/Linux and sorts chronologically.
-fn now_file_stamp() -> String {
-    use time::OffsetDateTime;
-    let t = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-    format!(
-        "{:04}{:02}{:02}-{:02}{:02}{:02}",
         t.year(),
         u8::from(t.month()),
         t.day(),
