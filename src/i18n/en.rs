@@ -159,6 +159,11 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_summary" => "{device}: {quirks} of {compared} operations differ in shape from the spec-ideal baseline.",
         "quirk_clean" => "No structural drift — every recorded response matches the synthetic baseline's shape.",
         "quirk_none_data" => "No quirk data for this device.",
+        "quirk_select_all" => "Select all",
+        "quirk_export" => "Export selected ({n})",
+        "quirk_exported" => "Quirks exported",
+        "quirk_export_failed" => "Export failed",
+        "quirk_export_nothing" => "Nothing selected to export.",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "devices",

@@ -158,6 +158,11 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_summary" => "{device}: {quirks} из {compared} операций отличаются по форме от эталона.",
         "quirk_clean" => "Нет структурных отличий — форма всех ответов совпадает с синтетическим эталоном.",
         "quirk_none_data" => "Нет данных о причудах для этого устройства.",
+        "quirk_select_all" => "Выбрать все",
+        "quirk_export" => "Экспорт выбранных ({n})",
+        "quirk_exported" => "Причуды экспортированы",
+        "quirk_export_failed" => "Ошибка экспорта",
+        "quirk_export_nothing" => "Ничего не выбрано для экспорта.",
 
         // ── Status Bar ──────────────────────────────────────────────────────
         "status_devices" => "устр.",

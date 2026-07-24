@@ -2882,3 +2882,65 @@ iframe.live-video-frame {
 }
 
 /* Classic theme overrides consolidated above in .theme-classic block */
+
+/* ── Quirks tab (clone structural diff) ──────────────────────────────────── */
+.quirk-header { flex-wrap: wrap; gap: 12px; }
+.quirk-selectall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--subtext0);
+  cursor: pointer;
+}
+.quirk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 24px 16px;
+  overflow-y: auto;
+}
+.quirk-item {
+  border: 1px solid var(--surface1);
+  border-radius: 6px;
+  background: var(--surface0);
+}
+.quirk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.quirk-op-toggle {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.quirk-caret { color: var(--overlay1); width: 12px; }
+.quirk-op { font-weight: 600; }
+.quirk-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--overlay1);
+  font-variant-numeric: tabular-nums;
+}
+.quirk-detail {
+  padding: 4px 10px 10px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+  border-top: 1px solid var(--surface1);
+}
+.quirk-added { color: var(--green); }
+.quirk-removed { color: var(--red); }
