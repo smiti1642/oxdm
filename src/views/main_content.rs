@@ -98,16 +98,6 @@ fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
     let active = *ctx.settings_tab.read();
     let mut tab_sig = ctx.settings_tab;
 
-    // The Quirks tab only exists for a served clone device.
-    let is_clone = use_memo(move || {
-        let devices = ctx.devices.read();
-        let selected = *ctx.selected.read();
-        selected
-            .and_then(|i| devices.get(i))
-            .map(|d| d.clone_of.is_some())
-            .unwrap_or(false)
-    });
-
     rsx! {
         div { class: "settings-view",
             div { class: "tab-bar",
@@ -119,13 +109,13 @@ fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
                         {i18n::t(locale, key)}
                     }
                 }
-                if *is_clone.read() {
-                    button {
-                        class: if active == SettingsTab::Quirks { "tab tab--active" } else { "tab" },
-                        onclick: move |_| tab_sig.set(SettingsTab::Quirks),
-                        span { class: "tab-icon", Icon { name: "git-compare", size: 14 } }
-                        {i18n::t(locale, "tab_quirks")}
-                    }
+                // Quirks is available for every device: a served clone renders
+                // its recorded analysis, a real camera gets the live-test panel.
+                button {
+                    class: if active == SettingsTab::Quirks { "tab tab--active" } else { "tab" },
+                    onclick: move |_| tab_sig.set(SettingsTab::Quirks),
+                    span { class: "tab-icon", Icon { name: "git-compare", size: 14 } }
+                    {i18n::t(locale, "tab_quirks")}
                 }
             }
 
@@ -137,7 +127,7 @@ fn DeviceSettingsView(addr: Memo<String>, creds: Memo<Credentials>) -> Element {
                     SettingsTab::Users          => rsx! { UsersTab { addr, creds } },
                     SettingsTab::Maintenance    => rsx! { MaintenanceTab { addr, creds } },
                     SettingsTab::Health         => rsx! { HealthTab { addr, creds } },
-                    SettingsTab::Quirks         => rsx! { QuirkTab { addr } },
+                    SettingsTab::Quirks         => rsx! { QuirkTab { addr, creds } },
                 }
             }
         }

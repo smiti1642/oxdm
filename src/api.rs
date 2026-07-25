@@ -117,7 +117,6 @@ pub async fn record_clone(
 /// which unit `done`/`total` are counting, so the bar restarts honestly instead
 /// of pretending a single scale spans the whole run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Matched on by the Quirks view's live-test progress bar.
 pub enum LiveTestPhase {
     /// Building the session (capabilities / service discovery). Nothing is
     /// countable yet — oxvif emits no event until the first swept operation.
@@ -138,7 +137,6 @@ pub enum LiveTestPhase {
 /// the UI, so a view renders one bar plus one label for the whole run instead of
 /// matching on two unrelated oxvif types.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // Consumed by the Quirks view's live-test progress bar.
 pub struct LiveTestProgress {
     /// Which stage this event belongs to.
     pub phase: LiveTestPhase,
@@ -183,7 +181,6 @@ fn action_tail(action: &str) -> &str {
 /// [`crate::mock_servers::quirks`] / `parse_report` re-derive the reports on
 /// demand from the stored fixtures, which keeps the pool the single source of
 /// truth.
-#[allow(dead_code)] // Driven by the Quirks view's "test this camera" action.
 #[instrument(skip(creds, selection, progress), fields(ops = selection.len()))]
 pub async fn run_live_quirk_test(
     addr: &str,

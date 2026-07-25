@@ -101,6 +101,16 @@ pub fn stop(url: &str) {
     forget(url);
 }
 
+/// Whether `addr` is a **served clone**'s replay URL rather than a real device.
+///
+/// The Quirks view uses this to tell its two entry states apart: a served clone
+/// was analysed at serve time and only ever renders results, while a real camera
+/// gets the live-test panel. Note this is deliberately not "does an analysis
+/// exist" — a live-tested camera has one too.
+pub fn is_served(addr: &str) -> bool {
+    servers().lock().unwrap().contains_key(addr)
+}
+
 /// Labels (the `FixtureStore::device` of each served clone) of every clone
 /// currently running — so the UI can hide saved clones that are already active.
 pub fn active_labels() -> Vec<String> {
@@ -129,7 +139,6 @@ pub fn set_analysis(addr: &str, store: FixtureStore, sweep: HashMap<SurfaceOp, O
 /// The UI's single entry point for the live path — [`crate::api::run_live_quirk_test`]
 /// does the work and reports `progress`, this adds the pool insert (`api.rs`
 /// cannot reference this module; see that function's docs).
-#[allow(dead_code)] // Driven by the Quirks view's "test this camera" action.
 pub async fn run_live_test(
     addr: &str,
     creds: &crate::state::Credentials,
@@ -157,7 +166,6 @@ pub fn forget(addr: &str) {
 ///
 /// The UI renders [`OpOutcome::SkippedNoData`] ("this camera has no such path")
 /// differently from [`OpOutcome::Failed`] ("the command broke").
-#[allow(dead_code)] // Read by the Quirks view's live-test result table.
 pub fn sweep_outcomes(addr: &str) -> Vec<(SurfaceOp, OpOutcome)> {
     let mut v: Vec<_> = analyses()
         .lock()

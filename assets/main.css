@@ -3008,6 +3008,209 @@ iframe.live-video-frame {
   font-size: 11px;
 }
 
+/* The device declined the operation with a well-formed SOAP Fault — it said
+   no, correctly. Neutral, deliberately not the red "oxvif choked" treatment. */
+.qb-declined { background: color-mix(in srgb, var(--yellow) 16%, transparent); color: var(--yellow); }
+.quirk-parse-declined {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--yellow) 6%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.quirk-parse-declined-head { display: flex; align-items: center; gap: 6px; color: var(--yellow); font-weight: 600; }
+
+/* ── Quirks: live camera test panel ──────────────────────────────────────── */
+.quirk-live {
+  margin: 0 24px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--surface1);
+  border-radius: 6px;
+  background: var(--mantle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.quirk-live-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.quirk-live-count {
+  font-size: 12px;
+  color: var(--subtext0);
+  font-variant-numeric: tabular-nums;
+}
+/* The sweep is Get*-only; say so, or nobody points it at a working camera. */
+.quirk-live-safe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--green);
+}
+
+/* Progress. Each phase counts a different unit, so the bar legitimately
+   restarts — the step counter in the header is what makes that legible. */
+.quirk-progress { display: flex; flex-direction: column; gap: 4px; }
+.qp-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; }
+.qp-phase { font-weight: 600; color: var(--text); }
+.qp-label {
+  color: var(--subtext0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qp-count { margin-left: auto; color: var(--overlay1); font-variant-numeric: tabular-nums; }
+.qp-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface0);
+  overflow: hidden;
+}
+.qp-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 3px;
+  transition: width 120ms linear;
+}
+/* Connecting carries no total: nothing is countable until the first swept
+   operation, so the bar animates rather than lying about a fraction. */
+.qp-fill--indeterminate {
+  width: 35%;
+  transition: none;
+  animation: qp-slide 1.1s ease-in-out infinite;
+}
+@keyframes qp-slide {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+/* ── Quirks: read-surface selection tree ─────────────────────────────────── */
+.quirk-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.qs-group { border-top: 1px solid var(--surface0); }
+.qs-group:first-child { border-top: 0; }
+.qs-group-head { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.qs-group-toggle {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  font-size: 12px;
+  padding: 0;
+}
+.qs-group-name { font-weight: 600; }
+.qs-group-count {
+  font-size: 11px;
+  color: var(--overlay1);
+  font-variant-numeric: tabular-nums;
+}
+/* Tri-state group box. A native checkbox has no declarative indeterminate
+   state, so the three states are drawn here: empty, dash, check. */
+.qs-tri {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border: 1px solid var(--overlay1);
+  border-radius: 3px;
+  position: relative;
+  padding: 0;
+}
+.qs-tri::after {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--base);
+}
+.qs-tri--all { background: var(--blue); border-color: var(--blue); }
+.qs-tri--all::after { content: "\2713"; }
+.qs-tri--some { background: var(--blue); border-color: var(--blue); }
+.qs-tri--some::after { content: "\2212"; }
+.qs-tri:disabled { opacity: 0.5; cursor: default; }
+.qs-ops {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1px 12px;
+  padding: 2px 0 6px 21px;
+}
+.qs-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* A prerequisite the picks dragged in — checked, but not by the user, and it
+   cannot be unticked here (untick whatever needs it). Visually distinct so the
+   effective operation count never looks wrong. */
+.qs-op--implied { color: var(--overlay1); cursor: default; }
+.qs-auto, .qs-auto-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mauve) 18%, transparent);
+  color: var(--mauve);
+  font-family: inherit;
+}
+
+/* ── Quirks: grouped results ─────────────────────────────────────────────── */
+.quirk-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 24px 16px;
+  overflow-y: auto;
+}
+.quirk-groups .quirk-list { padding: 4px 0 4px 16px; overflow: visible; }
+.quirk-group-head {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 2px;
+  text-align: left;
+  border-bottom: 1px solid var(--surface0);
+}
+.quirk-group-name { font-weight: 600; font-size: 13px; }
+.quirk-group-stats {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--overlay1);
+  font-variant-numeric: tabular-nums;
+}
+.quirk-group-empty { font-size: 11px; color: var(--overlay1); padding: 2px 4px; }
+
+/* A selected operation with no recorded response. Only `failed` is a fault:
+   `not present` means the camera genuinely has no such path. */
+.quirk-outcome .quirk-row { gap: 8px; }
+.quirk-outcome-icon { display: flex; align-items: center; }
+.quirk-outcome-note { font-size: 11px; color: var(--overlay1); margin-left: auto; }
+.qo-failed { border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.qo-failed .quirk-outcome-icon, .qo-failed .quirk-op { color: var(--red); }
+.qo-failed .quirk-badge { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.qo-nodata .quirk-op, .qo-prereq .quirk-op,
+.qo-nodata .quirk-outcome-icon, .qo-prereq .quirk-outcome-icon { color: var(--overlay1); }
+.qo-nodata .quirk-badge, .qo-prereq .quirk-badge {
+  background: var(--surface0);
+  color: var(--subtext0);
+}
+
 /* ── Saved mocks (inactive clones in the Manual tab) ─────────────────────── */
 .saved-mocks {
   margin: 8px 4px 0;

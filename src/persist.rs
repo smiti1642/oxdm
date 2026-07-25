@@ -247,6 +247,49 @@ pub fn baseline_saved_at(addr: &str) -> Option<String> {
     ))
 }
 
+// ── Quirk sweep surface selection ───────────────────────────────────────────
+// Which ONVIF read operations the Quirks tab drives when testing a live camera.
+// One file for the whole app, not one per device: the subset is a tester's
+// working preference (a hunt for one model-specific quirk is normally re-run
+// across several cameras), not a fact about any one device.
+
+fn surface_selection_path() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("quirk-surface.json"))
+}
+
+/// The saved quirk-sweep operation selection, or `None` when nothing has been
+/// saved yet (or the file is stale / unreadable — the caller falls back to the
+/// default surface rather than failing).
+pub fn read_surface_selection() -> Option<oxvif::metamorph::SurfaceSelection> {
+    let path = surface_selection_path()?;
+    let json = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str(&json) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            warn!(error = %e, path = %path.display(), "stale quirk surface selection ignored");
+            None
+        }
+    }
+}
+
+/// Persist the quirk-sweep operation selection. Best-effort: a failure to write
+/// costs the user their selection on next launch, nothing more, so it warns
+/// rather than surfacing an error into the UI.
+pub fn write_surface_selection(selection: &oxvif::metamorph::SurfaceSelection) {
+    let Some(path) = surface_selection_path() else {
+        return;
+    };
+    ensure_dir();
+    match serde_json::to_string(selection) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, json) {
+                warn!(error = %e, path = %path.display(), "could not persist quirk surface selection");
+            }
+        }
+        Err(e) => warn!(error = %e, "could not serialise quirk surface selection"),
+    }
+}
+
 // ── Keychain helpers (single entry for all credentials) ─────────────────────
 //
 // All credentials are stored as a single JSON blob in one keychain entry
