@@ -109,6 +109,157 @@ pub async fn record_clone(
     trace_result("record_clone", addr, result)
 }
 
+/// Which stage of a [`run_live_quirk_test`] run a progress event belongs to.
+///
+/// The run is not one flat counter: the sweep is measured in ONVIF *operations*
+/// while the two analysis passes are measured in recorded *fixtures*, and the
+/// initial session build has no meaningful total at all. The phase tells the UI
+/// which unit `done`/`total` are counting, so the bar restarts honestly instead
+/// of pretending a single scale spans the whole run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Matched on by the Quirks view's live-test progress bar.
+pub enum LiveTestPhase {
+    /// Building the session (capabilities / service discovery). Nothing is
+    /// countable yet — oxvif emits no event until the first swept operation.
+    Connecting,
+    /// Driving the selected read surface. Unit: one `SurfaceOp`.
+    Sweep,
+    /// Running oxvif's typed parser over each recorded response.
+    /// Unit: one recorded fixture.
+    Verifying,
+    /// Diffing each recorded response against the synthetic baseline.
+    /// Unit: one recorded fixture.
+    Diffing,
+}
+
+/// One progress event from [`run_live_quirk_test`].
+///
+/// Deliberately oxdm-owned: `SweepProgress` and `FixtureProgress` never reach
+/// the UI, so a view renders one bar plus one label for the whole run instead of
+/// matching on two unrelated oxvif types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Consumed by the Quirks view's live-test progress bar.
+pub struct LiveTestProgress {
+    /// Which stage this event belongs to.
+    pub phase: LiveTestPhase,
+    /// Units finished in this phase, counting the one just finished — so the
+    /// first event of a phase carries `1` and the last carries `total`.
+    pub done: usize,
+    /// Units in this phase, or `None` when it cannot be known yet
+    /// ([`LiveTestPhase::Connecting`]) — render an indeterminate bar.
+    pub total: Option<usize>,
+    /// What the event is about: the device address while connecting, otherwise
+    /// the ONVIF operation name.
+    pub label: String,
+}
+
+/// The tail of a SOAP action URI (`.../ver10/media/wsdl/GetProfiles` →
+/// `GetProfiles`), so a progress label reads as an operation name.
+fn action_tail(action: &str) -> &str {
+    action.rsplit('/').next().unwrap_or(action)
+}
+
+/// Run a quirk/parse test **directly against a live camera**: record the chosen
+/// subset of its read surface, then verify what came back — no clone-then-serve
+/// round trip. Returns the recorded exchanges plus the sweep's per-operation
+/// outcomes.
+///
+/// Publish the result with [`crate::mock_servers::set_analysis`] to make the
+/// Quirks view answer for the camera's own address;
+/// [`crate::mock_servers::run_live_test`] is the one-call form that does both
+/// and is what the UI should call. (This function deliberately knows nothing
+/// about the pool: `api.rs` is `#[path]`-included on its own by the top-level
+/// integration tests, which carry no `mock_servers` module — same reason
+/// [`record_clone`] hands its store back instead of serving it.)
+///
+/// `progress` fires on every phase transition and every unit of work; see
+/// [`LiveTestProgress`]. It fires once with [`LiveTestPhase::Connecting`] before
+/// the session is built, because oxvif emits nothing until the first swept
+/// operation.
+///
+/// The two analysis passes run here rather than lazily so the run *is* the test
+/// — the caller only publishes a store oxvif has proved it can parse and diff —
+/// and so their cost lands under the progress bar the user is already watching.
+/// [`crate::mock_servers::quirks`] / `parse_report` re-derive the reports on
+/// demand from the stored fixtures, which keeps the pool the single source of
+/// truth.
+#[allow(dead_code)] // Driven by the Quirks view's "test this camera" action.
+#[instrument(skip(creds, selection, progress), fields(ops = selection.len()))]
+pub async fn run_live_quirk_test(
+    addr: &str,
+    creds: &Credentials,
+    label: &str,
+    selection: &oxvif::metamorph::SurfaceSelection,
+    progress: impl Fn(LiveTestProgress) + Send + Sync,
+) -> Result<
+    (
+        oxvif::metamorph::FixtureStore,
+        oxvif::metamorph::SweepReport,
+    ),
+    ApiError,
+> {
+    let (u, p) = creds.as_options();
+    let pair = match (u, p) {
+        (Some(u), Some(p)) => Some((u, p)),
+        _ => None,
+    };
+
+    // No sweep event arrives until the session build (one GetCapabilities
+    // round-trip) is done, so open the run with an explicit indeterminate event.
+    progress(LiveTestProgress {
+        phase: LiveTestPhase::Connecting,
+        done: 0,
+        total: None,
+        label: addr.to_string(),
+    });
+
+    let recorded = oxvif::metamorph::record_surface_with_progress(
+        addr,
+        pair,
+        label,
+        selection,
+        |s: oxvif::metamorph::SweepProgress| {
+            progress(LiveTestProgress {
+                phase: LiveTestPhase::Sweep,
+                done: s.done,
+                total: Some(s.total),
+                label: s.op.action_name().to_string(),
+            });
+        },
+    )
+    .await;
+    let (store, report) = trace_result("run_live_quirk_test", addr, recorded)?;
+
+    let parsed = store
+        .verify_parsing_with_progress(|f: oxvif::metamorph::FixtureProgress| {
+            progress(LiveTestProgress {
+                phase: LiveTestPhase::Verifying,
+                done: f.done,
+                total: Some(f.total),
+                label: action_tail(&f.action).to_string(),
+            });
+        })
+        .await;
+    let quirked =
+        store.diff_against_synthetic_with_progress(|f: oxvif::metamorph::FixtureProgress| {
+            progress(LiveTestProgress {
+                phase: LiveTestPhase::Diffing,
+                done: f.done,
+                total: Some(f.total),
+                label: action_tail(&f.action).to_string(),
+            });
+        });
+    info!(
+        addr,
+        fixtures = store.len(),
+        parse_failures = parsed.failures().count(),
+        quirks = quirked.quirks.len(),
+        "live quirk test complete"
+    );
+
+    Ok((store, report))
+}
+
 // ── Discovery ───────────────────────────────────────────────────────────────
 
 /// Run a single WS-Discovery round across all network interfaces.
