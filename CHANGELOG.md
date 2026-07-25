@@ -6,6 +6,40 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Test a live camera from the Quirks tab** — point it at a real device and get
+  the same quirk / parse results a recorded clone produces, without recording
+  one. The tab was previously only reachable for a served clone; a real device
+  now gets a test panel, while a served clone still renders its recorded
+  analysis unchanged. The sweep is strictly read-only (`Get*` only), so it is
+  safe against a production camera.
+- **Per-operation selection** — pick individual operations, not just service
+  zones: 52 operations across 7 collapsible zones with a tri-state zone box.
+  Prerequisites cross zone boundaries (the PTZ preset/status reads need
+  `GetProfiles` from Media; all four Imaging reads need `GetVideoSources`), so an
+  implied operation shows as checked, disabled and dimmed with an `auto` badge
+  naming the pick that pulled it in. The count beside Run is exactly what will
+  execute. The selection persists to `~/.oxdm/quirk-surface.json`.
+- **Progress** across all four phases (connecting, sweep, verify, diff), with an
+  indeterminate state while the session is still being built.
+- **Parse-verification layer** — each operation carries a badge for whether
+  oxvif's own typed parser accepts the device's response, plus a banner listing
+  the operations it cannot parse. This catches value/type quirks the structural
+  SOAP diff is blind to, including on operations with no structural drift at
+  all. (Landed after 0.2.0 but was not recorded here at the time.)
+
+### Changed
+- Results are grouped by service zone and default to showing only problems — a
+  flat list was workable for a ~12-operation clone and is not for 52.
+- Skipped operations are counted and coloured apart from failures. A fixed
+  camera with no PTZ profiles now reports "no such path" instead of eight
+  apparently broken commands.
+- A device answering with a SOAP Fault (e.g. `NotAuthorized`) is shown as
+  **declined** rather than as a parse failure — it is behaving correctly. Uses
+  oxvif's new `ParseStatus::Faulted`.
+
 ## [0.2.0] - 2026-07-24
 
 Headline: **clone a real camera into an in-app mock and inspect its quirks** —
