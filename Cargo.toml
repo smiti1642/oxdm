@@ -26,9 +26,9 @@ path = "src/main.rs"
 
 [dependencies]
 dioxus = { version = "=0.7.9", features = ["desktop", "router"] }
-# TEMPORARY local override: build against the unpublished oxvif 0.13.1 for the
-# parse-verification integration. Drop `path` (keep `version`) once 0.13.1 ships.
-oxvif = { version = "0.13", path = "../oxvif", features = ["health", "metamorph-server"] }
+# TEMPORARY local override: build against the unpublished oxvif 0.14.0 for the
+# parse-verification integration. Drop `path` (keep `version`) once 0.14.0 ships.
+oxvif = { version = "0.14", path = "../oxvif", features = ["health", "metamorph-server"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 arboard = "3"
@@ -67,7 +67,7 @@ winresource = "0.1"
 # record / serve / diff a clone against a real bound-port ONVIF mock without
 # needing a camera. (metamorph-server is already on for the release binary
 # above; listed here too for clarity.)
-oxvif = { version = "0.13", path = "../oxvif", features = ["mock-server", "health", "metamorph-server"] }
+oxvif = { version = "0.14", path = "../oxvif", features = ["mock-server", "health", "metamorph-server"] }
 
 [profile.wasm-dev]
 inherits = "dev"
