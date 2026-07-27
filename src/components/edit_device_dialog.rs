@@ -14,6 +14,12 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
     let mut name = use_signal(String::new);
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
+    // Which device the three fields above were last filled from. They are
+    // component-level signals that outlive an open/close cycle, so without
+    // this the dialog can show — and then save — the *previous* device's
+    // credentials. Cleared on close, so re-opening always re-reads and a
+    // cancelled edit does not survive.
+    let mut loaded_for = use_signal(|| None::<usize>);
 
     let is_open = *open.read();
     let idx = *device_index.read();
@@ -23,25 +29,33 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
     }
     let idx = idx.unwrap();
 
-    // Sync signals with current device state when dialog opens
-    {
+    // Fill the fields from the device this dialog was opened for.
+    //
+    // Keyed on the index rather than on "the name field is still blank": the
+    // save below trims, so a name of only spaces becomes empty, and the old
+    // `!dev.name.is_empty()` guard then skipped the load entirely — leaving
+    // whatever the last device put in the username/password fields, which the
+    // next save wrote onto this device. An empty pair saves as `None`, and a
+    // manual device with no credentials is not persisted at all
+    // (`persist::build_creds_map` only stores devices whose `credentials` is
+    // `Some`), so the loss only became visible on the next launch.
+    if *loaded_for.peek() != Some(idx) {
         let devices = ctx.devices.read();
         if let Some(dev) = devices.get(idx) {
-            if name.peek().is_empty() && !dev.name.is_empty() {
-                name.set(dev.name.clone());
-                username.set(
-                    dev.credentials
-                        .as_ref()
-                        .map(|c| c.username.clone())
-                        .unwrap_or_default(),
-                );
-                password.set(
-                    dev.credentials
-                        .as_ref()
-                        .map(|c| c.password.clone())
-                        .unwrap_or_default(),
-                );
-            }
+            name.set(dev.name.clone());
+            username.set(
+                dev.credentials
+                    .as_ref()
+                    .map(|c| c.username.clone())
+                    .unwrap_or_default(),
+            );
+            password.set(
+                dev.credentials
+                    .as_ref()
+                    .map(|c| c.password.clone())
+                    .unwrap_or_default(),
+            );
+            loaded_for.set(Some(idx));
         }
     }
 
@@ -51,7 +65,7 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
     rsx! {
         DialogOverlay {
             on_close: move |_| {
-                name.set(String::new());
+                clear(name, username, password, loaded_for);
                 open_sig.set(false);
             },
             inner_class: "dialog dialog--wide".to_string(),
@@ -91,7 +105,7 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                     button {
                         class: "btn btn-md btn-ghost",
                         onclick: move |_| {
-                            name.set(String::new());
+                            clear(name, username, password, loaded_for);
                             open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_cancel")}
@@ -120,7 +134,7 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                             }
                             ctx.push_toast(ToastLevel::Success, i18n::t(locale, "edit_device_saved"));
                             crate::device_ops::reverify_device(ctx, devices, idx);
-                            name.set(String::new());
+                            clear(name, username, password, loaded_for);
                             open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_save")}
@@ -128,4 +142,21 @@ pub fn EditDeviceDialog(open: Signal<bool>, device_index: Signal<Option<usize>>)
                 }
         }
     }
+}
+
+/// Blank every field the dialog carries between opens.
+///
+/// `loaded_for` is what makes the next open re-read the device, so clearing it
+/// is the load-bearing part; the three strings are cleared with it so a closed
+/// dialog is not sitting on a password.
+fn clear(
+    mut name: Signal<String>,
+    mut username: Signal<String>,
+    mut password: Signal<String>,
+    mut loaded_for: Signal<Option<usize>>,
+) {
+    name.set(String::new());
+    username.set(String::new());
+    password.set(String::new());
+    loaded_for.set(None);
 }
