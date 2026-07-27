@@ -232,6 +232,12 @@ pub fn delete_clone(dir_name: &str) -> std::io::Result<()> {
 /// Accept `dir_name` only if it is exactly one normal path component, and
 /// return it. Split out from [`delete_clone`] so the rule can be tested
 /// without a filesystem anywhere near it.
+///
+/// "One component" is resolved by the **target platform's** rules, which is
+/// what makes this safe rather than a fixed character blacklist: `\` splits on
+/// Windows and is an ordinary filename character on Unix, so `sub\dir` is
+/// rejected on one and accepted as a single real directory name on the other.
+/// Either way nothing escapes `clones/`, which is the property that matters.
 fn clone_component(dir_name: &str) -> std::io::Result<&std::ffi::OsStr> {
     use std::path::Component;
 
@@ -805,16 +811,26 @@ mod tests {
     /// leaves the developer's own `~/.oxdm` one logic error away from erasure.
     #[test]
     fn clone_component_rejects_every_name_that_is_not_one_plain_component() {
+        for bad in ["..", "../..", "../baselines", "sub/dir", ".", "", "/etc"] {
+            let err = clone_component(bad).expect_err(&format!("{bad:?} must be rejected"));
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{bad:?}");
+        }
+    }
+
+    /// Backslash cases are Windows-only, and deliberately not in the list
+    /// above. `\` is a path separator on Windows and an ordinary filename
+    /// character on Unix, so `clone_component("sub\\dir")` is *correctly*
+    /// accepted on Linux — `sub\dir` is one real directory name there, and it
+    /// escapes nothing. Asserting rejection on every platform is what broke
+    /// CI, which runs on ubuntu.
+    #[cfg(windows)]
+    #[test]
+    fn clone_component_rejects_windows_separators_and_drive_prefixes() {
         for bad in [
-            "..",
-            "../..",
-            "../baselines",
-            "sub/dir",
             "sub\\dir",
-            ".",
-            "",
-            "/etc",
+            "..\\baselines",
             "C:\\Windows",
+            "\\\\server\\share",
         ] {
             let err = clone_component(bad).expect_err(&format!("{bad:?} must be rejected"));
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{bad:?}");
