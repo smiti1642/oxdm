@@ -1268,6 +1268,23 @@ a      { color: var(--blue); text-decoration: none; }
 
 /* ── Context Menu ─────────────────────────────────────────────────────────── */
 .ctx-menu-overlay {
+  /* What ContextMenu reserves when it clamps the click position to the
+     viewport. Declared on the overlay so the values inherit into .ctx-menu and
+     are in scope for the inline `style` ContextMenu writes.
+
+     --ctx-menu-max-h is a real cap, enforced below with overflow-y: auto, so
+     the vertical clamp cannot be escaped. The tallest menu is six items (a
+     manual device card: copy / add-to-group / clone / edit / delete) at ~31px
+     each plus 8px padding and 2px border.
+
+     --ctx-menu-reserve-w is only a reserve, deliberately NOT a max-width: the
+     menu still sizes to its longest label, because capping the width would
+     wrap the longer translated labels and trade a vertical overflow for a
+     ragged one. A menu wider than the reserve can still reach the right edge,
+     which is the pre-existing behaviour and has never been reported — the
+     sidebar it opens from is only 240px wide. */
+  --ctx-menu-max-h: 220px;
+  --ctx-menu-reserve-w: 260px;
   position: fixed;
   inset: 0;
   z-index: 8000;
@@ -1276,6 +1293,8 @@ a      { color: var(--blue); text-decoration: none; }
 .ctx-menu {
   position: fixed;
   min-width: 160px;
+  max-height: var(--ctx-menu-max-h);
+  overflow-y: auto;
   background: var(--mantle);
   border: 1px solid var(--surface1);
   border-radius: 8px;
