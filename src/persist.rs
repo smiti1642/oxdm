@@ -230,8 +230,14 @@ pub fn list_clones() -> Vec<String> {
 /// ("yyyy-mm-dd hh:mm"). Returns `None` if there is no baseline or the
 /// mtime is unavailable / unreadable.
 pub fn baseline_saved_at(addr: &str) -> Option<String> {
-    let path = baseline_path(addr)?;
-    let meta = std::fs::metadata(&path).ok()?;
+    mtime_label(&baseline_path(addr)?)
+}
+
+/// A file's mtime as "yyyy-mm-dd hh:mm" in local time, for the small "saved
+/// at" note under a header. `None` if the file is missing or its mtime is
+/// unreadable.
+fn mtime_label(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
     let modified = meta.modified().ok()?;
     let dt = time::OffsetDateTime::from(modified);
     let local =
@@ -245,6 +251,54 @@ pub fn baseline_saved_at(addr: &str) -> Option<String> {
         local.hour(),
         local.minute(),
     ))
+}
+
+// ── Quirk baselines (one JSON QuirkReport per device) ───────────────────────
+// Per device, not per app: "did this camera's quirks change?" is a question
+// about one camera over time. Kept in a directory of its own so a quirk
+// baseline and a health baseline for the same address cannot collide.
+
+fn quirk_baseline_dir() -> Option<PathBuf> {
+    oxdm_dir().map(|d| d.join("quirk-baselines"))
+}
+
+fn quirk_baseline_path(addr: &str) -> Option<PathBuf> {
+    quirk_baseline_dir().map(|d| d.join(format!("{}.json", sanitize_addr_for_file(addr))))
+}
+
+/// Load a previously-saved baseline `QuirkReport` for `addr`. `None` when
+/// there is none or it no longer parses — a stale baseline must not break the
+/// Quirks tab, it just leaves the diff section out.
+pub fn read_quirk_baseline(addr: &str) -> Option<oxvif::metamorph::QuirkReport> {
+    let path = quirk_baseline_path(addr)?;
+    let json = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str::<oxvif::metamorph::QuirkReport>(&json) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            warn!(error = %e, path = %path.display(), "stale quirk baseline ignored");
+            None
+        }
+    }
+}
+
+/// Persist `report` as the quirk baseline for `addr`. Returns the path so the
+/// UI can report where it landed.
+pub fn write_quirk_baseline(
+    addr: &str,
+    report: &oxvif::metamorph::QuirkReport,
+) -> std::io::Result<PathBuf> {
+    let path = quirk_baseline_path(addr)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "home dir unavailable"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, report.to_json_pretty())?;
+    Ok(path)
+}
+
+/// When the quirk baseline for `addr` was saved, formatted for the UI.
+pub fn quirk_baseline_saved_at(addr: &str) -> Option<String> {
+    mtime_label(&quirk_baseline_path(addr)?)
 }
 
 // ── Quirk sweep surface selection ───────────────────────────────────────────

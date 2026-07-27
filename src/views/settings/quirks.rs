@@ -50,6 +50,22 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         async move { crate::mock_servers::parse_report(&url).await }
     });
 
+    // Bumped when a baseline is written, so the two hooks below re-read it and
+    // the note + diff update without waiting for the address to change.
+    let mut baseline_seq = use_signal(|| 0u32);
+    // `QuirkReport` is not `PartialEq`, so this cannot be a `use_memo` — an
+    // effect keyed on the same two signals reloads it, and the read stays off
+    // the render path (it parses a JSON file).
+    let mut quirk_baseline = use_signal(|| None::<oxvif::metamorph::QuirkReport>);
+    use_effect(move || {
+        let _ = baseline_seq.read();
+        quirk_baseline.set(crate::persist::read_quirk_baseline(&addr.read()));
+    });
+    let quirk_baseline_at = use_memo(move || {
+        let _ = baseline_seq.read();
+        crate::persist::quirk_baseline_saved_at(&addr.read())
+    });
+
     // Cheap pool lookups each render (no PartialEq on the report → no use_memo).
     let _ = run_seq.read();
     let report = crate::mock_servers::quirks(&addr.read());
@@ -151,6 +167,33 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         });
     };
 
+    // The diff only exists once this device has both a baseline and a current
+    // report; `QuirkReport::diff` is keyed on `(action, key_canon)`.
+    let baseline_diff = match (report.as_ref(), &*quirk_baseline.read()) {
+        (Some(now), Some(prev)) => Some(now.diff(prev)),
+        _ => None,
+    };
+
+    let save_baseline = move |_| {
+        let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
+            return;
+        };
+        let addr_s = addr.read().clone();
+        if addr_s.is_empty() {
+            return;
+        }
+        match crate::persist::write_quirk_baseline(&addr_s, &rep) {
+            Ok(_path) => {
+                baseline_seq += 1;
+                ctx.push_toast(ToastLevel::Success, i18n::t(locale, "quirk_baseline_saved"));
+            }
+            Err(e) => ctx.push_toast(
+                ToastLevel::Error,
+                format!("{}: {e}", i18n::t(locale, "quirk_baseline_save_failed")),
+            ),
+        }
+    };
+
     rsx! {
         div { class: "health-view",
 
@@ -195,6 +238,12 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                         Icon { name: "download", size: 14 }
                         {i18n::t(locale, "quirk_export").replace("{n}", &sel_count.to_string())}
                     }
+                    button {
+                        class: "btn btn-md btn-secondary",
+                        onclick: save_baseline,
+                        Icon { name: "save", size: 14 }
+                        {i18n::t(locale, "quirk_save_baseline")}
+                    }
                     // A real camera can always be swept again; a served clone
                     // has no live device behind it to sweep.
                     if !served && !*panel_open.read() {
@@ -217,6 +266,13 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                 div { class: "health-baseline-note",
                     Icon { name: "info", size: 12 }
                     {i18n::t(locale, "quirk_scope")}
+                }
+
+                if let Some(when) = quirk_baseline_at.read().as_ref() {
+                    div { class: "health-baseline-note",
+                        Icon { name: "clock", size: 12 }
+                        {format!("{}: {}", i18n::t(locale, "quirk_baseline_loaded"), when)}
+                    }
                 }
 
                 // Parse failures — the highest-value signal (oxvif will choke on
@@ -263,6 +319,13 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                             }
                         }
                     }
+                }
+
+                // What moved since the saved baseline. Above the group list
+                // because "did anything change?" is the question a returning
+                // tester has; the 52-row list answers "what is wrong today".
+                if let Some(d) = baseline_diff.as_ref() {
+                    QuirkDiffSection { locale, diff: d.clone() }
                 }
 
                 // Nothing wrong anywhere: keep the one-line verdict rather than
@@ -662,6 +725,79 @@ fn LiveProgress(
     }
 }
 
+// ── Diff vs saved baseline ──────────────────────────────────────────────────
+
+/// What this device's structural quirks gained, lost or reshaped since the
+/// saved baseline — [`oxvif::metamorph::QuirkDiff`].
+///
+/// Rendered as operation names, not path lists: the question here is *which
+/// operations moved*, and the paths for any one of them are a click away in
+/// the group list below. `changed` is the subtle case — an operation that
+/// drifted before and drifts now, but not in the same places — so it carries
+/// the net path counts rather than only the name.
+#[component]
+fn QuirkDiffSection(locale: Locale, diff: oxvif::metamorph::QuirkDiff) -> Element {
+    rsx! {
+        div { class: "health-group health-diff",
+            div { class: "health-group-title", {i18n::t(locale, "quirk_diff_title")} }
+            if diff.is_empty() {
+                div { class: "health-row health-pass",
+                    span { class: "health-row-status",
+                        Icon { name: "check", size: 14 }
+                    }
+                    span { class: "health-row-detail", {i18n::t(locale, "quirk_diff_none")} }
+                }
+            } else {
+                if !diff.appeared.is_empty() {
+                    QuirkDiffRow {
+                        icon: "plus",
+                        cls: "health-fail",
+                        label: i18n::t(locale, "quirk_diff_appeared").to_string(),
+                        ops: diff.appeared.iter().map(|q| op_name(&q.action)).collect::<Vec<_>>().join(", "),
+                    }
+                }
+                if !diff.resolved.is_empty() {
+                    QuirkDiffRow {
+                        icon: "check",
+                        cls: "health-pass",
+                        label: i18n::t(locale, "quirk_diff_resolved").to_string(),
+                        ops: diff.resolved.iter().map(|q| op_name(&q.action)).collect::<Vec<_>>().join(", "),
+                    }
+                }
+                for (i , c) in diff.changed.iter().enumerate() {
+                    div { key: "{i}", class: "health-row health-warn",
+                        span { class: "health-row-status",
+                            Icon { name: "alert-triangle", size: 14 }
+                        }
+                        span { class: "health-row-name", {op_name(&c.action)} }
+                        span { class: "health-row-detail",
+                            {format!(
+                                "{}: +{} / -{}",
+                                i18n::t(locale, "quirk_diff_changed"),
+                                c.clone_only_added.len() + c.synthetic_only_added.len(),
+                                c.clone_only_removed.len() + c.synthetic_only_removed.len(),
+                            )}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn QuirkDiffRow(icon: &'static str, cls: &'static str, label: String, ops: String) -> Element {
+    rsx! {
+        div { class: "health-row {cls}",
+            span { class: "health-row-status",
+                Icon { name: icon, size: 14 }
+            }
+            span { class: "health-row-name", "{label}" }
+            span { class: "health-row-detail", "{ops}" }
+        }
+    }
+}
+
 // ── Result rows ─────────────────────────────────────────────────────────────
 
 /// One recorded operation in the result list.
@@ -1041,6 +1177,106 @@ mod tests {
             clone_xml: String::new(),
             differs: false,
         }
+    }
+
+    use oxvif::metamorph::{OperationQuirk, QuirkReport};
+
+    fn quirk(action: &str, clone_only: &[&str], synth_only: &[&str]) -> OperationQuirk {
+        OperationQuirk {
+            action: action.to_string(),
+            key_canon: format!("<{}/>", op_name(action)),
+            only_in_clone: clone_only.iter().map(|s| s.to_string()).collect(),
+            only_in_synthetic: synth_only.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn report(quirks: Vec<OperationQuirk>) -> QuirkReport {
+        QuirkReport {
+            device: "cam-4417".to_string(),
+            compared: 9,
+            quirks,
+        }
+    }
+
+    /// `write_quirk_baseline` stores `to_json_pretty()`; `read_quirk_baseline`
+    /// parses with `serde_json::from_str::<QuirkReport>`. If those two ever
+    /// disagree the Quirks tab shows no diff at all and says nothing — the read
+    /// logs "stale baseline ignored" and returns `None`. Pin the pair.
+    #[test]
+    fn a_saved_quirk_baseline_parses_back_field_for_field() {
+        let saved = report(vec![quirk(
+            "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
+            &["Envelope/Body/GetProfilesResponse/Profiles/Extension"],
+            &["Envelope/Body/GetProfilesResponse/Profiles/Name"],
+        )]);
+
+        let loaded: QuirkReport = serde_json::from_str(&saved.to_json_pretty())
+            .expect("what write_quirk_baseline writes is what read_quirk_baseline parses");
+
+        assert_eq!(loaded.device, "cam-4417");
+        assert_eq!(loaded.compared, 9);
+        // OperationQuirk is PartialEq as of oxvif 0.14, so this compares the
+        // action, the key and both path lists — not just the length.
+        assert_eq!(loaded.quirks, saved.quirks);
+    }
+
+    /// The diff section renders `appeared` as a failure and `resolved` as a
+    /// pass, so which bucket an operation lands in is load-bearing for what the
+    /// user is told. `diff` is called as `now.diff(&baseline)`; this pins that
+    /// argument order too — swapping it inverts both labels.
+    #[test]
+    fn diff_buckets_are_oriented_now_against_baseline() {
+        let baseline = report(vec![
+            quirk("svc/GetGone", &["Envelope/Body/A"], &[]),
+            quirk("svc/GetShifted", &["Envelope/Body/B"], &[]),
+        ]);
+        let now = report(vec![
+            quirk("svc/GetShifted", &["Envelope/Body/C"], &[]),
+            quirk("svc/GetNew", &["Envelope/Body/D"], &[]),
+        ]);
+
+        let d = now.diff(&baseline);
+
+        assert_eq!(
+            d.appeared
+                .iter()
+                .map(|q| op_name(&q.action))
+                .collect::<Vec<_>>(),
+            ["GetNew"],
+            "quirky now but not in the baseline"
+        );
+        assert_eq!(
+            d.resolved
+                .iter()
+                .map(|q| op_name(&q.action))
+                .collect::<Vec<_>>(),
+            ["GetGone"],
+            "quirky in the baseline but not now"
+        );
+        assert_eq!(
+            d.changed
+                .iter()
+                .map(|c| op_name(&c.action))
+                .collect::<Vec<_>>(),
+            ["GetShifted"],
+            "quirky in both, but the paths moved"
+        );
+
+        // The counts the row renders: one path in, one path out.
+        let c = &d.changed[0];
+        assert_eq!(c.clone_only_added, ["Envelope/Body/C"]);
+        assert_eq!(c.clone_only_removed, ["Envelope/Body/B"]);
+
+        assert!(!d.is_empty(), "this diff must not render as 'no change'");
+    }
+
+    /// The `is_empty` branch is what tells a returning tester "nothing moved",
+    /// which is the whole point of keeping a baseline.
+    #[test]
+    fn an_unchanged_device_diffs_to_nothing() {
+        let quirks = vec![quirk("svc/GetSame", &["Envelope/Body/A"], &[])];
+        let d = report(quirks.clone()).diff(&report(quirks));
+        assert!(d.is_empty(), "same quirks, same paths: {d:?}");
     }
 
     /// A prerequisite pulled in from *another* group is what makes the effective

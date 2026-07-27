@@ -356,6 +356,16 @@ surfaces oxdm relies on:
 - `oxvif::health::{HealthCheck, HealthReport, ReportDiff, SlowedCheck}` —
   serde-derived report types, used by `views/settings/health.rs` for the
   baseline diff flow.
+- `oxvif::metamorph::{QuirkReport, QuirkDiff, ChangedQuirk}` (0.14) — the same
+  baseline flow for quirks. `views/settings/quirks.rs` saves the current report
+  to `~/.oxdm/quirk-baselines/<addr>.json` via
+  `persist::write_quirk_baseline` and renders `now.diff(&baseline)` above the
+  group list. **Argument order is load-bearing** — `appeared` renders as a
+  failure and `resolved` as a pass, so `baseline.diff(&now)` inverts both
+  labels; `diff_buckets_are_oriented_now_against_baseline` pins it.
+  `QuirkReport` is **not** `PartialEq` (only `OperationQuirk` is), so it cannot
+  live in a `use_memo` — the tab loads it into a `use_signal` from a
+  `use_effect`.
 - `oxvif::{NetworkInterfaceConfig, IpStackConfig, ManualAddress}` — the
   struct-shaped `set_network_interfaces` API (breaking change vs 0.9.7);
   `api::set_network_interfaces` still exposes the old positional shape to
