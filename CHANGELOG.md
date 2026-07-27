@@ -6,7 +6,12 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
-## [Unreleased]
+## [0.3.0] - 2026-07-27
+
+Headline: **the Quirks tab becomes something you point at a real camera**, not
+only at a recorded clone — pick the operations, watch them run, and see what
+moved since last time. Built on oxvif 0.14's selectable read surface. Alongside
+it, three fixes to things that were quietly losing data or blocking a click.
 
 ### Added
 - **Test a live camera from the Quirks tab** — point it at a real device and get
@@ -29,6 +34,37 @@ Changelog tracking starts at 0.1.5.
   the operations it cannot parse. This catches value/type quirks the structural
   SOAP diff is blind to, including on operations with no structural drift at
   all. (Landed after 0.2.0 but was not recorded here at the time.)
+- **Diff a device's quirks against a saved baseline** — "Save as baseline" on the
+  Quirks tab stores the current report to
+  `~/.oxdm/quirk-baselines/<addr>.json`, and every later run renders what moved:
+  newly drifting operations, ones that stopped drifting, and ones still drifting
+  but in different places. Answers "did this firmware update change the camera?"
+  and "are these two same-model cameras quirk-identical?" — the questions that
+  stopped being answerable by eye once a sweep covered 52 operations. The
+  Diagnostics tab has had this flow for health reports since 0.1.5; quirks had
+  the report but no baseline. Uses oxvif 0.14's `QuirkReport::diff`.
+- **Delete a saved mock** — the "Saved mocks" list rows gained a trash button
+  (with a confirmation, since the recording cannot be recovered). Previously a
+  recorded clone could only be opened, never removed, and the only way to clear
+  one was to delete its directory under `~/.oxdm/clones/` by hand.
+
+### Fixed
+- **Editing one device's credentials could overwrite another's, or silently
+  clear them.** The Edit Device dialog kept its username and password fields
+  across open/close — only the name was reset — and skipped re-reading the
+  device whenever that device's name was empty, which the dialog itself could
+  produce (it trims, so a name of only spaces becomes empty). The dialog then
+  opened showing the previous device's values and Save wrote them onto this one.
+  When the leftover pair happened to be blank the save recorded "no
+  credentials", which reads as working — the session falls back to the global
+  credentials — right up until the next launch, when nothing had been written to
+  the keychain. The fields are now keyed to the device they were loaded from and
+  every exit clears them.
+- **The right-click menu ran off the bottom of the screen.** Menu position was
+  the raw click coordinate with no clamping, so right-clicking a device low in
+  the sidebar put most of the menu below the viewport with no way to scroll to
+  it. The position is now clamped against the viewport in CSS, and the menu has
+  a max height. A click with room to spare lands exactly where it always did.
 
 ### Changed
 - Results are grouped by service zone and default to showing only problems — a
@@ -39,6 +75,12 @@ Changelog tracking starts at 0.1.5.
 - A device answering with a SOAP Fault (e.g. `NotAuthorized`) is shown as
   **declined** rather than as a parse failure — it is behaving correctly. Uses
   oxvif's new `ParseStatus::Faulted`.
+- **Upgraded to oxvif 0.14.0** (from crates.io). Nothing in oxdm had to change
+  for its three breaking changes: `FixtureStore::lookup` is never called here,
+  `get_discovery_mode` is not used, and no caller gates on
+  `SweepReport::is_complete`. The displayed oxvif version is now 0.14.0.
+
+---
 
 ## [0.2.0] - 2026-07-24
 

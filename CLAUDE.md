@@ -323,7 +323,7 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently pinned to the published registry crate `oxvif = "0.12.0"` (0.12.0 is
+Currently pinned to the published registry crate `oxvif = "0.14"` (0.14.0 is
 on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
 (`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
 branch (CI has no `../oxvif`). `health` feature in `[dependencies]`,

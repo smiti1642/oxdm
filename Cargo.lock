@@ -3535,6 +3535,8 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "oxvif"
 version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be66e6966ebb1dbc907e8a6f083285c721c44de816bd4a090eda9260fb4fb777"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3558,7 +3560,7 @@ dependencies = [
 
 [[package]]
 name = "oxvif-device-manager"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "async-trait",
