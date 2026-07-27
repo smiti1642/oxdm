@@ -282,6 +282,10 @@ pub fn get(key: &str) -> Option<&'static str> {
         "clone_badge" => "mock —— 真實相機的離線重播",
         "saved_mocks" => "已存 mock",
         "saved_mock_open" => "開啟（啟動這個已存 clone）",
+        "saved_mock_delete" => "刪除已存 mock",
+        "saved_mock_delete_confirm" => "確定要從磁碟刪除錄製的 clone「{name}」嗎？錄製內容無法復原，只能重新複製一次相機。",
+        "saved_mock_deleted" => "已存 mock 已刪除。",
+        "saved_mock_delete_failed" => "無法刪除已存 mock",
         "clone_load_failed" => "無法載入已存 clone",
         "ctx_edit" => "編輯",
 

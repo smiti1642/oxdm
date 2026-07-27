@@ -588,20 +588,27 @@ pub fn DeviceList() -> Element {
     }
 }
 
-/// Saved-but-inactive camera clones (mocks) in the Manual tab: one clickable
-/// row per `~/.oxdm/clones/<name>/` that isn't currently being served. Clicking
-/// loads its fixtures, serves a mock replay server, and adds it to the list.
+/// Saved-but-inactive camera clones (mocks) in the Manual tab: one row per
+/// `~/.oxdm/clones/<name>/` that isn't currently being served. Clicking the row
+/// loads its fixtures, serves a mock replay server, and adds it to the list;
+/// the trash button deletes the recording from disk.
 #[component]
 fn SavedMocks() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     // Subscribe to device changes so activating / removing a clone refreshes.
     let _ = ctx.devices.read().len();
+    // Deleting a clone touches only the filesystem, which no signal watches,
+    // so the list is re-read on this counter as well.
+    let mut deleted_seq = use_signal(|| 0u32);
+    let _ = deleted_seq.read();
 
     let active: std::collections::HashSet<String> = crate::mock_servers::active_labels()
         .iter()
         .map(|l| crate::persist::clone_dir_name(l))
         .collect();
+    // Only inactive clones are listed, so delete never has to stop a running
+    // replay server — a served clone is removed by deleting its device card.
     let saved: Vec<String> = crate::persist::list_clones()
         .into_iter()
         .filter(|d| !active.contains(d))
@@ -615,9 +622,11 @@ fn SavedMocks() -> Element {
         div { class: "saved-mocks",
             div { class: "saved-mocks-head", {i18n::t(locale, "saved_mocks")} }
             for dir in saved {
+                // A row, not a button: it holds the delete button, and a button
+                // cannot nest inside a button.
+                div { key: "{dir}", class: "saved-mock-row",
                 button {
-                    key: "{dir}",
-                    class: "saved-mock-row",
+                    class: "saved-mock-open",
                     title: i18n::t(locale, "saved_mock_open"),
                     onclick: {
                         let dir = dir.clone();
@@ -673,6 +682,44 @@ fn SavedMocks() -> Element {
                     },
                     span { class: "saved-mock-name", "{dir}" }
                     span { class: "saved-mock-hint", {i18n::t(locale, "saved_mock_open")} }
+                }
+                button {
+                    class: "saved-mock-del",
+                    title: i18n::t(locale, "saved_mock_delete"),
+                    onclick: {
+                        let dir = dir.clone();
+                        move |_| {
+                            let dir = dir.clone();
+                            ctx.dialog.clone().set(Some(ConfirmDialog {
+                                title: i18n::t(locale, "saved_mock_delete").to_string(),
+                                message: i18n::t(locale, "saved_mock_delete_confirm")
+                                    .replace("{name}", &dir),
+                                confirm_label: i18n::t(locale, "btn_confirm").to_string(),
+                                cancel_label: i18n::t(locale, "btn_cancel").to_string(),
+                                dangerous: true,
+                                on_confirm: EventHandler::new(move |_| {
+                                    match crate::persist::delete_clone(&dir) {
+                                        Ok(()) => {
+                                            deleted_seq += 1;
+                                            ctx.push_toast(
+                                                ToastLevel::Success,
+                                                i18n::t(locale, "saved_mock_deleted"),
+                                            );
+                                        }
+                                        Err(e) => ctx.push_toast(
+                                            ToastLevel::Error,
+                                            format!(
+                                                "{}: {e}",
+                                                i18n::t(locale, "saved_mock_delete_failed")
+                                            ),
+                                        ),
+                                    }
+                                }),
+                            }));
+                        }
+                    },
+                    Icon { name: "trash-2", size: 14 }
+                }
                 }
             }
         }

@@ -282,6 +282,10 @@ pub fn get(key: &str) -> Option<&'static str> {
         "clone_badge" => "mock — офлайн-воспроизведение реальной камеры",
         "saved_mocks" => "Сохранённые mock",
         "saved_mock_open" => "Открыть (запустить сохранённый клон)",
+        "saved_mock_delete" => "Удалить сохранённый mock",
+        "saved_mock_delete_confirm" => "Удалить записанный клон «{name}» с диска? Запись не восстановить — камеру придётся клонировать заново.",
+        "saved_mock_deleted" => "Сохранённый mock удалён.",
+        "saved_mock_delete_failed" => "Не удалось удалить сохранённый mock",
         "clone_load_failed" => "Не удалось загрузить сохранённый клон",
         "ctx_edit" => "Редакт.",
 

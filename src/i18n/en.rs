@@ -286,6 +286,10 @@ pub fn get(key: &str) -> Option<&'static str> {
         "clone_badge" => "mock — offline replay of a real camera",
         "saved_mocks" => "Saved mocks",
         "saved_mock_open" => "Open (serve this saved clone)",
+        "saved_mock_delete" => "Delete saved mock",
+        "saved_mock_delete_confirm" => "Delete the recorded clone \"{name}\" from disk? The recording cannot be recovered — you would have to clone the camera again.",
+        "saved_mock_deleted" => "Saved mock deleted.",
+        "saved_mock_delete_failed" => "Could not delete saved mock",
         "clone_load_failed" => "Could not load saved clone",
         "ctx_edit" => "Edit",
 

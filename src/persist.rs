@@ -7,7 +7,7 @@
 use crate::state::{Credentials, DeviceEntry, HealthGroup, Locale, Theme};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
 const KEYRING_SERVICE: &str = "com.oxdm";
@@ -208,6 +208,42 @@ pub fn clone_dir_name(label: &str) -> String {
 /// [`oxvif::metamorph::FixtureStore::save`] / `load`.
 pub fn clone_dir(label: &str) -> Option<PathBuf> {
     clones_dir().map(|d| d.join(sanitize_addr_for_file(label)))
+}
+
+/// Delete a recorded clone from disk, by the directory name [`list_clones`]
+/// returns. Removes the whole `~/.oxdm/clones/<dir>/` subtree.
+///
+/// Takes the on-disk directory name rather than the clone label, so a caller
+/// holding a row from [`list_clones`] cannot re-sanitize an already-sanitized
+/// name and miss.
+///
+/// `dir_name` must be exactly one normal path component. This is a
+/// `remove_dir_all`, so the check is deliberately a whitelist rather than a
+/// scan for `..`: comparing `root.join(name).parent()` against `root` is *not*
+/// enough, because `Path::parent` is purely lexical — `clones/..` has parent
+/// `clones` and would pass, then delete `~/.oxdm` itself.
+pub fn delete_clone(dir_name: &str) -> std::io::Result<()> {
+    let name = clone_component(dir_name)?;
+    let root = clones_dir()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "home dir unavailable"))?;
+    std::fs::remove_dir_all(root.join(name))
+}
+
+/// Accept `dir_name` only if it is exactly one normal path component, and
+/// return it. Split out from [`delete_clone`] so the rule can be tested
+/// without a filesystem anywhere near it.
+fn clone_component(dir_name: &str) -> std::io::Result<&std::ffi::OsStr> {
+    use std::path::Component;
+
+    let bad = || std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a clone directory");
+    let mut components = Path::new(dir_name).components();
+    let Some(Component::Normal(name)) = components.next() else {
+        return Err(bad());
+    };
+    if components.next().is_some() {
+        return Err(bad());
+    }
+    Ok(name)
 }
 
 /// Names of every recorded clone on disk (subdirectories that actually contain
@@ -746,5 +782,54 @@ fn locale_to_str(l: Locale) -> &'static str {
         Locale::En => "en",
         Locale::ZhTw => "zh_tw",
         Locale::Ru => "ru",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `delete_clone` ends in `remove_dir_all`, so a name that resolves outside
+    /// `~/.oxdm/clones/` would delete the wrong tree.
+    ///
+    /// `".."` is the case that matters, and it is why the check is a whitelist
+    /// of one `Component::Normal` rather than a scan for `..`: the obvious
+    /// guard, `root.join(name).parent() == Some(root)`, **accepts** it.
+    /// `Path::parent` is purely lexical, so `clones/..` has parent `clones`,
+    /// the guard passes, and `remove_dir_all` then erases `~/.oxdm` — every
+    /// device, health group, baseline and saved clone in it. That version was
+    /// written first, and this case is what caught it.
+    ///
+    /// Asserted against `clone_component`, never `delete_clone`: the rule is
+    /// what needs testing, and calling the deleting function from a unit test
+    /// leaves the developer's own `~/.oxdm` one logic error away from erasure.
+    #[test]
+    fn clone_component_rejects_every_name_that_is_not_one_plain_component() {
+        for bad in [
+            "..",
+            "../..",
+            "../baselines",
+            "sub/dir",
+            "sub\\dir",
+            ".",
+            "",
+            "/etc",
+            "C:\\Windows",
+        ] {
+            let err = clone_component(bad).expect_err(&format!("{bad:?} must be rejected"));
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{bad:?}");
+        }
+    }
+
+    /// The other half: an ordinary sanitized clone name — what [`list_clones`]
+    /// actually yields, and what the delete button passes back — must survive
+    /// the check, or every real row would be rejected.
+    #[test]
+    fn clone_component_accepts_a_sanitized_clone_name() {
+        let name = clone_dir_name("GV-SD4825-IR @ 192.168.5.206");
+        assert_eq!(
+            clone_component(&name).expect("a sanitized label is one component"),
+            std::ffi::OsStr::new(&name)
+        );
     }
 }

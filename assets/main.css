@@ -3247,21 +3247,51 @@ iframe.live-video-frame {
   color: var(--overlay1);
   padding: 0 6px 2px;
 }
+/* The row is the hover/border container; `.saved-mock-open` inside it is the
+   click target that serves the clone, and `.saved-mock-del` deletes it. The
+   row used to be the button itself — it stopped being one when the delete
+   button was added, since a button cannot nest inside a button. */
 .saved-mock-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
   width: 100%;
-  text-align: left;
-  background: none;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 6px 8px;
-  cursor: pointer;
+  padding: 0 4px 0 0;
   color: var(--subtext0);
   font-size: 13px;
 }
 .saved-mock-row:hover { background: var(--surface0); border-color: var(--surface1); }
-.saved-mock-name { font-weight: 600; }
-.saved-mock-hint { font-size: 11px; color: var(--overlay1); }
+.saved-mock-open {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: inherit;
+  font-size: inherit;
+}
+.saved-mock-del {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 5px;
+  background: none;
+  color: var(--overlay1);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+/* Revealed on row hover, and always reachable by keyboard. */
+.saved-mock-row:hover .saved-mock-del,
+.saved-mock-del:focus-visible { opacity: 1; }
+.saved-mock-del:hover { color: var(--red); background: rgba(243, 139, 168, 0.12); }
+.saved-mock-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-mock-hint { font-size: 11px; color: var(--overlay1); flex-shrink: 0; }
