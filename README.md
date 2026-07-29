@@ -3,14 +3,23 @@
 **OxDM** (*oxvif Device Manager*) is a modern, cross-platform ONVIF IP camera
 manager — a contemporary successor to the classic **ONVIF Device Manager
 (ODM)**. It is written in Rust with [Dioxus](https://dioxuslabs.com/) and built
-on the [`oxvif`](https://crates.io/crates/oxvif) ONVIF client library.
+on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-> **Project status — pre-release (v0.1.4).** Core device management works
+> **Project status — pre-release (v0.3.0).** Core device management works
 > end-to-end against real cameras and the `oxvif` mock server. Release bundles
 > are not yet code-signed, so the operating system may warn about an
 > unidentified developer on first launch.
+
+## Contents
+
+- [Installation](#installation)
+- [Features](#features)
+- [Diagnostics — the ONVIF health check](#diagnostics--the-onvif-health-check)
+- [Camera clones and the Quirks diff](#camera-clones-and-the-quirks-diff)
+- [Trying it without a camera](#trying-it-without-a-camera)
+- [Development](#development)
 
 ## Installation
 
@@ -94,39 +103,143 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
 - **PTZ** — preset create/read/update/delete, continuous and absolute moves,
   and home position.
 - **Events** — live PullPoint subscription with a scrolling, filterable log.
-- **Diagnostics** — on-demand ONVIF health check (Pass/Warn/Fail/Skip per
-  service, plus a Profile S/T/G verdict), with a "Save as baseline" action and
-  an automatic diff against the saved baseline on the next run. Regressions to
-  FAIL, added or removed checks, and checks that slowed by 2× or more are all
-  flagged in the per-device baseline diff. The check actively *verifies* results
-  rather than only confirming the device answered: it opens the RTSP stream,
-  fetches and validates the snapshot as a real image, and exercises Profile G
-  recording search / replay. It also runs a security probe (flags a camera that
-  serves data without authentication) and, optionally, force-verifies services
-  the device does not advertise to catch under-declared capabilities. A batch
-  run can also opt into a non-destructive **write round-trip** (re-Set the first
-  video-encoder config unchanged) to catch devices that reject our serialized
-  request body — an interop bug read-only probes can't see. Batch
-  results across a fleet can be exported as the rich JSON bundle or as **JUnit
-  XML** for CI dashboards.
-- **Camera clones (mocks)** — right-click a device → **"Clone this camera"**
-  records its standard read surface and serves it from an in-app **mock** (an
-  offline replay server), then adds it to the device list labeled "mock". You can
-  operate the clone through every tab — settings, media, PTZ, imaging — with the
-  real camera unplugged. Saved clones persist to `~/.oxdm/clones/`; the **"Saved
-  mocks"** list in the Manual tab reopens them. A mock device also gains a
-  **Quirks** tab: a git-style side-by-side diff of each operation's response
-  against oxvif's reference (baseline) response, with word-level highlighting,
-  and an export of the selected operations to JSON. Scope is honest — the clone
-  covers the standard read surface only, and the Quirks diff is *structural*
-  (which elements are present), not ONVIF-schema conformance. Built on oxvif's
-  `metamorph-server` feature (enabled in the default build).
+- **Diagnostics** — an on-demand ONVIF health check with baseline diffing and
+  fleet-wide batch export. [See below](#diagnostics--the-onvif-health-check).
+- **Camera clones (mocks)** — record a real camera, serve it offline, and diff
+  its response shapes against a reference.
+  [See below](#camera-clones-and-the-quirks-diff).
 - **Localisation and theming** — three themes (Dark / Light / Classic);
   English, 繁體中文, and Русский locales; keyboard shortcuts; an in-app log
   viewer; and an optional on-disk log file.
 
 Credentials (a global default plus optional per-device overrides) are stored in
 the operating-system keychain and are never written to disk in plaintext.
+
+## Diagnostics — the ONVIF health check
+
+![Health Overview in OxDM: one row per camera with pass/warn/fail/skip counts, Profile S/T/G badges, and live stream and recording probe results](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/health-check.png)
+
+A readable alternative to the official ONVIF Device Test Tool. Run it on one
+device from its **Diagnostics** tab, or on the whole fleet at once from **Health
+Overview** — every camera reports **Pass / Warn / Fail / Skip** counts and ends in
+a **Profile S/T/G verdict**. Devices can be sorted into named **groups**
+(right-click → add to group) so a run can target a floor, a site, or a vendor
+rather than everything.
+
+`Declared: M` next to a verdict is the camera's *own* claim read from its scopes,
+shown beside what the run actually **assessed** — a device that declares Profile G
+and fails replay is the interesting case, and it is only visible when both numbers
+are on screen.
+
+**It verifies, it does not just ask.** A check that only confirmed the device
+answered a SOAP call would pass a camera whose stream is dead. So the check opens
+the RTSP stream, fetches the snapshot and validates it as a real image (rejecting a
+0-byte body or an HTML error page served with a `200`), and genuinely exercises
+Profile G recording search and replay.
+
+That is what the `snapshot 291 KB` and `RTSP OK` badges in the shot above are:
+bytes that actually arrived, not a URL the camera claimed would work.
+
+Beyond that:
+
+- **Baseline diff.** "Save as baseline" stores the run per-device; the next run
+  diffs against it automatically. Regressions to FAIL, checks that appeared or
+  disappeared, and checks that slowed by **2× or more** are all flagged.
+- **Security probe.** With credentials supplied, a credential-free
+  `GetDeviceInformation` probe checks the camera actually enforces
+  authentication. A camera that serves device info anonymously is flagged.
+- **Under-declared services.** Optionally force-verify services the device does
+  *not* advertise, to catch firmware that under-declares its own capabilities.
+- **Write round-trip (opt-in, batch).** Re-`Set` the first video-encoder config
+  unchanged. This catches devices that reject our serialized request body — an
+  interop bug no read-only probe can see.
+- **Fleet export.** Batch a run across every device and export the rich JSON
+  bundle, or **JUnit XML** for a CI dashboard.
+
+The engine is [`oxvif`'s `health` feature](https://github.com/smiti1642/oxvif#health-check-health-feature),
+so the same verdicts are available headlessly from a script or CI job — OxDM is
+the interactive front end to it, not a separate implementation.
+
+## Camera clones and the Quirks diff
+
+![The Quirks tab in OxDM: a quirk report grouped by service area, each operation showing added and removed element counts, above a note that operations the device declined with a SOAP Fault are correct device behaviour rather than a client problem](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/quirks.png)
+
+Right-click a device → **"Clone this camera"**. OxDM records its standard read
+surface and serves the recording from an **in-app mock server**, then adds it to
+the device list labeled *mock*. You can then operate the clone through every tab
+— settings, media, PTZ, imaging — **with the real camera unplugged**.
+
+Clones persist to `~/.oxdm/clones/`; the **Saved mocks** list in the Manual tab
+reopens one at any time.
+
+A mock device also gains a **Quirks** tab, grouped by service area with an
+issues / clean / skipped count per group. Since 0.3.0 it also works against a
+**live camera** — pick the operations, watch them run, and see what moved since
+last time, without recording a clone first. Selected operations export to JSON.
+
+Two details in that first shot are the ones that make the tab usable rather than
+alarming:
+
+- **A declined operation is not a bug.** Operations the camera refused with a SOAP
+  Fault are called out as *correct device behaviour, not an oxvif problem* — a
+  camera is allowed to not implement something, and burying those in the issue
+  count would make every device look broken.
+- **Diff vs baseline.** *"unchanged since the baseline — the same operations
+  drift, in the same places"* is the answer you want most of the time. Firmware
+  upgrades are when it stops saying that.
+
+Expanding an operation gives the git-style side-by-side: `oxvif` reference on the
+left, the camera on the right, with word-level highlighting on what differs.
+
+![A git-style side-by-side diff of one operation: oxvif's reference response on the left, the cloned camera's on the right, with word-level highlighting on the values that differ and extra vendor blocks the reference does not emit](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/quirks-diff.png)
+
+This is where a device's personality shows up: the same `GetProfiles` call, and
+this camera names its profile `R_H264` rather than `mainStream`, runs the stream at
+640×360 rather than 1920×1080, and returns an `<Extension><Rotate>` block and an
+`<AudioSourceConfiguration>` the reference never emits. None of that is an error —
+it is exactly the shape a client has to survive.
+
+The `__MASKED__` tokens are deliberate: instance values are normalised before the
+comparison so the diff shows *shape* drift rather than every serial number, and a
+saved clone carries no credential.
+
+**Honest scope.** Both of these are deliberately narrower than they might look:
+
+- A clone covers the **standard read surface**, not the whole device. It is a
+  standard-surface snapshot, not a 100% clone.
+- Recorded `GetServices` responses and stream URIs embed the **real camera's
+  addresses**, so some media/PTZ calls on a clone may still route to the real
+  device. Rewriting those to point at the container is later work.
+- The Quirks diff is **structural** — which elements are present — not ONVIF
+  schema conformance.
+
+These limits are surfaced in the UI too, not only here.
+
+Built on `oxvif`'s
+[`metamorph-server`](https://github.com/smiti1642/oxvif#metamorph-metamorph--metamorph-server-features)
+feature, which is enabled in the default build.
+
+## Trying it without a camera
+
+OxDM pairs with the `oxvif` mock server, which implements enough of ONVIF to
+exercise most of the UI. The `oxvif` library is pulled in from
+[crates.io](https://crates.io/crates/oxvif) automatically, but the standalone
+mock server ships as an `oxvif` *example*, so it requires a local checkout:
+
+```sh
+# One-time: clone the oxvif repository
+git clone https://github.com/smiti1642/oxvif ../oxvif
+
+# Terminal 1: start the mock server (default port 18080)
+cd ../oxvif && cargo run --example mock_server --features mock-server
+
+# Terminal 2: start OxDM
+dx serve --platform desktop
+```
+
+In OxDM, open the **Manual** tab → **Add** → enter `127.0.0.1:18080` (no
+credentials required). Snapshot thumbnails and the settings tabs will show live
+data from the mock device, and the **Diagnostics** tab works against it as well.
 
 ## Usage
 
@@ -152,28 +265,6 @@ RUST_LOG=oxdm=debug dx serve --platform desktop
 
 RTSP mode additionally requires `ffmpeg` on `PATH` for H.265 transcoding;
 snapshot (MJPEG) mode needs nothing extra.
-
-### Trying it without a camera
-
-OxDM pairs with the `oxvif` mock server, which implements enough of ONVIF to
-exercise most of the UI. The `oxvif` library is pulled in from
-[crates.io](https://crates.io/crates/oxvif) automatically, but the standalone
-mock server ships as an `oxvif` *example*, so it requires a local checkout:
-
-```sh
-# One-time: clone the oxvif repository
-git clone https://github.com/smiti1642/oxvif ../oxvif
-
-# Terminal 1: start the mock server (default port 18080)
-cd ../oxvif && cargo run --example mock_server --features mock-server
-
-# Terminal 2: start OxDM
-dx serve --platform desktop
-```
-
-In OxDM, open the **Manual** tab → **Add** → enter `127.0.0.1:18080` (no
-credentials required). Snapshot thumbnails and the settings tabs will show live
-data from the mock device, and the **Diagnostics** tab works against it as well.
 
 ## License
 
