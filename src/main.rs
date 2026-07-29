@@ -124,7 +124,11 @@ fn main() {
                     dioxus::desktop::WindowBuilder::new()
                         .with_title("OxDM")
                         .with_window_icon(load_window_icon())
-                        .with_inner_size(dioxus::desktop::LogicalSize::new(1280.0, 800.0))
+                        // 1280 was ~40px short of fitting the settings tab bar:
+                        // the two sidebars take 500, the seven tabs
+                        // (Identification…Health, Quirks) need ~750, and Quirks
+                        // fell off the right edge with nothing to scroll it back.
+                        .with_inner_size(dioxus::desktop::LogicalSize::new(1440.0, 800.0))
                         .with_min_inner_size(dioxus::desktop::LogicalSize::new(900.0, 500.0)),
                 )
                 .with_disable_context_menu(true)
