@@ -37,7 +37,7 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
                 .or_else(|| profiles.iter().find_map(|x| x.video_encoder_token.clone()))
                 .ok_or_else(|| "no_encoder".to_string())?;
             let cfg = api::get_video_encoder_configuration(&addr, &creds, &token).await?;
-            let opts = api::get_video_encoder_configuration_options(&addr, &creds, Some(&token))
+            let opts = api::get_video_encoder_configuration_options(&addr, &creds, &token)
                 .await
                 .ok();
             Ok::<

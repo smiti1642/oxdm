@@ -6,6 +6,34 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Upgraded to oxvif 0.15.0** (from crates.io). Of its breaking changes, one
+  reached oxdm's source: `get_video_encoder_configuration_options` takes
+  `config_token: &str` instead of `Option<&str>`, so `api.rs` and its single
+  caller in `views/video_encoder.rs` drop the `Option`. The caller already
+  passed `Some(&token)` — the `None` arm had never been reachable, which is the
+  multi-sensor bug oxvif closed by removing it. The other four options getters
+  that gained the same requirement are not called here. The displayed oxvif
+  version is now 0.15.0.
+
+### Fixed
+- **The IO Control tab would have shown a red error on any camera without a
+  DeviceIO endpoint.** oxvif 0.15 moves `GetDigitalInputs` onto the DeviceIO
+  service, where the schema puts it; a device advertising no DeviceIO URL now
+  fails *locally*, before the request is sent, with `Missing required field:
+  DeviceIO service URL`. `is_action_unsupported` matched only the three
+  `ActionNotSupported`-family fault texts a device answers with, so the new
+  message fell through to the error banner instead of the soft "no IO hardware"
+  empty state. It now matches that message too — on the whole field name, not on
+  the `missing required field` prefix, so a genuine parse failure is still an
+  error. No existing test could see this: `tests/io_control_smoke.rs` runs
+  against oxvif's mock, which *does* advertise DeviceIO, so it stayed green
+  through the upgrade.
+
+---
+
 ## [0.3.0] - 2026-07-27
 
 Headline: **the Quirks tab becomes something you point at a real camera**, not

@@ -1236,11 +1236,19 @@ pub async fn get_network_protocols(
 // hardware, which isn't a failure.
 const IO_UNSUPPORTED_SENTINEL: &str = "unsupported";
 
-fn is_action_unsupported(err: &str) -> bool {
+pub(crate) fn is_action_unsupported(err: &str) -> bool {
     let lower = err.to_ascii_lowercase();
     lower.contains("not implemented")
         || lower.contains("actionnotsupported")
         || lower.contains("not supported")
+        // oxvif 0.15 moved `GetDigitalInputs` onto the DeviceIO endpoint, where
+        // it belongs. A camera that advertises no DeviceIO service now fails
+        // *locally*, before anything is sent, so it never reaches the
+        // `ActionNotSupported` the three lines above catch. Same meaning to a
+        // user: no IO hardware. Matched on the whole field name rather than on
+        // "missing required field", so a genuine parse failure elsewhere is
+        // still surfaced as an error.
+        || lower.contains("missing required field: deviceio service url")
 }
 
 fn map_io_unsupported<T>(err: ApiError) -> Result<T, ApiError> {
@@ -1582,7 +1590,7 @@ pub async fn get_video_encoder_configuration(
 pub async fn get_video_encoder_configuration_options(
     addr: &str,
     creds: &Credentials,
-    config_token: Option<&str>,
+    config_token: &str,
 ) -> Result<VideoEncoderConfigurationOptions, ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result(
