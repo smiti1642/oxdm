@@ -8,6 +8,23 @@ Changelog tracking starts at 0.1.5.
 
 ## [Unreleased]
 
+### Added
+- **A saved quirk baseline now records which oxvif version measured it**, and
+  the Quirks tab says so when that differs from the running build. Quirks are
+  measured against oxvif's *own* reference responses — `QuirkReport` lists the
+  element paths present in the camera's response but not the reference's, and
+  vice versa — so an oxvif upgrade that changes the reference moves those paths
+  for every device. oxvif 0.15 moved a lot of it (Media2 profiles now inline
+  their configurations, storage 1 → 3 entries, metadata 1 → 2, PTZ four heads →
+  two, OSD `PositionOption` flattened), which would have made the first run
+  after this upgrade report a wave of drift no camera caused — on the one
+  feature whose entire question is "did *the camera* change?". `QuirkReport`
+  carries no version of its own, so the file stamps one beside it.
+  Baselines saved by 0.3.0 or earlier still load, and are reported as an
+  unknown — never a matching — version, since every one of them predates the
+  stamp and therefore predates oxvif 0.15. Re-saving the baseline clears the
+  warning.
+
 ### Changed
 - **Upgraded to oxvif 0.15.0** (from crates.io). Of its breaking changes, one
   reached oxdm's source: `get_video_encoder_configuration_options` takes

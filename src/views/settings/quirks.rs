@@ -56,7 +56,7 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     // `QuirkReport` is not `PartialEq`, so this cannot be a `use_memo` — an
     // effect keyed on the same two signals reloads it, and the read stays off
     // the render path (it parses a JSON file).
-    let mut quirk_baseline = use_signal(|| None::<oxvif::metamorph::QuirkReport>);
+    let mut quirk_baseline = use_signal(|| None::<crate::persist::SavedQuirkBaseline>);
     use_effect(move || {
         let _ = baseline_seq.read();
         quirk_baseline.set(crate::persist::read_quirk_baseline(&addr.read()));
@@ -170,9 +170,25 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     // The diff only exists once this device has both a baseline and a current
     // report; `QuirkReport::diff` is keyed on `(action, key_canon)`.
     let baseline_diff = match (report.as_ref(), &*quirk_baseline.read()) {
-        (Some(now), Some(prev)) => Some(now.diff(prev)),
+        (Some(now), Some(prev)) => Some(now.diff(&prev.report)),
         _ => None,
     };
+
+    // The baseline's synthetic reference is oxvif's mock, so a baseline saved
+    // under a different oxvif than this build links is not a like-for-like
+    // comparison — part of the diff below is the library moving, not the
+    // camera. Only says so when there *is* a diff to qualify; the stamp alone
+    // is not worth a line.
+    let baseline_oxvif_moved = baseline_diff.is_some()
+        && quirk_baseline
+            .read()
+            .as_ref()
+            .is_some_and(|b| !b.matches_running_oxvif());
+    let baseline_saved_under = quirk_baseline
+        .read()
+        .as_ref()
+        .and_then(|b| b.oxvif.clone())
+        .unwrap_or_else(|| i18n::t(locale, "quirk_baseline_oxvif_unknown").to_string());
 
     let save_baseline = move |_| {
         let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
@@ -272,6 +288,17 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                     div { class: "health-baseline-note",
                         Icon { name: "clock", size: 12 }
                         {format!("{}: {}", i18n::t(locale, "quirk_baseline_loaded"), when)}
+                    }
+                }
+
+                if baseline_oxvif_moved {
+                    div { class: "quirk-parse-fail",
+                        div { class: "quirk-parse-fail-head",
+                            Icon { name: "alert-triangle", size: 12 }
+                            {i18n::t(locale, "quirk_baseline_oxvif_moved")
+                                .replace("{saved}", &baseline_saved_under)
+                                .replace("{now}", crate::components::OXVIF_VERSION)}
+                        }
                     }
                 }
 

@@ -308,14 +308,77 @@ fn quirk_baseline_path(addr: &str) -> Option<PathBuf> {
     quirk_baseline_dir().map(|d| d.join(format!("{}.json", sanitize_addr_for_file(addr))))
 }
 
+/// A `QuirkReport` is only meaningful against the synthetic baseline that
+/// produced it, and that baseline is *oxvif's mock* — `QuirkReport` records
+/// element paths present in the camera's response but not the mock's, and vice
+/// versa. So an oxvif upgrade that changes what the mock emits moves every one
+/// of those paths, and diffing across the upgrade reports drift the camera did
+/// not cause. oxvif 0.15 moved a great deal of it (Media2 profiles inline their
+/// configurations, storage 1 → 3 entries, metadata 1 → 2, PTZ four heads → two,
+/// OSD `PositionOption` flattened).
+///
+/// `QuirkReport` itself carries no version, so the file records one alongside
+/// it. The UI compares it against the running build and says so when they
+/// differ, rather than presenting library drift as camera drift.
+#[derive(Serialize, Deserialize)]
+struct BaselineEnvelope {
+    /// The oxvif version whose mock produced the reference this report was
+    /// diffed against.
+    oxvif: String,
+    report: oxvif::metamorph::QuirkReport,
+}
+
+/// A saved quirk baseline, plus the oxvif version it was measured against.
+pub struct SavedQuirkBaseline {
+    pub report: oxvif::metamorph::QuirkReport,
+    /// `None` for a file written by oxdm 0.3.0 or earlier, which stored a bare
+    /// `QuirkReport` with no stamp. Unknown is *not* the same as matching —
+    /// every such file predates the stamp, so it predates oxvif 0.15 too.
+    pub oxvif: Option<String>,
+}
+
+impl SavedQuirkBaseline {
+    /// Whether this baseline was measured against the same synthetic reference
+    /// the running build produces — i.e. whether a diff against it is purely a
+    /// statement about the camera.
+    pub fn matches_running_oxvif(&self) -> bool {
+        self.oxvif.as_deref() == Some(crate::components::OXVIF_VERSION)
+    }
+}
+
+/// Parse the on-disk form, accepting both the stamped envelope and the bare
+/// `QuirkReport` oxdm ≤ 0.3.0 wrote.
+///
+/// The two are unambiguous in both directions and neither can be read as the
+/// other: the envelope's required `oxvif` / `report` fields are absent from a
+/// bare report, and the report's required `device` / `compared` / `quirks` are
+/// absent from an envelope. serde ignores unknown fields but not missing ones,
+/// so each shape fails against the wrong struct.
+///
+/// Split out from [`read_quirk_baseline`] so it can be tested without a home
+/// directory — the same reason `clone_component` is tested rather than
+/// `delete_clone`.
+fn parse_quirk_baseline(json: &str) -> Result<SavedQuirkBaseline, serde_json::Error> {
+    if let Ok(env) = serde_json::from_str::<BaselineEnvelope>(json) {
+        return Ok(SavedQuirkBaseline {
+            report: env.report,
+            oxvif: Some(env.oxvif),
+        });
+    }
+    serde_json::from_str::<oxvif::metamorph::QuirkReport>(json).map(|report| SavedQuirkBaseline {
+        report,
+        oxvif: None,
+    })
+}
+
 /// Load a previously-saved baseline `QuirkReport` for `addr`. `None` when
 /// there is none or it no longer parses — a stale baseline must not break the
 /// Quirks tab, it just leaves the diff section out.
-pub fn read_quirk_baseline(addr: &str) -> Option<oxvif::metamorph::QuirkReport> {
+pub fn read_quirk_baseline(addr: &str) -> Option<SavedQuirkBaseline> {
     let path = quirk_baseline_path(addr)?;
     let json = std::fs::read_to_string(&path).ok()?;
-    match serde_json::from_str::<oxvif::metamorph::QuirkReport>(&json) {
-        Ok(r) => Some(r),
+    match parse_quirk_baseline(&json) {
+        Ok(b) => Some(b),
         Err(e) => {
             warn!(error = %e, path = %path.display(), "stale quirk baseline ignored");
             None
@@ -323,8 +386,9 @@ pub fn read_quirk_baseline(addr: &str) -> Option<oxvif::metamorph::QuirkReport> 
     }
 }
 
-/// Persist `report` as the quirk baseline for `addr`. Returns the path so the
-/// UI can report where it landed.
+/// Persist `report` as the quirk baseline for `addr`, stamped with the oxvif
+/// version that produced its synthetic reference. Returns the path so the UI
+/// can report where it landed.
 pub fn write_quirk_baseline(
     addr: &str,
     report: &oxvif::metamorph::QuirkReport,
@@ -334,7 +398,13 @@ pub fn write_quirk_baseline(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, report.to_json_pretty())?;
+    let envelope = BaselineEnvelope {
+        oxvif: crate::components::OXVIF_VERSION.to_string(),
+        report: report.clone(),
+    };
+    let json = serde_json::to_string_pretty(&envelope)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&path, json)?;
     Ok(path)
 }
 
@@ -809,6 +879,80 @@ mod tests {
     /// Asserted against `clone_component`, never `delete_clone`: the rule is
     /// what needs testing, and calling the deleting function from a unit test
     /// leaves the developer's own `~/.oxdm` one logic error away from erasure.
+    /// The bare shape oxdm ≤ 0.3.0 wrote — a serialized `QuirkReport` with no
+    /// stamp. Kept as a literal rather than round-tripped through the current
+    /// writer, because that writer can no longer produce it.
+    const LEGACY_BARE: &str = r#"{
+      "device": "cam-1",
+      "compared": 12,
+      "quirks": [
+        {
+          "action": "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
+          "key_canon": "GetProfiles",
+          "only_in_clone": ["Envelope/Body/GetProfilesResponse/Profiles/Extension"],
+          "only_in_synthetic": []
+        }
+      ]
+    }"#;
+
+    /// A baseline is only comparable against the oxvif version whose mock
+    /// produced its synthetic reference, so the file stamps that version and
+    /// the reader must report it.
+    #[test]
+    fn a_stamped_baseline_round_trips_with_its_oxvif_version() {
+        let envelope = format!(r#"{{ "oxvif": "0.14.0", "report": {LEGACY_BARE} }}"#);
+        let b = parse_quirk_baseline(&envelope).expect("envelope must parse");
+        assert_eq!(b.oxvif.as_deref(), Some("0.14.0"));
+        assert_eq!(b.report.device, "cam-1");
+        assert_eq!(b.report.compared, 12);
+        assert_eq!(b.report.quirks.len(), 1);
+        assert!(
+            !b.matches_running_oxvif(),
+            "0.14.0 is not the version this build links"
+        );
+    }
+
+    /// The version the running build actually links must compare equal, or the
+    /// warning would fire on every freshly-saved baseline.
+    #[test]
+    fn a_baseline_stamped_with_the_running_version_matches() {
+        let envelope = format!(
+            r#"{{ "oxvif": "{}", "report": {LEGACY_BARE} }}"#,
+            crate::components::OXVIF_VERSION
+        );
+        let b = parse_quirk_baseline(&envelope).expect("envelope must parse");
+        assert!(b.matches_running_oxvif());
+    }
+
+    /// A pre-0.4.0 file still loads — losing a baseline on upgrade would be
+    /// worse than the drift it warns about — but reports an *unknown* version,
+    /// which must not be mistaken for a match. Every unstamped file was written
+    /// before oxvif 0.15, so it is stale by construction.
+    #[test]
+    fn a_legacy_unstamped_baseline_loads_but_never_counts_as_matching() {
+        let b = parse_quirk_baseline(LEGACY_BARE).expect("bare report must still parse");
+        assert_eq!(b.oxvif, None);
+        assert_eq!(b.report.device, "cam-1");
+        assert_eq!(b.report.quirks.len(), 1);
+        assert!(!b.matches_running_oxvif());
+    }
+
+    /// Neither shape may be read as the other, in either direction.
+    #[test]
+    fn a_file_that_is_neither_shape_is_an_error_not_an_empty_baseline() {
+        for bad in [
+            r#"{"oxvif": "0.15.0"}"#,
+            r#"{"device": "cam-1"}"#,
+            "{}",
+            "[",
+        ] {
+            assert!(
+                parse_quirk_baseline(bad).is_err(),
+                "{bad:?} must not parse as a baseline"
+            );
+        }
+    }
+
     #[test]
     fn clone_component_rejects_every_name_that_is_not_one_plain_component() {
         for bad in ["..", "../..", "../baselines", "sub/dir", ".", "", "/etc"] {

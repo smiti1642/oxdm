@@ -167,6 +167,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_baseline_saved" => "怪癖基準已儲存。",
         "quirk_baseline_save_failed" => "怪癖基準儲存失敗",
         "quirk_baseline_loaded" => "基準",
+        "quirk_baseline_oxvif_unknown" => "較舊的版本",
+        "quirk_baseline_oxvif_moved" => "這份基準是在 oxvif {saved} 下儲存的，而目前的版本是 {now}。怪癖是拿相機的回應去比對 oxvif 自己的參考回應，而參考回應在這兩個版本之間變過 —— 所以下面有一部分差異來自函式庫升級，不是相機造成的。重新儲存基準即可回到同基準比較。",
         "quirk_diff_title" => "與基準的差異",
         "quirk_diff_none" => "與基準相同 —— 偏離的操作一樣，偏離的位置也一樣",
         "quirk_diff_appeared" => "新出現的偏離",

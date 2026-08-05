@@ -168,6 +168,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "quirk_baseline_saved" => "Quirk baseline saved.",
         "quirk_baseline_save_failed" => "Failed to save quirk baseline",
         "quirk_baseline_loaded" => "baseline",
+        "quirk_baseline_oxvif_unknown" => "an older version",
+        "quirk_baseline_oxvif_moved" => "This baseline was saved against oxvif {saved}; this build uses {now}. Quirks are measured against oxvif's own reference responses, and those changed between the two versions — so some of the differences below come from the upgrade, not from the camera. Re-save the baseline to compare like for like.",
         "quirk_diff_title" => "Diff vs baseline",
         "quirk_diff_none" => "unchanged since the baseline — the same operations drift, in the same places",
         "quirk_diff_appeared" => "newly drifting",
