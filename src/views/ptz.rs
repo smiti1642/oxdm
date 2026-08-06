@@ -106,6 +106,39 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         }
     });
 
+    // The head behind the *selected profile*. Resolved profile → PTZ
+    // configuration → node, with no fallback: on a multi-head device answering
+    // with another head's limits would drive head 1's range into head 2.
+    let node_state = use_resource(move || {
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        let token_opt = profile_sig.read().clone();
+        async move {
+            let token = token_opt.ok_or_else(|| "no_profile".to_string())?;
+            api::ptz_node_for_profile(&addr_s, &creds_s, &token).await
+        }
+    });
+
+    // Where the head is now. Read on profile change and after every absolute
+    // move; the joystick paths do not restart it, because a status round-trip
+    // per mousedown is exactly the latency the session cache exists to avoid.
+    let mut ptz_status = use_resource(move || {
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        let token_opt = profile_sig.read().clone();
+        async move {
+            let token = token_opt.ok_or_else(|| "no_profile".to_string())?;
+            api::ptz_get_status(&addr_s, &creds_s, &token).await
+        }
+    });
+
+    // Commanded absolute position. Seeded once from the head's real position so
+    // "Go" does not fling a camera to 0,0 the first time it is pressed.
+    let mut abs_pan = use_signal(|| 0.0_f32);
+    let mut abs_tilt = use_signal(|| 0.0_f32);
+    let mut abs_zoom = use_signal(|| 0.0_f32);
+    let mut abs_seeded = use_signal(|| false);
+
     // ── Action callbacks ───────────────────────────────────────────────────
     // Wrapped with `use_callback` so they're `Copy` and can be passed as
     // props to child components (DirButton, ZoomButton, PresetRow). Each
@@ -325,6 +358,55 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         _ => None,
     };
 
+    // What this head declares it can be driven to, absolutely. `None` while the
+    // node is still being read or could not be read — the controls are simply
+    // not offered yet, rather than offered against a guessed range.
+    let abs_limits = match &*node_state.read_unchecked() {
+        Some(Ok(node)) => Some(api::ptz_absolute_limits(node)),
+        _ => None,
+    }
+    .filter(|l: &api::PtzAbsoluteLimits| !l.is_empty());
+
+    // Live readout, and the one-shot seed for the sliders.
+    let (status_now, status_moving) = match &*ptz_status.read_unchecked() {
+        Some(Ok(s)) => (
+            Some((s.pan, s.tilt, s.zoom)),
+            s.pan_tilt_status == "MOVING" || s.zoom_status == "MOVING",
+        ),
+        _ => (None, false),
+    };
+    let seeded = *abs_seeded.peek();
+    if let (false, Some((p, t, z))) = (seeded, status_now) {
+        if let Some(v) = p {
+            abs_pan.set(v);
+        }
+        if let Some(v) = t {
+            abs_tilt.set(v);
+        }
+        if let Some(v) = z {
+            abs_zoom.set(v);
+        }
+        abs_seeded.set(true);
+    }
+
+    let go_absolute = use_callback(move |_: ()| {
+        let Some(token) = profile_sig.read().clone() else {
+            return;
+        };
+        let (pan, tilt, zoom) = (*abs_pan.read(), *abs_tilt.read(), *abs_zoom.read());
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        spawn(async move {
+            match api::ptz_absolute_move(&addr_s, &creds_s, &token, pan, tilt, zoom).await {
+                // Re-read rather than trust the command: a device is free to
+                // clamp, refuse an axis, or stop short, and the readout is the
+                // only thing that shows it.
+                Ok(()) => ptz_status.restart(),
+                Err(e) => ctx.push_toast(ToastLevel::Error, e),
+            }
+        });
+    });
+
     // ── Render ─────────────────────────────────────────────────────────────
     rsx! {
         div { class: "ptz-view",
@@ -442,6 +524,51 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                                 },
                             }
                             span { class: "ptz-speed-value", "{(*speed.read() * 100.0) as u32}%" }
+                        }
+                        // ── Where the head is, and where to send it ──
+                        //
+                        // Both halves are gated on the device having said
+                        // something. The readout appears only once GetStatus
+                        // answered; the sliders only once the node published an
+                        // absolute position space for that axis. A head that
+                        // cannot pan accepts an AbsoluteMove carrying a pan and
+                        // does nothing observable with it, so offering the
+                        // control blind is worse than not offering it.
+                        if let Some((pan, tilt, zoom)) = status_now {
+                            div { class: "ptz-status",
+                                div { class: "ptz-side-label",
+                                    {i18n::t(locale, "ptz_status")}
+                                    if status_moving {
+                                        span { class: "ptz-status-moving",
+                                            {i18n::t(locale, "ptz_status_moving")}
+                                        }
+                                    }
+                                }
+                                div { class: "ptz-status-axes",
+                                    PtzAxisReadout { label: "P", value: pan }
+                                    PtzAxisReadout { label: "T", value: tilt }
+                                    PtzAxisReadout { label: "Z", value: zoom }
+                                }
+                            }
+                        }
+                        if let Some(limits) = abs_limits {
+                            div { class: "ptz-absolute",
+                                span { class: "ptz-side-label", {i18n::t(locale, "ptz_absolute")} }
+                                if let Some((min, max)) = limits.pan {
+                                    AbsAxisSlider { label: "P", min, max, value: abs_pan }
+                                }
+                                if let Some((min, max)) = limits.tilt {
+                                    AbsAxisSlider { label: "T", min, max, value: abs_tilt }
+                                }
+                                if let Some((min, max)) = limits.zoom {
+                                    AbsAxisSlider { label: "Z", min, max, value: abs_zoom }
+                                }
+                                button {
+                                    class: "btn btn-sm btn-primary",
+                                    onclick: move |_| go_absolute.call(()),
+                                    {i18n::t(locale, "ptz_absolute_go")}
+                                }
+                            }
                         }
                         div { class: "ptz-misc",
                             button {
@@ -598,6 +725,51 @@ fn ZoomButton(
             onmouseup: move |_| do_stop.call(()),
             onmouseleave: move |_| do_stop.call(()),
             Icon { name: icon, size: 16 }
+        }
+    }
+}
+
+/// One axis of the live PTZ readout.
+///
+/// `None` renders as `—`, not as `0.00`. Every axis of `PtzStatus` is
+/// `Option<f32>` because a device is free to report a move state and no
+/// position, and printing a zero there would be a coordinate the head is
+/// probably not at.
+#[component]
+fn PtzAxisReadout(label: &'static str, value: Option<f32>) -> Element {
+    rsx! {
+        span { class: "ptz-status-axis",
+            span { class: "ptz-status-axis-label", "{label}" }
+            match value {
+                Some(v) => rsx! { span { {format!("{v:.2}")} } },
+                None => rsx! { span { class: "ptz-status-axis-unknown", "—" } },
+            }
+        }
+    }
+}
+
+/// One absolute-position slider, bounded by what the node declared for that
+/// axis rather than by a normalised guess.
+#[component]
+fn AbsAxisSlider(label: &'static str, min: f32, max: f32, value: Signal<f32>) -> Element {
+    // Devices publish anything from -1..1 to 0..3600; a fixed step would be
+    // either uselessly coarse or absurdly fine. 200 stops across whatever the
+    // head offers.
+    let step = ((max - min) / 200.0).max(f32::EPSILON);
+    rsx! {
+        label { class: "ptz-abs-axis",
+            span { class: "ptz-abs-axis-label", "{label}" }
+            input {
+                r#type: "range",
+                min: "{min}", max: "{max}", step: "{step}",
+                value: "{*value.read()}",
+                oninput: move |e| {
+                    if let Ok(v) = e.value().parse::<f32>() {
+                        value.clone().set(v);
+                    }
+                },
+            }
+            span { class: "ptz-abs-axis-value", {format!("{:.2}", *value.read())} }
         }
     }
 }

@@ -99,9 +99,17 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
 - **Media** — profile create/delete, video-encoder configuration (H.264 and
   H.265, with H.265 automatically routed through Media2), imaging controls
   (brightness/contrast plus manual exposure, white-balance gains, and focus
-  limits), and OSD management.
-- **PTZ** — preset create/read/update/delete, continuous move, and home
-  position.
+  limits), and OSD management. Focus is driven at a speed the lens declared, not
+  a fixed one, and a direction it declares no speed for is disabled rather than
+  silently ignored.
+- **Multi-sensor aware** — a dual-lens camera is one ONVIF device with several
+  video sources, and every per-channel panel names the one it is addressing. If
+  the selected profile has no channel of its own, the panel says which one it
+  fell back to instead of showing lens 0 as though you had picked it.
+- **PTZ** — preset create/read/update/delete, continuous move, home position,
+  a live pan/tilt/zoom readout, and absolute positioning bounded by the ranges
+  the camera's PTZ node actually declares (a zoom-only head gets a zoom slider
+  and nothing else).
 - **Capability-driven navigation** — a camera is only offered the tabs it
   advertises, so a fixed dome shows no PTZ button and a camera with no IO board
   shows no IO Control tab. Silence is never read as a denial: if the device

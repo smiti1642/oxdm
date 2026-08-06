@@ -1190,6 +1190,115 @@ pub async fn ptz_stop(
     trace_result("PTZ Stop", addr, s.ptz_stop(profile_token).await)
 }
 
+/// Where the head is now, and whether it is moving.
+#[instrument(skip(creds), fields(addr, profile_token))]
+pub async fn ptz_get_status(
+    addr: &str,
+    creds: &Credentials,
+    profile_token: &str,
+) -> Result<oxvif::PtzStatus, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result("PTZ GetStatus", addr, s.ptz_get_status(profile_token).await)
+}
+
+#[instrument(skip(creds), fields(addr, profile_token, pan, tilt, zoom))]
+pub async fn ptz_absolute_move(
+    addr: &str,
+    creds: &Credentials,
+    profile_token: &str,
+    pan: f32,
+    tilt: f32,
+    zoom: f32,
+) -> Result<(), ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "PTZ AbsoluteMove",
+        addr,
+        s.ptz_absolute_move(profile_token, pan, tilt, zoom).await,
+    )
+}
+
+/// The PTZ node behind `profile_token`.
+///
+/// **No fallback to another node, deliberately.** A profile with no PTZ
+/// configuration means *this channel* has no head, and on a multi-head device
+/// answering with a different head's limits would be the exact failure the
+/// per-channel rule exists to prevent — the caller would then drive head 1's
+/// range into head 2. Every step names the token it was given.
+#[instrument(skip(creds), fields(addr, profile_token))]
+pub async fn ptz_node_for_profile(
+    addr: &str,
+    creds: &Credentials,
+    profile_token: &str,
+) -> Result<oxvif::PtzNode, ApiError> {
+    let s = session_for(addr, creds).await?;
+    let profiles = s.get_profiles().await.map_err(|e| e.to_string())?;
+    let config_token = profiles
+        .iter()
+        .find(|p| p.token == profile_token)
+        .and_then(|p| p.ptz_config_token.clone())
+        .ok_or_else(|| "no_ptz_config".to_string())?;
+    let config = s
+        .ptz_get_configuration(&config_token)
+        .await
+        .map_err(|e| e.to_string())?;
+    trace_result(
+        "PTZ GetNode",
+        addr,
+        s.ptz_get_node(&config.node_token).await,
+    )
+}
+
+/// The absolute-position ranges a PTZ node declares, per axis.
+///
+/// `None` on an axis means the node published no absolute position space for
+/// it, and the control for that axis should not be offered — a head that
+/// cannot pan will accept an `AbsoluteMove` carrying a pan and do nothing
+/// observable with it.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct PtzAbsoluteLimits {
+    pub pan: Option<(f32, f32)>,
+    pub tilt: Option<(f32, f32)>,
+    pub zoom: Option<(f32, f32)>,
+}
+
+impl PtzAbsoluteLimits {
+    /// No axis can be driven absolutely — offer nothing.
+    pub fn is_empty(&self) -> bool {
+        self.pan.is_none() && self.tilt.is_none() && self.zoom.is_none()
+    }
+}
+
+/// Pull the absolute position ranges out of a node's declared spaces.
+///
+/// **Matched on the URI, because the kind is not otherwise recoverable.**
+/// `PtzNode::pan_tilt_spaces` is a flat `Vec` that chains four different
+/// element kinds — `AbsolutePanTiltPositionSpace`,
+/// `RelativePanTiltTranslationSpace`, `ContinuousPanTiltVelocitySpace` and
+/// `PanTiltSpeedSpace` — and each is `[0..unbounded]`, so neither the index nor
+/// the count identifies which is which. The URI is all that survives.
+///
+/// ONVIF's generic spaces all end in `PositionGenericSpace` for the absolute
+/// ones, `TranslationGenericSpace` / `VelocityGenericSpace` / `…SpeedSpace` for
+/// the others. A device publishing only vendor-specific space URIs therefore
+/// reads as "no absolute space" and the controls stay hidden — which is the
+/// safe direction, since driving a coordinate system OxDM cannot name is worse
+/// than not offering the control.
+pub(crate) fn ptz_absolute_limits(node: &oxvif::PtzNode) -> PtzAbsoluteLimits {
+    let is_position = |s: &&oxvif::PtzSpaceRange| s.uri.ends_with("PositionGenericSpace");
+
+    let pan_tilt = node.pan_tilt_spaces.iter().find(is_position);
+    let zoom = node.zoom_spaces.iter().find(is_position);
+
+    PtzAbsoluteLimits {
+        pan: pan_tilt.map(|s| s.x_range),
+        // A 1D pan/tilt space is legal and carries no `YRange`; such a head
+        // pans and does not tilt.
+        tilt: pan_tilt.and_then(|s| s.y_range),
+        zoom: zoom.map(|s| s.x_range),
+    }
+}
+
 #[instrument(skip(creds), fields(addr, profile_token))]
 pub async fn ptz_get_presets(
     addr: &str,

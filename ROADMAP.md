@@ -51,15 +51,15 @@ Every row here is reachable today. Nothing waits on a crates.io release.
 | # | Item | Value | oxdm | oxvif | Landing |
 |---|------|:----:|:----:|:----:|---------|
 | 1 | ~~**Capability-driven UI** — hide what the device does not support~~ | 4 | S | — | **Landed 2026-08-06** — `api::DeviceGate` |
-| 2 | **PTZ completeness** — absolute / relative move, live position readout, node limits | **5** | M | — | `views/ptz.rs` |
+| 2 | **PTZ completeness** — relative move, tours, configuration editing | **5** | M | — | `views/ptz.rs`; absolute move + status **landed 2026-08-06** |
 | 3 | **PTZ preset tours** | 3 | M | — | A "Tours" sub-tab in `views/ptz.rs` |
-| 4 | **Imaging: read the move options before driving the motor** | 3 | S | — | `views/imaging.rs` focus block |
+| 4 | ~~**Imaging: read the move options before driving the motor**~~ | 3 | S | — | **Landed 2026-08-06** — `api::focus_speed` |
 | 5 | **Firmware upgrade + backup / restore** | 4 | M | — | `settings/maintenance.rs` |
 | 6 | **On-device recording configuration** (Profile G write side) | 4 | L | — | A "Schedule" sub-tab in `views/recordings.rs` |
 | 7 | **Audio configuration** | 2 | M | — | New `SettingsTab` or a block in the encoder view |
 | 8 | **Media2 parity** — profiles, stream / snapshot URI, source + metadata config | 3 | M | — | Cross-cutting; no new view |
 | 9 | **Storage configuration** | 3 | S | — | New `SettingsTab` |
-| 10 | **Multi-sensor audit of OxDM's own views** | 4 | S | — | Cross-cutting; see below |
+| 10 | ~~**Multi-sensor audit of OxDM's own views**~~ | 4 | S | — | **Landed 2026-08-06** — `api::pick_channel` |
 
 ### 1 — Capability-driven UI — **landed 2026-08-06**
 
@@ -104,17 +104,35 @@ preset, goto home. oxvif offers twenty-seven. Unused today:
 `ptz_set_home_position`, `ptz_get_compatible_configurations`,
 `ptz_send_auxiliary_command`, plus the seven tour methods in item 3.
 
-The two that change the view most:
+**The two that changed the view most landed 2026-08-06.** `ptz_get_status` is a
+live pan/tilt/zoom readout with a move state — the view had been driving a head
+it could not see. `ptz_absolute_move` is offered per axis, against the ranges
+`ptz_get_node` publishes, resolved through the *selected profile's* PTZ
+configuration with no fallback to another head. Also wired:
+`ptz_get_configuration` (as the profile → node hop).
 
-- **`ptz_get_status`** — a live pan/tilt/zoom readout with a move state. The
-  view currently drives a head it cannot see. 0.15 also made the mock report a
-  real clock here instead of a frozen timestamp, so it is testable.
-- **`ptz_absolute_move` + `ptz_get_node`** — absolute positioning needs the
-  node's coordinate spaces and limits to be meaningful. Read the node, then
-  offer the control; do not offer it blind.
+Still unused, and what item 2 now means: `ptz_relative_move`,
+`ptz_get_nodes`, `ptz_get_configurations`, `ptz_get_configuration_options`,
+`ptz_set_configuration`, `ptz_set_home_position`,
+`ptz_get_compatible_configurations`, `ptz_send_auxiliary_command`, plus the
+seven tour methods in item 3.
+
+`ptz_send_auxiliary_command` is worth pulling forward: `PtzNode::aux_commands`
+is already read and rendered nowhere, and the mock seeds `tt:Wiper|On` /
+`tt:Wiper|Off` on head 1 only — a two-head fixture for a two-button feature.
+
+**One oxvif gap this surfaced.** `PtzNode::pan_tilt_spaces` is a flat `Vec`
+chaining four different element kinds — `AbsolutePanTiltPositionSpace`,
+`RelativePanTiltTranslationSpace`, `ContinuousPanTiltVelocitySpace`,
+`PanTiltSpeedSpace` — each `[0..unbounded]`, so **which kind an entry came from
+is not recoverable from the public type**. `api::ptz_absolute_limits` matches on
+the URI ending in `PositionGenericSpace` instead, which works for ONVIF's
+generic spaces and silently declines a vendor-specific one. A `kind` field on
+`PtzSpaceRange` would remove the guess; that is a Tier 1 item whenever oxvif
+next opens.
 
 Scored 5 because PTZ is the one view where a user expects to see what the device
-is doing, and it is the largest single unused block in the measurement.
+is doing, and it was the largest single unused block in the measurement.
 
 ### 3 — PTZ preset tours
 
@@ -126,19 +144,30 @@ built and tested end to end with no camera.
 
 This was `P2 / oxvif M` in the previous edition. The oxvif half is done.
 
-### 4 — Imaging: read the move options before driving the motor
+### 4 — Imaging: read the move options before driving the motor — **landed 2026-08-06**
 
-`api::imaging_move` sends a continuous focus move with a speed OxDM never
-validates, because it never calls `imaging_get_move_options`. The device
-declares the legal speed range there and OxDM does not ask.
+`api::imaging_focus_continuous` was sending whatever the PTZ speed slider held —
+a 0.1–1.0 fraction shared with pan/tilt/zoom — and OxDM had never called
+`GetMoveOptions`. `api::focus_speed` now maps the slider fraction onto the range
+the device declares, per direction.
 
-Small, and worth doing early for a second reason: `GetMoveOptions` is one of the
-rows oxvif 0.15's schema-shape check corrected (the mock had rendered the focus
-ranges as `PositionSpace` / `SpeedSpace`; `tt:AbsoluteFocusOptions` declares
-`Position` then `Speed`). Exercising it from OxDM puts a second pair of eyes on
-a path that was wrong in three artefacts at once until recently.
+Per direction, because **the sign of the speed is the direction on the wire**. A
+lens declaring `0.0..=1.0` offers no way to focus nearer, so the near button is
+disabled rather than sending `0.0` — which returns `OK` and never moves the
+motor, reading to the user as a broken camera.
 
-`imaging_get_status` (focus position + move status) is the natural companion.
+The answered / could-not-ask distinction from item 1 applies here too: `Ok` with
+no Continuous family is a real denial (`Speed` is that family's sole required
+member), while a failed query leaves the buttons alone.
+
+`imaging_get_status` landed with it, as a position readout refreshed after each
+stop rather than polled.
+
+The second reason this was worth doing early held up: `GetMoveOptions` is one of
+the rows oxvif 0.15's schema-shape check corrected (the mock had rendered the
+focus ranges as `PositionSpace` / `SpeedSpace`; `tt:AbsoluteFocusOptions`
+declares `Position` then `Speed`), and `tests/imaging_focus_smoke.rs` now
+asserts the corrected names from outside oxvif.
 
 ### 5 — Firmware upgrade + backup / restore
 
@@ -213,18 +242,51 @@ caller would then show for lens 1, whose real maximum is lower.
 
 That change caught OxDM's one affected call site at compile time. What it cannot
 catch is OxDM's own fallbacks, which are lexically fine and silently
-channel-wrong:
+channel-wrong.
 
-- `api::get_video_source_token` falls back to `profiles.first()` when the
-  selected profile is stale. Documented and deliberate, but on a dual-lens
-  camera it silently shows lens 0's image settings.
-- `views/video_encoder.rs` falls back to the first profile carrying any
-  video-encoder token, the same way.
+**Run 2026-08-06.** What it found was worse than the two sites this section had
+listed. There were *three* copies of "the same" fallback and they were not the
+same:
 
-The audit: for each per-channel view, decide whether the fallback should be
-"lens 0" or "tell the user nothing is selected", and make a two-channel fixture
-where the channels *disagree* on the value the assertion reads. A single-sensor
-fixture passes just as well against code that ignores the token entirely.
+| site | requested profile absent | present but no token of that kind |
+|---|---|---|
+| `api::get_video_source_token` | first profile | **errored** |
+| `api::resolve_vsc_token` | first with one | first with one |
+| `views/video_encoder.rs` | first with one | first with one |
+
+`get_video_source_token`'s doc comment claimed the third column's behaviour
+("or where the current profile is metadata-only") and its code never did it. All
+three are now `api::pick_channel`, which reports `fell_back` so the Imaging and
+Video views can say which channel they are showing instead of swapping in
+silence. Imaging matters most: those sliders *write*.
+
+**And the reason all three needed a fallback at all was itself a bug.**
+`ctx.selected_profile` was never cleared — set to `None` once at startup and
+only ever written by a thumbnail click — so a profile token survived every
+device switch. Tokens are per-device and collide freely across brands
+(`Profile_1`, `MainStream`), so the carried token either resolved to a *different
+camera's* channel of the same name or missed and fell back to lens 0. Cleared on
+device change in `main.rs`.
+
+The rule the fixtures follow: **make a two-channel fixture where the channels
+disagree on the value the assertion reads.** A single-sensor fixture passes just
+as well against code that ignores the token entirely. This was measured, not
+assumed — perturbing `pick_channel` to ignore the requested profile reddens
+`asking_for_lens_1_gets_lens_1_and_is_not_a_fallback` and *nothing* a
+single-lens fixture could have asserted, because lens 0 is the right answer when
+there is only one.
+
+The same discipline is what makes `tests/ptz_absolute_smoke.rs` and
+`tests/imaging_focus_smoke.rs` able to fail: oxvif's mock is a two-head,
+two-lens device whose halves deliberately disagree (`PTZNode_2` has no pan/tilt
+space; `VS_2` faults on `GetMoveOptions`).
+
+**One limit of the mock, worth knowing before trusting it.** Perturbing
+`ptz_absolute_limits` to take `spaces[0]` instead of matching the URI reddens
+three *unit* tests and **no integration test** — the mock happens to list the
+absolute space first. That is why the unit fixture puts it last. A mock-driven
+test cannot be assumed to cover an ordering question just because it covers the
+value.
 
 ---
 
@@ -283,15 +345,17 @@ Recordings view's value without it.
 
 ## Sequencing
 
-**Item 1 — done (2026-08-06).** Cheap, OxDM-only, and the precondition for every
-row that adds an entry point.
+**Items 1, 4 and 10 — done (2026-08-06).** Item 2's two headline reads landed
+with them; what remains of it is relative move, configuration editing and the
+auxiliary commands, which is a smaller job than the row's `M` implied.
 
-**Now — items 2, 4, 10 together.** All three are about the same thing: the
-views OxDM already has do not ask the device enough. 2 and 4 add the missing
-reads; 10 checks the reads it already makes are aimed at the right channel.
-They share fixtures, and 10 is the only item that can find an existing bug.
+They did share fixtures, and 10 was the only one that found existing bugs — four
+of them, listed in its section. Doing them together was right for a reason not
+anticipated: item 4's smoke test needed a two-lens fixture, which is exactly what
+item 10's rule demands, so the second and third tests cost almost nothing once
+the first existed.
 
-**Then — item 5**, which turns Maintenance from "reboot / factory reset" into
+**Now — item 5**, which turns Maintenance from "reboot / factory reset" into
 an ops panel, and is self-contained.
 
 **Milestone after that — item 6**, the largest and the one that changes what

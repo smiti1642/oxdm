@@ -1,6 +1,6 @@
 use crate::api::{
     base_url_from_device_addr, focus_speed, is_action_unsupported, pick_channel,
-    resolve_snapshot_url, ChannelKind, DeviceGate,
+    ptz_absolute_limits, resolve_snapshot_url, ChannelKind, DeviceGate,
 };
 use oxvif::{Capabilities, FloatRange, MediaProfile, MediaServiceCapabilities};
 
@@ -377,6 +377,131 @@ fn a_degenerate_range_disables_both_directions() {
     let r = range(0.0, 0.0);
     assert_eq!(focus_speed(r, 1.0, 1.0), None);
     assert_eq!(focus_speed(r, 1.0, -1.0), None);
+}
+
+// ── PTZ absolute limits ─────────────────────────────────────────────────────
+//
+// `PtzNode::pan_tilt_spaces` is a flat Vec chaining four *different* element
+// kinds, each `[0..unbounded]`, so nothing but the URI says which entry is the
+// absolute one. Every fixture here therefore carries all four kinds in a
+// deliberately unhelpful order — a reader that took `[0]`, or the only entry,
+// would pass against a one-space fixture and be wrong on every real device.
+
+fn space(uri: &str, x: (f32, f32), y: Option<(f32, f32)>) -> oxvif::PtzSpaceRange {
+    oxvif::PtzSpaceRange {
+        uri: uri.to_string(),
+        x_range: x,
+        y_range: y,
+    }
+}
+
+/// A node with all four pan/tilt space kinds and all four zoom ones, with the
+/// absolute entries **last** and carrying values nothing else shares.
+fn node_with_all_space_kinds() -> oxvif::PtzNode {
+    oxvif::PtzNode {
+        token: "PTZNode_1".to_string(),
+        name: "Head 1".to_string(),
+        fixed_home_position: false,
+        home_supported: true,
+        max_presets: 100,
+        aux_commands: Vec::new(),
+        pan_tilt_spaces: vec![
+            space(
+                "http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace",
+                (-9.0, 9.0),
+                Some((-9.0, 9.0)),
+            ),
+            space(
+                "http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace",
+                (-8.0, 8.0),
+                Some((-8.0, 8.0)),
+            ),
+            space(
+                "http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace",
+                (0.0, 7.0),
+                None,
+            ),
+            space(
+                "http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace",
+                (-170.0, 170.0),
+                Some((-20.0, 90.0)),
+            ),
+        ],
+        zoom_spaces: vec![
+            space(
+                "http://www.onvif.org/ver10/tptz/ZoomSpaces/TranslationGenericSpace",
+                (-6.0, 6.0),
+                None,
+            ),
+            space(
+                "http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace",
+                (1.0, 30.0),
+                None,
+            ),
+        ],
+    }
+}
+
+#[test]
+fn the_absolute_space_is_found_by_uri_not_by_position() {
+    let limits = ptz_absolute_limits(&node_with_all_space_kinds());
+
+    // Every number here is unique to the Position space. Picking any other
+    // entry — first, last-but-one, the widest — gives a different answer.
+    assert_eq!(limits.pan, Some((-170.0, 170.0)));
+    assert_eq!(limits.tilt, Some((-20.0, 90.0)));
+    assert_eq!(limits.zoom, Some((1.0, 30.0)));
+    assert!(!limits.is_empty());
+}
+
+#[test]
+fn a_head_that_cannot_pan_offers_no_pan_or_tilt() {
+    // oxvif's mock ships exactly this: `PTZNode_2` has no pan/tilt space at
+    // all. A zoom-only head still zooms, so this is not an empty node.
+    let mut node = node_with_all_space_kinds();
+    node.pan_tilt_spaces.clear();
+
+    let limits = ptz_absolute_limits(&node);
+    assert_eq!(limits.pan, None);
+    assert_eq!(limits.tilt, None);
+    assert_eq!(limits.zoom, Some((1.0, 30.0)));
+    assert!(!limits.is_empty(), "zoom alone is still something to offer");
+}
+
+#[test]
+fn a_one_dimensional_absolute_space_pans_without_tilting() {
+    // `YRange` is absent on a 1D space, which is legal. The axis must drop out
+    // rather than default to the pan range or to -1..1.
+    let mut node = node_with_all_space_kinds();
+    node.pan_tilt_spaces = vec![space(
+        "http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace",
+        (-170.0, 170.0),
+        None,
+    )];
+
+    let limits = ptz_absolute_limits(&node);
+    assert_eq!(limits.pan, Some((-170.0, 170.0)));
+    assert_eq!(limits.tilt, None);
+}
+
+#[test]
+fn a_node_with_only_relative_and_continuous_spaces_offers_nothing() {
+    // The controls must stay hidden. Driving an absolute move against a head
+    // that published no absolute space is sending a coordinate in a system it
+    // never named.
+    let mut node = node_with_all_space_kinds();
+    node.pan_tilt_spaces
+        .retain(|s| !s.uri.ends_with("PositionGenericSpace"));
+    node.zoom_spaces
+        .retain(|s| !s.uri.ends_with("PositionGenericSpace"));
+
+    let limits = ptz_absolute_limits(&node);
+    assert_eq!(limits, api_default_limits());
+    assert!(limits.is_empty());
+}
+
+fn api_default_limits() -> crate::api::PtzAbsoluteLimits {
+    crate::api::PtzAbsoluteLimits::default()
 }
 
 #[test]

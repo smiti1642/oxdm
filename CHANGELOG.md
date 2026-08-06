@@ -9,6 +9,38 @@ Changelog tracking starts at 0.1.5.
 ## [Unreleased]
 
 ### Added
+- **PTZ shows where the head is, and can be sent to a position.** The view drove
+  a camera it could not see: no position readout, and continuous move as the
+  only way to aim it. There is now a live pan/tilt/zoom readout with a move
+  indicator, and a "Go to position" control.
+
+  **The controls are built from what the head published, per axis.** OxDM reads
+  the PTZ node behind the selected profile and offers a slider only for an axis
+  that node declared an absolute position space for, bounded by that space's own
+  range — not by a normalised −1…1 guess. A zoom-only head shows a zoom slider
+  and no pan or tilt; a head that published no absolute space shows none of
+  them, because an `AbsoluteMove` against it is a coordinate in a system the
+  device never named. An axis the device reports no position for renders as `—`,
+  not `0.00`.
+
+  The node is resolved profile → PTZ configuration → node, **with no fallback**.
+  On a multi-head camera answering with a different head's limits would drive
+  head 1's range into head 2, which is the whole failure this release is about.
+  After a move the status is re-read rather than assumed: a device is free to
+  clamp, refuse an axis, or stop short, and the readout is the only thing that
+  shows it.
+- **Focus is driven at a speed the lens agreed to.** `imaging_focus_continuous`
+  had been sending whatever the PTZ speed slider held — a 0.1–1.0 fraction
+  shared with pan/tilt/zoom — while `GetMoveOptions`, where the device declares
+  the range it will honour, was never called. A lens declaring `-7.0..=7.0` was
+  being driven at 0.5: legal, and about 7% of the speed it offered.
+
+  Each direction is resolved separately, because the sign of the speed *is* the
+  direction on the wire. A lens declaring `0.0..=1.0` offers no way to focus
+  nearer, so the near button is now disabled rather than sending `0.0` — which
+  returns `OK` and never moves the motor, reading to the user as a broken
+  camera. A current focus position is shown beside the buttons, re-read after
+  each stop.
 - **Tabs a camera cannot serve are no longer offered.** A fixed dome showed a
   PTZ button, a camera with no IO board showed an IO Control tab, and a device
   without a Search service showed Recordings — all of which resolved to an empty
@@ -59,6 +91,29 @@ Changelog tracking starts at 0.1.5.
   version is now 0.15.0.
 
 ### Fixed
+- **Switching devices carried the selected profile onto the new camera.**
+  `selected_profile` was set to `None` once at startup and afterwards only ever
+  written by a thumbnail click — nothing cleared it. Profile tokens are
+  per-device and collide freely across brands (`Profile_1`, `MainStream`), so
+  the carried token either resolved to a *different camera's* channel of the
+  same name, or missed and silently fell back to lens 0. Neither was visible in
+  the UI. It is now cleared when the selected device changes; clicking a
+  thumbnail does not clear its own selection.
+- **Three copies of the per-channel fallback disagreed with each other, and one
+  disagreed with its own documentation.** Resolving which video source, source
+  configuration or encoder a view should address was implemented three times.
+  All three fell back to the device's first channel when the selected profile
+  was missing — but only two of them fell back when the profile *existed* and
+  carried no channel of that kind, which is what a metadata-only profile looks
+  like. `get_video_source_token` errored instead, while its doc comment
+  described the fallback it did not have. One implementation now serves all
+  three.
+
+  On a single-sensor camera the fallback is invisible and harmless. On a
+  dual-lens one it is the difference between the settings the user selected and
+  lens 0's, so the Imaging and Video sections now say when they are showing a
+  channel other than the selected profile's. Imaging matters most: those
+  sliders write.
 - **The IO Control tab would have shown a red error on any camera without a
   DeviceIO endpoint.** oxvif 0.15 moves `GetDigitalInputs` onto the DeviceIO
   service, where the schema puts it; a device advertising no DeviceIO URL now
