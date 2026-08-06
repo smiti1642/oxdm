@@ -100,8 +100,13 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
   H.265, with H.265 automatically routed through Media2), imaging controls
   (brightness/contrast plus manual exposure, white-balance gains, and focus
   limits), and OSD management.
-- **PTZ** — preset create/read/update/delete, continuous and absolute moves,
-  and home position.
+- **PTZ** — preset create/read/update/delete, continuous move, and home
+  position.
+- **Capability-driven navigation** — a camera is only offered the tabs it
+  advertises, so a fixed dome shows no PTZ button and a camera with no IO board
+  shows no IO Control tab. Silence is never read as a denial: if the device
+  cannot be reached, or simply does not answer the question, every entry point
+  stays available.
 - **Events** — live PullPoint subscription with a scrolling, filterable log.
 - **Diagnostics** — an on-demand ONVIF health check with baseline diffing and
   fleet-wide batch export. [See below](#diagnostics--the-onvif-health-check).

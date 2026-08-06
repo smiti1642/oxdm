@@ -50,7 +50,7 @@ Every row here is reachable today. Nothing waits on a crates.io release.
 
 | # | Item | Value | oxdm | oxvif | Landing |
 |---|------|:----:|:----:|:----:|---------|
-| 1 | **Capability-driven UI** — hide what the device does not support | 4 | S | — | `components/device_panel.rs` NavLinks + `SettingsTab`s |
+| 1 | ~~**Capability-driven UI** — hide what the device does not support~~ | 4 | S | — | **Landed 2026-08-06** — `api::DeviceGate` |
 | 2 | **PTZ completeness** — absolute / relative move, live position readout, node limits | **5** | M | — | `views/ptz.rs` |
 | 3 | **PTZ preset tours** | 3 | M | — | A "Tours" sub-tab in `views/ptz.rs` |
 | 4 | **Imaging: read the move options before driving the motor** | 3 | S | — | `views/imaging.rs` focus block |
@@ -61,25 +61,37 @@ Every row here is reachable today. Nothing waits on a crates.io release.
 | 9 | **Storage configuration** | 3 | S | — | New `SettingsTab` |
 | 10 | **Multi-sensor audit of OxDM's own views** | 4 | S | — | Cross-cutting; see below |
 
-### 1 — Capability-driven UI
+### 1 — Capability-driven UI — **landed 2026-08-06**
 
-The nine `*_get_service_capabilities` methods landed in oxvif 0.15 (`device_`,
-`media_`, `media2_`, `ptz_`, `imaging_`, `events_`, `recording_`, `search_`,
-`replay_`). **OxDM calls none of them** — `grep service_capabilities src/`
-returns nothing.
-
-Today `components/device_panel.rs` renders all nine NavLinks unconditionally, so
-a fixed dome shows a PTZ tab that does nothing when clicked. The one place OxDM
-gates on anything is `api.rs:1608`, which checks `capabilities().media2.url` to
-decide whether to reroute an H265 encoder write.
-
-Do this first: it is the multiplier. Every row below it can then render its own
-entry point conditionally instead of adding another dead button.
-
-Note the two layers are different questions and both matter. The device-level
-`GetCapabilities` answers *"is there a service URL"*; a service's own
+`api::DeviceGate` decides which per-device entry points to offer;
+`components/device_panel.rs` renders against it. Both layers are read, because
+they answer different questions and neither subsumes the other: the device-level
+`GetCapabilities` answers *"is there a service URL"*, and a service's own
 `GetServiceCapabilities` answers *"what can that service actually do"* — e.g.
 whether PTZ supports absolute move at all, which decides half of item 2.
+
+Gated today: OSD, IO Control, Events and Recordings (NavLinks), plus the Imaging
+and PTZ jump buttons on each profile thumbnail. Device Settings is not gated —
+device management is mandatory on a conformant device, so there is nothing to
+gate it on and nothing to fall back to. Live Video is not gated either; the
+thumbnail grid already resolves to `no_profiles` when Media1 is absent.
+
+Only OSD needs layer 2 so far (`MediaServiceCapabilities.osd`); the other six
+are answered by layer 1 alone. The remaining eight `*_get_service_capabilities`
+methods are wired to nothing yet — that is deliberate, not an oversight. Add the
+call when a row below needs the answer, per item 2's `status_position` /
+`move_and_track`, rather than paying eight round-trips for booleans no one reads.
+
+**The invariant to preserve when extending it: silence is not a denial.** A
+field goes `false` only on a *positive* statement — no service URL, or an
+attribute explicitly `false`. An omitted attribute, a faulted
+`GetServiceCapabilities`, an unreachable device or a still-pending probe all
+leave the entry point offered. Hiding a working feature is unrecoverable from
+the UI; showing a dead one costs a click and lands on an empty state that
+already exists.
+
+**Two claims in this section's previous text were wrong** — both stated before
+the code was read, and both listed under Corrections below.
 
 ### 2 — PTZ completeness
 
@@ -271,10 +283,10 @@ Recordings view's value without it.
 
 ## Sequencing
 
-**Now — item 1.** Cheap, OxDM-only, and the precondition for every row that
-adds an entry point. Doing it late means retrofitting nine call sites.
+**Item 1 — done (2026-08-06).** Cheap, OxDM-only, and the precondition for every
+row that adds an entry point.
 
-**Next — items 2, 4, 10 together.** All three are about the same thing: the
+**Now — items 2, 4, 10 together.** All three are about the same thing: the
 views OxDM already has do not ask the device enough. 2 and 4 add the missing
 reads; 10 checks the reads it already makes are aimed at the right channel.
 They share fixtures, and 10 is the only item that can find an existing bug.
@@ -296,9 +308,12 @@ the capability gate more than anything else here.
 
 ## Cross-cutting UI principles
 
-- **Capability gate first.** Once item 1 lands, every new tab renders its
-  NavLink only when the device advertises the service *and* its
-  `GetServiceCapabilities` claims the feature — no dead buttons.
+- **Capability gate first.** Item 1 landed, so every new tab gets a field on
+  `api::DeviceGate` and renders its NavLink only when the device advertises the
+  service *and* its `GetServiceCapabilities` does not deny the feature — no dead
+  buttons. Put the decision in `DeviceGate::from_caps`, which is unit-tested
+  without a device; oxvif's mock advertises every service, so a mock-driven test
+  can only ever prove the all-true case.
 - **Destructive actions go through `ConfirmDialog` with `dangerous: true`** —
   firmware (5), restore (5), recording-job deletion (6).
 - **New view vs new settings tab.** Anything with a live preview or timeline
@@ -316,10 +331,31 @@ the capability gate more than anything else here.
 
 ---
 
-## Corrections to the previous edition
+## Corrections
 
 Recorded rather than silently overwritten, because each was true when written
 and each misled while it was stale.
+
+### Found while implementing item 1 (2026-08-06)
+
+Both were written into the 2026-08-05 rewrite from a reading of the *services*
+oxvif exposes, without opening `device_panel.rs`. Neither survived contact.
+
+- **"`device_panel.rs` renders all nine NavLinks unconditionally."** It renders
+  **five** NavLinks — Device Settings, OSD, IO Control, Events, Recordings. Live
+  Video, Imaging and PTZ are not NavLinks at all: they are per-profile jump
+  buttons in each thumbnail card's footer, and there is no ninth entry point.
+  The mistake mattered — it put the whole item in the wrong component and made
+  the work look like one uniform list when it is two mechanisms.
+- **"The one place OxDM gates on anything is `api.rs:1608`."** PTZ was already
+  feature-detected: `views/ptz.rs:33` calls `api::has_ptz_service`, which reads
+  `capabilities().ptz.url`, and renders a `ptz_unavailable` empty state. So the
+  claim that a fixed dome "shows a PTZ tab that does nothing when clicked" was
+  wrong about the *consequence* as well — it showed a button that explained
+  itself. That existing empty state is now the fallback for when the gate fails
+  open, which is why item 1 did not remove it.
+
+### To the previous edition
 
 - **`device_panel.rs` was filed under `views/`.** It is
   `src/components/device_panel.rs`.

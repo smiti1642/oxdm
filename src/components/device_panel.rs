@@ -14,6 +14,27 @@ pub fn DevicePanel() -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
+    // Capability probe backing the nav gate. Declared *before* the early
+    // returns below, because a hook skipped on one render and run on the next
+    // corrupts Dioxus' hook order.
+    //
+    // Tagged with the addr it was fetched for, exactly like `ProfileThumbnails`
+    // below: an untagged result would let the previous device's gate hide a
+    // link the newly-selected one supports, for one frame and with no error.
+    let gate_res = use_resource(move || {
+        let devices = ctx.devices.read();
+        let dev = ctx.selected.read().and_then(|i| devices.get(i)).cloned();
+        let creds = dev.as_ref().map(|d| ctx.credentials_for(d));
+        let addr = dev.map(|d| d.addr).unwrap_or_default();
+        drop(devices);
+        async move {
+            match creds {
+                Some(c) if !addr.is_empty() => (addr.clone(), api::device_gate(&addr, &c).await),
+                _ => (addr, api::DeviceGate::permissive()),
+            }
+        }
+    });
+
     // Health mode: this middle pane becomes the group-navigation "basket"
     // (All devices + saved groups) instead of the selected device's nav.
     if *ctx.view.read() == View::HealthOverview {
@@ -36,7 +57,16 @@ pub fn DevicePanel() -> Element {
     };
 
     let dev_name = dev.name.clone();
+    let dev_addr = dev.addr.clone();
     drop(devices);
+
+    // Offer everything until the probe answers *for this device*. A pending
+    // resource and a stale one are the same thing here: we have not been told
+    // "no", so we do not hide.
+    let gate = match &*gate_res.read_unchecked() {
+        Some((res_addr, g)) if res_addr == &dev_addr => *g,
+        _ => api::DeviceGate::permissive(),
+    };
 
     rsx! {
         div { class: "device-panel",
@@ -50,17 +80,28 @@ pub fn DevicePanel() -> Element {
 
             div { class: "panel-section",
                 div { class: "panel-section-title", {i18n::t(locale, "section_general")} }
+                // Device management is mandatory on a conformant device — there
+                // is nothing to gate it on, and nothing to fall back to if it
+                // were missing.
                 NavLink { view: View::DeviceSettings, icon: "settings", label: i18n::t(locale, "nav_settings") }
-                NavLink { view: View::Osd,            icon: "info",     label: i18n::t(locale, "nav_osd") }
-                NavLink { view: View::IoControl,      icon: "zap",      label: i18n::t(locale, "nav_io_control") }
-                NavLink { view: View::Events,         icon: "bell",     label: i18n::t(locale, "nav_events") }
-                NavLink { view: View::Recordings,     icon: "clock",    label: i18n::t(locale, "nav_recordings") }
+                if gate.osd {
+                    NavLink { view: View::Osd,        icon: "info",     label: i18n::t(locale, "nav_osd") }
+                }
+                if gate.io {
+                    NavLink { view: View::IoControl,  icon: "zap",      label: i18n::t(locale, "nav_io_control") }
+                }
+                if gate.events {
+                    NavLink { view: View::Events,     icon: "bell",     label: i18n::t(locale, "nav_events") }
+                }
+                if gate.recordings {
+                    NavLink { view: View::Recordings, icon: "clock",    label: i18n::t(locale, "nav_recordings") }
+                }
             }
 
             // ── NVT profile thumbnails ──────────────────────────────────────
             div { class: "panel-section panel-thumbnails",
                 div { class: "panel-section-title", "NVT" }
-                ProfileThumbnails {}
+                ProfileThumbnails { gate }
             }
         }
     }
@@ -302,7 +343,7 @@ struct ProfileInfo {
 }
 
 #[component]
-fn ProfileThumbnails() -> Element {
+fn ProfileThumbnails(gate: api::DeviceGate) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
@@ -426,6 +467,7 @@ fn ProfileThumbnails() -> Element {
                     for info in infos {
                         ProfileCard {
                             key: "{addr_now}::{info.profile_token}",
+                            gate,
                             device_addr: addr_now.clone(),
                             profile_token: info.profile_token.clone(),
                             profile_name: info.profile_name.clone(),
@@ -447,6 +489,9 @@ fn ProfileThumbnails() -> Element {
 
 #[component]
 fn ProfileCard(
+    /// What the device said it can serve — drives which of the three
+    /// per-profile jump buttons in the footer are offered.
+    gate: api::DeviceGate,
     device_addr: String,
     profile_token: String,
     profile_name: String,
@@ -684,25 +729,29 @@ fn ProfileCard(
                         },
                         Icon { name: "video", size: 12 }
                     }
-                    button {
-                        class: "thumb-action",
-                        title: i18n::t(locale, "nav_imaging"),
-                        onclick: move |e| {
-                            e.stop_propagation();
-                            profile_sig.set(Some(token_img.clone()));
-                            view.set(View::ImagingSettings);
-                        },
-                        Icon { name: "sliders", size: 12 }
+                    if gate.imaging {
+                        button {
+                            class: "thumb-action",
+                            title: i18n::t(locale, "nav_imaging"),
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                profile_sig.set(Some(token_img.clone()));
+                                view.set(View::ImagingSettings);
+                            },
+                            Icon { name: "sliders", size: 12 }
+                        }
                     }
-                    button {
-                        class: "thumb-action",
-                        title: i18n::t(locale, "nav_ptz"),
-                        onclick: move |e| {
-                            e.stop_propagation();
-                            profile_sig.set(Some(token_ptz.clone()));
-                            view.set(View::PtzControl);
-                        },
-                        Icon { name: "crosshair", size: 12 }
+                    if gate.ptz {
+                        button {
+                            class: "thumb-action",
+                            title: i18n::t(locale, "nav_ptz"),
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                profile_sig.set(Some(token_ptz.clone()));
+                                view.set(View::PtzControl);
+                            },
+                            Icon { name: "crosshair", size: 12 }
+                        }
                     }
                 }
             }

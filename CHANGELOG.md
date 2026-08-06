@@ -9,6 +9,29 @@ Changelog tracking starts at 0.1.5.
 ## [Unreleased]
 
 ### Added
+- **Tabs a camera cannot serve are no longer offered.** A fixed dome showed a
+  PTZ button, a camera with no IO board showed an IO Control tab, and a device
+  without a Search service showed Recordings — all of which resolved to an empty
+  state or an error after the click. `api::DeviceGate` now decides each entry
+  point from what the device advertises, and the device panel renders against
+  it: OSD, IO Control, Events and Recordings as NavLinks, plus the Imaging and
+  PTZ jump buttons on each profile thumbnail. Device Settings stays ungated
+  (device management is mandatory on a conformant device).
+
+  Two layers are read, because they answer different questions: the device-level
+  `GetCapabilities` says whether a service URL exists, while a service's own
+  `GetServiceCapabilities` says what that service can do. Only OSD needs the
+  second layer today — a camera with a perfectly good Media service may still
+  refuse OSD — and it is keyed on Media1 specifically, since that is where
+  `GetOSDs` is sent.
+
+  **Silence is never read as a denial.** An entry point closes only on a
+  positive statement — no service URL, or a capability attribute explicitly
+  `false`. An omitted attribute, a faulted `GetServiceCapabilities`, an
+  unreachable device and a still-pending probe all leave it open. Hiding a
+  working feature is unrecoverable from the UI; showing a dead one costs a click
+  and lands on an empty state that already exists. The PTZ view keeps its own
+  `PTZ unavailable` state for exactly that case.
 - **A saved quirk baseline now records which oxvif version measured it**, and
   the Quirks tab says so when that differs from the running build. Quirks are
   measured against oxvif's *own* reference responses — `QuirkReport` lists the
@@ -48,6 +71,9 @@ Changelog tracking starts at 0.1.5.
   error. No existing test could see this: `tests/io_control_smoke.rs` runs
   against oxvif's mock, which *does* advertise DeviceIO, so it stayed green
   through the upgrade.
+- **The README claimed PTZ absolute moves.** OxDM has never sent one —
+  `ptz_absolute_move` appears nowhere in `src/`. The feature list now says
+  continuous move, which is what the PTZ view actually drives.
 
 ---
 

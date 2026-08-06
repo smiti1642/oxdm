@@ -84,6 +84,126 @@ fn trace_result<T>(
     }
 }
 
+// ── Capability gate ──────────────────────────────────────────────────────────
+//
+// Two layers, two different questions, and neither answer subsumes the other.
+// The device-level `GetCapabilities` answers *"is there a service URL"*; a
+// service's own `GetServiceCapabilities` answers *"what can that service
+// actually do"*. A fixed dome has no PTZ URL at all; a camera with a perfectly
+// good Media service may still refuse OSD.
+
+/// Which of oxdm's per-device entry points the camera can actually serve.
+///
+/// Every field means **offer the entry point**. `false` is only ever set from a
+/// *positive* statement by the device — no service URL, or a capability
+/// attribute explicitly set to `false`. Silence is not a denial: a device that
+/// omits the attribute, faults on the query, or cannot be reached at all leaves
+/// the field `true`, and the user lands on the view's own empty state rather
+/// than finding the button gone.
+///
+/// That direction is deliberate. Hiding a working feature is unrecoverable from
+/// the UI — there is no button left to click — while showing a dead one costs a
+/// wasted click and an empty state that already exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceGate {
+    /// Media1 service — profiles, stream and snapshot URIs.
+    pub media: bool,
+    /// Imaging service (brightness, focus, white balance).
+    pub imaging: bool,
+    /// PTZ service. `false` on a fixed camera.
+    pub ptz: bool,
+    /// Events service.
+    pub events: bool,
+    /// Profile G recording playback. Gated on the *Search* service, which is
+    /// what `search_recordings` needs to list anything at all.
+    pub recordings: bool,
+    /// DeviceIO service — relay outputs and digital inputs.
+    pub io: bool,
+    /// On-screen display. Media1 plus its `OSD` service capability.
+    pub osd: bool,
+}
+
+impl DeviceGate {
+    /// Every entry point offered — what an unfinished or failed probe returns.
+    /// See the type docs for why that is the safe direction.
+    pub const fn permissive() -> Self {
+        Self {
+            media: true,
+            imaging: true,
+            ptz: true,
+            events: true,
+            recordings: true,
+            io: true,
+            osd: true,
+        }
+    }
+
+    /// Decide the gate from what the device said. Split out from
+    /// [`device_gate`] so the policy is testable without a camera or a mock —
+    /// the fetch is trivial, the *fail-open* rules are not.
+    pub(crate) fn from_caps(
+        caps: &oxvif::Capabilities,
+        media_caps: Option<&oxvif::MediaServiceCapabilities>,
+    ) -> Self {
+        Self {
+            media: caps.media.url.is_some(),
+            imaging: caps.imaging.url.is_some(),
+            ptz: caps.ptz.url.is_some(),
+            events: caps.events.url.is_some(),
+            recordings: caps.search.url.is_some(),
+            io: caps.device_io.url.is_some(),
+            // OSD is reached through Media1 specifically — `OnvifSession::get_osds`
+            // resolves `media_url()`, so a Media2-only device cannot serve the OSD
+            // view no matter what its Media2 capabilities claim. Beyond that, only
+            // an explicit `OSD="false"` hides it: `None` means the device did not
+            // say, which is the majority of pre-2.2 firmware.
+            osd: caps.media.url.is_some() && media_caps.is_none_or(|m| m.osd != Some(false)),
+        }
+    }
+}
+
+/// Probe what this device supports, for the navigation gate.
+///
+/// **Never fails.** An unreachable device, a rejected credential or a service
+/// that faults on `GetServiceCapabilities` all yield
+/// [`DeviceGate::permissive`] — hiding a view oxdm could not ask about is worse
+/// than offering one that turns out to be empty.
+///
+/// Costs at most one extra round-trip beyond the cached session: the device
+/// capabilities come from the pooled `OnvifSession`, and only Media1's
+/// `GetServiceCapabilities` is fetched live.
+#[instrument(skip(creds), fields(addr))]
+pub async fn device_gate(addr: &str, creds: &Credentials) -> DeviceGate {
+    let s = match session_for(addr, creds).await {
+        Ok(s) => s,
+        Err(e) => {
+            debug!(addr, error = %e, "capability probe failed — offering every view");
+            return DeviceGate::permissive();
+        }
+    };
+    let caps = s.capabilities();
+
+    // Guarded rather than left to the session wrapper's own missing-URL error:
+    // "no Media service" is layer 1's answer, not a declined query, and logging
+    // it as one would send the next reader looking for a fault that never came.
+    let media_caps = if caps.media.url.is_some() {
+        match s.media_get_service_capabilities().await {
+            Ok(c) => Some(c),
+            Err(e) => {
+                // Common on older firmware: GetServiceCapabilities post-dates
+                // Media1 itself. Layer 1 still stands; only OSD loses its
+                // second opinion.
+                debug!(addr, error = %e, "Media GetServiceCapabilities declined");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    DeviceGate::from_caps(caps, media_caps.as_ref())
+}
+
 // ── Metamorph clone / replay ─────────────────────────────────────────────────
 
 /// Clone a camera's standard read surface into an in-memory
