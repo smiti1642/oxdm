@@ -202,6 +202,20 @@ fn App() -> Element {
         device_ops::reverify_auth(ctx, ctx.devices);
     });
 
+    // Forget the selected profile when the selected *device* changes.
+    //
+    // Profile tokens are per-device and collide freely across brands — plenty
+    // of cameras call theirs `Profile_1` / `MainStream`. Carrying one across a
+    // device switch either resolves to a different camera's channel of the same
+    // name, or misses and silently falls back to lens 0 (see
+    // `api::pick_channel`). Neither is visible in the UI. Only `ctx.selected`
+    // is subscribed: the thumbnail cards set `selected_profile` without
+    // touching it, so a profile click does not clear itself.
+    use_effect(move || {
+        let _device_changed = *ctx.selected.read();
+        ctx.selected_profile.clone().set(None);
+    });
+
     // Auto-save credentials + devices when either changes (single keychain
     // write). `groups` is `.peek()`d (included in the blob, not subscribed) so a
     // device/cred change re-emits group creds too and can't clobber them.

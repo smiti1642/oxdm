@@ -18,11 +18,10 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
         let creds = creds.read().clone();
         let profile = profile_token.clone();
         async move {
-            let source_token =
-                api::get_video_source_token(&addr, &creds, profile.as_deref()).await?;
-            let settings = api::get_imaging_settings(&addr, &creds, &source_token).await?;
-            let options = api::get_imaging_options(&addr, &creds, &source_token).await?;
-            Ok::<_, String>((source_token, settings, options))
+            let pick = api::get_video_source_token(&addr, &creds, profile.as_deref()).await?;
+            let settings = api::get_imaging_settings(&addr, &creds, &pick.token).await?;
+            let options = api::get_imaging_options(&addr, &creds, &pick.token).await?;
+            Ok::<_, String>((pick, settings, options))
         }
     });
 
@@ -85,7 +84,7 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                             on_retry: move |_| data.restart(),
                         }
                     },
-                    Some(Ok((source_token, settings, options))) => {
+                    Some(Ok((pick, settings, options))) => {
                         // Init local signals from fetched data (once)
                         if !*initialized.peek() {
                             brightness.clone().set(settings.brightness.unwrap_or(50.0));
@@ -124,9 +123,18 @@ pub fn ImagingView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elemen
                         let exposure_is_manual = exposure_mode.read().eq_ignore_ascii_case("MANUAL");
                         let wb_is_manual = wb_mode.read().eq_ignore_ascii_case("MANUAL");
 
-                        let token = source_token.clone();
+                        let token = pick.token.clone();
 
                         rsx! {
+                            // These sliders both read *and write* one video
+                            // source. On a multi-sensor camera a silent
+                            // fallback would let the user adjust lens 0 while
+                            // believing they had lens 1 selected.
+                            if pick.fell_back {
+                                div { class: "channel-fallback-note",
+                                    {i18n::t(locale, "channel_fell_back").replace("{token}", &pick.token)}
+                                }
+                            }
                             div { class: "prop-section-header", {i18n::t(locale, "img_basic")} }
                             SliderRow { label: i18n::t(locale, "img_brightness"), value: brightness, min: br.min, max: br.max }
                             SliderRow { label: i18n::t(locale, "img_contrast"),    value: contrast,   min: ct.min, max: ct.max }

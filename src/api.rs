@@ -470,31 +470,111 @@ pub async fn set_imaging_settings(
     )
 }
 
+// ── Per-channel token resolution ─────────────────────────────────────────────
+//
+// A dual-lens camera is one ONVIF device with several video sources, and every
+// per-channel call has to name one. OxDM resolves that name from
+// `ctx.selected_profile`, which can miss — the profile may not exist on this
+// device, or may exist and carry no channel of the kind being asked for
+// (metadata-only profiles are the common case).
+//
+// This used to be three separate copies of "the same" fallback, in
+// `get_video_source_token`, `resolve_vsc_token` and `views/video_encoder.rs`,
+// and they were not the same: only the latter two fell back when the requested
+// profile existed but had no token of that kind. The first one errored — while
+// its doc comment claimed the opposite. One picker now serves all three.
+
+/// Which of a profile's channel tokens to resolve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChannelKind {
+    /// The underlying `VideoSource`. What the Imaging service addresses.
+    Source,
+    /// The bound `VideoSourceConfiguration`. What OSD attaches to.
+    SourceConfig,
+    /// The bound `VideoEncoderConfiguration`.
+    Encoder,
+}
+
+impl ChannelKind {
+    fn token_of(self, p: &MediaProfile) -> Option<&str> {
+        match self {
+            Self::Source => p.video_source_token.as_deref(),
+            Self::SourceConfig => p.video_source_config_token.as_deref(),
+            Self::Encoder => p.video_encoder_token.as_deref(),
+        }
+    }
+}
+
+/// The channel a per-channel call will actually address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelPick {
+    /// The token to send.
+    pub token: String,
+    /// `true` when this is **not** the requested profile's own channel — the
+    /// caller named a profile that is absent from this device, or that carries
+    /// no token of the requested kind, and this is the device's first one
+    /// instead.
+    ///
+    /// On a single-sensor camera the distinction is cosmetic. On a dual-lens
+    /// one it is the difference between the settings the user asked for and
+    /// lens 0's, which are indistinguishable in the UI unless it is said out
+    /// loud — so views render a note rather than swapping channel in silence.
+    ///
+    /// A caller that passed `None` has expressed no preference and cannot have
+    /// been overridden, so this stays `false` for them.
+    pub fell_back: bool,
+}
+
+/// Pick the channel token a per-channel call should use.
+///
+/// Prefers `want`'s own token; otherwise the first profile that has one of that
+/// kind. `None` only when *no* profile on the device carries the kind at all.
+pub(crate) fn pick_channel(
+    profiles: &[MediaProfile],
+    want: Option<&str>,
+    kind: ChannelKind,
+) -> Option<ChannelPick> {
+    if let Some(want) = want {
+        if let Some(token) = profiles
+            .iter()
+            .find(|p| p.token == want)
+            .and_then(|p| kind.token_of(p))
+        {
+            return Some(ChannelPick {
+                token: token.to_string(),
+                fell_back: false,
+            });
+        }
+    }
+    profiles
+        .iter()
+        .find_map(|p| kind.token_of(p))
+        .map(|token| ChannelPick {
+            token: token.to_string(),
+            fell_back: want.is_some(),
+        })
+}
+
 /// Resolve the `video_source_token` for `profile_token`.
 ///
-/// Used by views that drive the Imaging service (image quality
-/// settings, focus motor) — the Imaging service addresses cameras
-/// by video source, not by profile. Prefers the requested profile;
-/// falls back to the first profile that has any video source so
-/// the UI doesn't bail when `selected_profile` is stale from
-/// another device or points at a metadata-only profile. Pass
-/// `None` for "no preference, just give me one that works".
+/// Used by views that drive the Imaging service (image quality settings, focus
+/// motor) — the Imaging service addresses cameras by video source, not by
+/// profile. Pass `None` for "no preference, just give me one that works".
 ///
-/// Distinct from [`get_video_source_config_token`], which resolves
-/// the *configuration* token used by OSD attach.
+/// Check [`ChannelPick::fell_back`] before showing the result as belonging to
+/// the selected profile.
+///
+/// Distinct from [`get_video_source_config_token`], which resolves the
+/// *configuration* token used by OSD attach.
 #[instrument(skip(creds), fields(addr, profile_token))]
 pub async fn get_video_source_token(
     addr: &str,
     creds: &Credentials,
     profile_token: Option<&str>,
-) -> Result<String, ApiError> {
+) -> Result<ChannelPick, ApiError> {
     let s = session_for(addr, creds).await?;
     let profiles = s.get_profiles().await.map_err(|e| e.to_string())?;
-    profiles
-        .iter()
-        .find(|p| profile_token.is_some_and(|t| p.token == t))
-        .or_else(|| profiles.first())
-        .and_then(|p| p.video_source_token.clone())
+    pick_channel(&profiles, profile_token, ChannelKind::Source)
         .ok_or_else(|| "No video source found".to_string())
 }
 
@@ -1669,24 +1749,14 @@ pub async fn get_video_source_config_token(
 }
 
 /// Pick the most-appropriate video source configuration token for
-/// `profile_token`. Tries the requested profile first; falls back to
-/// the first profile that has any video source — covers the case
-/// where `selected_profile` is stale from another device, or where
-/// the current profile is metadata-only.
+/// `profile_token`. See [`pick_channel`] for the fallback rule.
 async fn resolve_vsc_token(
     session: &OnvifSession,
     profile_token: &str,
 ) -> Result<String, ApiError> {
     let profiles = session.get_profiles().await.map_err(|e| e.to_string())?;
-    profiles
-        .iter()
-        .find(|p| p.token == profile_token)
-        .and_then(|p| p.video_source_config_token.clone())
-        .or_else(|| {
-            profiles
-                .iter()
-                .find_map(|p| p.video_source_config_token.clone())
-        })
+    pick_channel(&profiles, Some(profile_token), ChannelKind::SourceConfig)
+        .map(|p| p.token)
         .ok_or_else(|| "No profile with a video source configuration".to_string())
 }
 

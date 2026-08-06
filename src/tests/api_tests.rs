@@ -1,7 +1,8 @@
 use crate::api::{
-    base_url_from_device_addr, is_action_unsupported, resolve_snapshot_url, DeviceGate,
+    base_url_from_device_addr, is_action_unsupported, pick_channel, resolve_snapshot_url,
+    ChannelKind, DeviceGate,
 };
-use oxvif::{Capabilities, MediaServiceCapabilities};
+use oxvif::{Capabilities, MediaProfile, MediaServiceCapabilities};
 
 #[test]
 fn base_url_strips_onvif_path() {
@@ -183,4 +184,149 @@ fn recordings_follows_the_search_service_not_the_recording_service() {
 
     let searchable = caps_with(&["search"]);
     assert!(DeviceGate::from_caps(&searchable, None).recordings);
+}
+
+// ── Per-channel token resolution ────────────────────────────────────────────
+//
+// Every fixture below is **two-sensor, and the two lenses disagree on every
+// token**. That is the whole point: a single-sensor fixture passes just as
+// well against code that ignores the requested profile entirely, so it would
+// report this logic as covered while proving nothing about it.
+
+/// Lens 0 and lens 1, sharing nothing. `meta` is a metadata-only profile — it
+/// exists, so a lookup for it *succeeds*, and then has no channel of any kind.
+/// That combination is what separated the three original fallback copies.
+fn two_lens_profiles() -> Vec<MediaProfile> {
+    let lens = |n: u8| MediaProfile {
+        token: format!("profile_{n}"),
+        name: format!("Lens {n}"),
+        fixed: true,
+        video_source_config_token: Some(format!("vsc_{n}")),
+        video_source_token: Some(format!("source_{n}")),
+        video_encoder_token: Some(format!("enc_{n}")),
+        audio_source_token: None,
+        audio_encoder_token: None,
+        ptz_config_token: None,
+    };
+    vec![
+        lens(0),
+        lens(1),
+        MediaProfile {
+            token: "meta".to_string(),
+            name: "Metadata only".to_string(),
+            fixed: false,
+            video_source_config_token: None,
+            video_source_token: None,
+            video_encoder_token: None,
+            audio_source_token: None,
+            audio_encoder_token: None,
+            ptz_config_token: None,
+        },
+    ]
+}
+
+#[test]
+fn asking_for_lens_1_gets_lens_1_and_is_not_a_fallback() {
+    let profiles = two_lens_profiles();
+    for (kind, want) in [
+        (ChannelKind::Source, "source_1"),
+        (ChannelKind::SourceConfig, "vsc_1"),
+        (ChannelKind::Encoder, "enc_1"),
+    ] {
+        let pick = pick_channel(&profiles, Some("profile_1"), kind).unwrap();
+        assert_eq!(pick.token, want, "{kind:?} resolved the wrong channel");
+        assert!(
+            !pick.fell_back,
+            "{kind:?} reported a fallback it did not make"
+        );
+    }
+}
+
+#[test]
+fn a_profile_from_another_device_falls_back_to_lens_0_and_says_so() {
+    // The exact shape a device switch used to produce before `selected_profile`
+    // was cleared: a token that simply is not on this camera.
+    let profiles = two_lens_profiles();
+    let pick = pick_channel(
+        &profiles,
+        Some("someone_elses_profile"),
+        ChannelKind::Source,
+    )
+    .unwrap();
+
+    assert_eq!(pick.token, "source_0");
+    assert!(
+        pick.fell_back,
+        "a silent fallback is the bug — lens 0's settings shown as if they were \
+         the selected profile's"
+    );
+}
+
+#[test]
+fn a_metadata_only_profile_falls_back_instead_of_erroring() {
+    // `get_video_source_token` used to error here while its doc comment
+    // promised this fallback; the other two copies fell back. The profile is
+    // *found* — this is not a missing-token case — and simply has no channel.
+    let profiles = two_lens_profiles();
+    for (kind, want) in [
+        (ChannelKind::Source, "source_0"),
+        (ChannelKind::SourceConfig, "vsc_0"),
+        (ChannelKind::Encoder, "enc_0"),
+    ] {
+        let pick = pick_channel(&profiles, Some("meta"), kind)
+            .unwrap_or_else(|| panic!("{kind:?} gave up instead of falling back"));
+        assert_eq!(pick.token, want);
+        assert!(pick.fell_back);
+    }
+}
+
+#[test]
+fn expressing_no_preference_is_not_a_fallback() {
+    // `None` means "give me any working channel". Nothing was asked for, so
+    // nothing was overridden, and the views must not accuse the user of having
+    // picked something else.
+    let profiles = two_lens_profiles();
+    let pick = pick_channel(&profiles, None, ChannelKind::Source).unwrap();
+
+    assert_eq!(pick.token, "source_0");
+    assert!(!pick.fell_back);
+}
+
+#[test]
+fn a_device_with_no_channel_of_that_kind_resolves_to_nothing() {
+    let audio_only = vec![MediaProfile {
+        token: "a".to_string(),
+        name: "Audio".to_string(),
+        fixed: false,
+        video_source_config_token: None,
+        video_source_token: None,
+        video_encoder_token: None,
+        audio_source_token: Some("as_0".to_string()),
+        audio_encoder_token: Some("ae_0".to_string()),
+        ptz_config_token: None,
+    }];
+
+    assert!(pick_channel(&audio_only, Some("a"), ChannelKind::Source).is_none());
+    assert!(pick_channel(&audio_only, None, ChannelKind::Encoder).is_none());
+    assert!(pick_channel(&[], None, ChannelKind::SourceConfig).is_none());
+}
+
+#[test]
+fn the_three_kinds_read_three_different_fields() {
+    // Guards the `ChannelKind::token_of` match: a copy-paste arm reading the
+    // wrong field would satisfy every test above that checks only one kind.
+    let profiles = two_lens_profiles();
+    let of = |kind| {
+        pick_channel(&profiles, Some("profile_1"), kind)
+            .unwrap()
+            .token
+    };
+
+    let source = of(ChannelKind::Source);
+    let config = of(ChannelKind::SourceConfig);
+    let encoder = of(ChannelKind::Encoder);
+
+    assert_ne!(source, config);
+    assert_ne!(config, encoder);
+    assert_ne!(source, encoder);
 }

@@ -83,6 +83,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "io_confirm_save_msg" => "Update this relay's mode and idle state on the device.",
         "nav_video_encoder" => "Video",
         "ve_no_encoder" => "This profile has no video encoder configuration.",
+        "channel_fell_back" => "Showing {token} — not the selected profile's own channel.",
         "ve_encoding" => "Encoding",
         "ve_resolution" => "Resolution",
         "ve_frame_rate" => "Frame rate (fps)",

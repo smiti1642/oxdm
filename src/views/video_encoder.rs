@@ -24,34 +24,44 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
         let profile = profile_sig.read().clone();
         async move {
             let profiles = api::get_profiles(&addr, &creds).await?;
-            // Prefer the selected profile's encoder; fall back to the
-            // first profile that has one (mirrors get_video_source_token)
-            // so the section isn't blank when selected_profile is stale.
-            let token = profile
-                .and_then(|p| {
-                    profiles
-                        .iter()
-                        .find(|x| x.token == p)
-                        .and_then(|x| x.video_encoder_token.clone())
-                })
-                .or_else(|| profiles.iter().find_map(|x| x.video_encoder_token.clone()))
+            // Prefer the selected profile's encoder; fall back to the first
+            // profile that has one so the section isn't blank when
+            // selected_profile is stale. `pick` reports which happened —
+            // on a multi-sensor camera the fallback is lens 0's encoder and
+            // says nothing about it unless the view does.
+            let pick = api::pick_channel(&profiles, profile.as_deref(), api::ChannelKind::Encoder)
                 .ok_or_else(|| "no_encoder".to_string())?;
-            let cfg = api::get_video_encoder_configuration(&addr, &creds, &token).await?;
-            let opts = api::get_video_encoder_configuration_options(&addr, &creds, &token)
+            let cfg = api::get_video_encoder_configuration(&addr, &creds, &pick.token).await?;
+            let opts = api::get_video_encoder_configuration_options(&addr, &creds, &pick.token)
                 .await
                 .ok();
             Ok::<
                 (
+                    api::ChannelPick,
                     VideoEncoderConfiguration,
                     Option<VideoEncoderConfigurationOptions>,
                 ),
                 String,
-            >((cfg, opts))
+            >((pick, cfg, opts))
         }
     });
 
+    // Read once, up here: the note cannot live inside the match arm below,
+    // because `VideoEncoderForm` carries a content-based `key` and Dioxus
+    // allows a key only on the first node of a block. That key is load-bearing
+    // (see the comment where it is built), so the note moves instead.
+    let fell_back_to = match &*data.read_unchecked() {
+        Some(Ok((pick, _, _))) if pick.fell_back => Some(pick.token.clone()),
+        _ => None,
+    };
+
     rsx! {
         div { class: "prop-section-header", {i18n::t(locale, "nav_video_encoder")} }
+        if let Some(tok) = fell_back_to {
+            div { class: "channel-fallback-note",
+                {i18n::t(locale, "channel_fell_back").replace("{token}", &tok)}
+            }
+        }
         match &*data.read_unchecked() {
             None => rsx! { div { class: "tab-loading", {i18n::t(locale, "loading")} } },
             Some(Err(e)) if e == "no_encoder" => rsx! {
@@ -60,7 +70,8 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
             Some(Err(e)) => rsx! {
                 TabError { error: e.clone(), on_retry: move |_| data.restart() }
             },
-            Some(Ok((cfg, opts))) => {
+            // `pick` is consumed above, where the fallback note is built.
+            Some(Ok((_pick, cfg, opts))) => {
                 // Content-based key: a successful Apply refetches, and if
                 // the fetched values differ the key changes and the form
                 // remounts/reseeds. So when a camera silently ignores a

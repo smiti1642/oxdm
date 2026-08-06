@@ -82,6 +82,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "io_confirm_save_msg" => "更新此繼電器的模式與靜態。",
         "nav_video_encoder" => "影像編碼",
         "ve_no_encoder" => "此 profile 沒有影像編碼設定。",
+        "channel_fell_back" => "顯示的是 {token},並非所選 profile 自己的通道。",
         "ve_encoding" => "編碼格式",
         "ve_resolution" => "解析度",
         "ve_frame_rate" => "影格率 (fps)",

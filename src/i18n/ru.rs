@@ -82,6 +82,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "io_confirm_save_msg" => "Обновить режим и состояние покоя этого реле на устройстве.",
         "nav_video_encoder" => "Видео",
         "ve_no_encoder" => "У этого профиля нет конфигурации видеокодека.",
+        "channel_fell_back" => "Показан {token} — это не собственный канал выбранного профиля.",
         "ve_encoding" => "Кодек",
         "ve_resolution" => "Разрешение",
         "ve_frame_rate" => "Частота кадров (fps)",

@@ -134,8 +134,9 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             if addr_s.is_empty() {
                 return Err::<String, String>("no_device".to_string());
             }
-            let source_token =
-                api::get_video_source_token(&addr_s, &creds_s, token_opt.as_deref()).await?;
+            let source_token = api::get_video_source_token(&addr_s, &creds_s, token_opt.as_deref())
+                .await?
+                .token;
             let settings = api::get_imaging_settings(&addr_s, &creds_s, &source_token).await?;
             Ok(settings.focus_mode.unwrap_or_else(|| "AUTO".to_string()))
         }
@@ -146,7 +147,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     // segmented control reflects the new value within one round-trip.
     let set_focus_mode_cb = use_callback(move |auto: bool| {
         let source_token = match &*focus_state.read_unchecked() {
-            Some(Ok(t)) => t.clone(),
+            Some(Ok(t)) => t.token.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
@@ -174,7 +175,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
     // FocusButton encodes the dir at construction time the same way ZoomButton does.
     let focus_move = use_callback(move |speed: f32| {
         let source_token = match &*focus_state.read_unchecked() {
-            Some(Ok(t)) => t.clone(),
+            Some(Ok(t)) => t.token.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
@@ -190,7 +191,7 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
 
     let focus_stop = use_callback(move |_: ()| {
         let source_token = match &*focus_state.read_unchecked() {
-            Some(Ok(t)) => t.clone(),
+            Some(Ok(t)) => t.token.clone(),
             _ => return,
         };
         let addr_s = addr.read().clone();
