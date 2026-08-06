@@ -6,7 +6,16 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
-## [Unreleased]
+## [0.4.0] - 2026-08-06
+
+Headline: **the app stops guessing what a camera can do, and asks it.** Three of
+the four additions are the same move — read the range, the capability or the
+space the device declared, then build the control from it, instead of offering
+one fixed shape to every camera. A dome that cannot pan no longer shows a pan
+slider; a lens that will not focus nearer no longer gets sent a speed of zero;
+a service the device never advertised no longer gets its own tab. Built on
+oxvif 0.15.0, whose PTZ and multi-sensor work is what made most of it
+answerable.
 
 ### Added
 - **PTZ shows where the head is, and can be sent to a position.** The view drove
@@ -126,9 +135,13 @@ Changelog tracking starts at 0.1.5.
   error. No existing test could see this: `tests/io_control_smoke.rs` runs
   against oxvif's mock, which *does* advertise DeviceIO, so it stayed green
   through the upgrade.
-- **The README claimed PTZ absolute moves.** OxDM has never sent one —
-  `ptz_absolute_move` appears nowhere in `src/`. The feature list now says
-  continuous move, which is what the PTZ view actually drives.
+- **The README claimed PTZ absolute moves before OxDM could send one.**
+  `ptz_absolute_move` appeared nowhere under `src/` when the claim was found;
+  the feature list was corrected to say continuous move, which was all the PTZ
+  view drove. It has since been corrected back — not by withdrawing the claim a
+  second time, but because the absolute move landed later in this same release,
+  above. The claim is now true; for one afternoon it was documentation of a
+  feature that did not exist.
 
 ---
 

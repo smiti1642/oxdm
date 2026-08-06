@@ -323,13 +323,22 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently pinned to the published registry crate `oxvif = "0.14"` (0.14.0 is
+Currently pinned to the published registry crate `oxvif = "0.15"` (0.15.0 is
 on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
 (`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
-branch (CI has no `../oxvif`). `health` feature in `[dependencies]`,
-`mock-server, health` in `[dev-dependencies]` (the latter only for
-`tests/healthtab_smoke.rs`; the release binary never pulls axum). Notable
-surfaces oxdm relies on:
+branch (CI has no `../oxvif`). Features: `health, metamorph-server` in
+`[dependencies]`, and `mock-server, health, metamorph-server` in
+`[dev-dependencies]` — `mock-server` is the one the release binary never pulls
+(it is what drags in axum), and every file under `tests/` depends on it, not
+just `healthtab_smoke.rs`.
+
+**This paragraph named one test file for three releases after it stopped being
+one.** `tests/` is now five files — `healthtab`, `io_control`, `recordings`,
+`imaging_focus`, `ptz_absolute`, all `*_smoke.rs` — and the feature list had
+drifted on both sides. A dependency-shape claim in this file rots exactly like
+a behaviour claim does, and nothing in the four-line gate reads prose.
+
+Notable surfaces oxdm relies on:
 
 - `oxvif::health::HealthCheck::with_liveness_probes(true)` — enabled in
   `api::run_health_check`. oxvif then runs the RTSP `OPTIONS` / snapshot-byte /
@@ -377,11 +386,30 @@ surfaces oxdm relies on:
   at the boundary).
 - `ImagingSettings` gained eight `Option<...>` fields for manual exposure /
   WB Cr/Cb gains / focus near-far limits — consumed by `views/imaging.rs`.
+- `oxvif::{Capabilities, MediaServiceCapabilities}` (0.4.0) — `api::DeviceGate`
+  reads both, because they answer different questions: the device-level
+  `GetCapabilities` says whether a service URL exists, a service's own
+  `GetServiceCapabilities` says what that service can do. **Neither is read as a
+  denial when it is silent** — see `DeviceGate::from_caps`; an omitted attribute
+  or a faulted probe leaves the entry point open. The other eight
+  `*_get_service_capabilities` methods are deliberately unwired until a feature
+  needs the answer.
+- `oxvif::{PtzNode, PtzSpaceRange}` + `ptz_get_node` / `ptz_get_configuration`
+  (0.4.0) — `api::ptz_node_for_profile` walks profile → PTZ config token → node
+  token **with no fallback**, since a wrong head's limits is the failure the
+  absolute-move work exists to avoid. `PtzNode::pan_tilt_spaces` flattens four
+  schema element kinds into one `Vec` with no discriminator, so
+  `api::ptz_absolute_limits` has to match on the URI suffix
+  (`PositionGenericSpace`). A `kind` field upstream would remove the guess —
+  ROADMAP §2 tracks it as a Tier 1 oxvif candidate.
+- `imaging_get_move_options` → `FloatRange` (0.4.0) — `api::focus_speed` scales
+  the UI slider into the range the lens declared. `Ok(_)` with no continuous
+  family is a *denial* (button disabled); `Err(_)` is not (button stays live).
 
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.12.0", path = "../oxvif", features = ["health"] }
+oxvif = { version = "0.15.0", path = "../oxvif", features = ["health", "metamorph-server"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
