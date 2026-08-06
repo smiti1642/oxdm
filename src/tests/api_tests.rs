@@ -1,8 +1,8 @@
 use crate::api::{
-    base_url_from_device_addr, is_action_unsupported, pick_channel, resolve_snapshot_url,
-    ChannelKind, DeviceGate,
+    base_url_from_device_addr, focus_speed, is_action_unsupported, pick_channel,
+    resolve_snapshot_url, ChannelKind, DeviceGate,
 };
-use oxvif::{Capabilities, MediaProfile, MediaServiceCapabilities};
+use oxvif::{Capabilities, FloatRange, MediaProfile, MediaServiceCapabilities};
 
 #[test]
 fn base_url_strips_onvif_path() {
@@ -329,4 +329,64 @@ fn the_three_kinds_read_three_different_fields() {
     assert_ne!(source, config);
     assert_ne!(config, encoder);
     assert_ne!(source, encoder);
+}
+
+// ── Focus speed ─────────────────────────────────────────────────────────────
+
+fn range(min: f32, max: f32) -> FloatRange {
+    FloatRange { min, max }
+}
+
+#[test]
+fn a_symmetric_lens_maps_the_slider_onto_both_directions() {
+    // The ordinary case, and the one OxDM's old hardcoded 0.1–1.0 slider
+    // happened to match: far and near are the same magnitude, opposite signs.
+    let r = range(-1.0, 1.0);
+    assert_eq!(focus_speed(r, 0.5, 1.0), Some(0.5));
+    assert_eq!(focus_speed(r, 0.5, -1.0), Some(-0.5));
+    assert_eq!(focus_speed(r, 1.0, 1.0), Some(1.0));
+}
+
+#[test]
+fn a_wider_range_than_the_slider_is_used_in_full() {
+    // A lens declaring 0..7 was being driven at 0.5 — a legal value, and about
+    // 7% of the speed the device offered. The slider is a fraction, not a
+    // speed, and this is the difference the fix makes.
+    let r = range(-7.0, 7.0);
+    assert_eq!(focus_speed(r, 1.0, 1.0), Some(7.0));
+    assert_eq!(focus_speed(r, 0.5, 1.0), Some(3.5));
+    assert_eq!(focus_speed(r, 0.5, -1.0), Some(-3.5));
+}
+
+#[test]
+fn a_lens_that_declares_no_negative_speed_cannot_focus_nearer() {
+    // The case that makes this a `None` and not a clamp. Sending 0.0 gets an
+    // `OK` back and never moves the motor, which reads to the user as a broken
+    // camera rather than an unsupported direction.
+    let r = range(0.0, 1.0);
+    assert_eq!(focus_speed(r, 0.5, 1.0), Some(0.5));
+    assert_eq!(
+        focus_speed(r, 0.5, -1.0),
+        None,
+        "near must be reported unsupported, not sent as zero"
+    );
+}
+
+#[test]
+fn a_degenerate_range_disables_both_directions() {
+    let r = range(0.0, 0.0);
+    assert_eq!(focus_speed(r, 1.0, 1.0), None);
+    assert_eq!(focus_speed(r, 1.0, -1.0), None);
+}
+
+#[test]
+fn the_result_never_leaves_the_declared_range() {
+    // A slider above 1.0 should not be able to push a speed past what the
+    // device accepts, whatever the UI does upstream.
+    let r = range(-2.0, 3.0);
+    let far = focus_speed(r, 4.0, 1.0).unwrap();
+    let near = focus_speed(r, 4.0, -1.0).unwrap();
+
+    assert!(far <= r.max, "{far} exceeds the declared maximum");
+    assert!(near >= r.min, "{near} is below the declared minimum");
 }

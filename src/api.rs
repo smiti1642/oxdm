@@ -1089,6 +1089,63 @@ pub async fn imaging_focus_stop(
     )
 }
 
+/// What focus movement this video source accepts.
+///
+/// The device declares the legal speed range here; OxDM drove the motor for
+/// several releases with whatever the shared PTZ speed slider happened to hold,
+/// which is a 0.1–1.0 fraction with no relationship to what the camera said.
+#[instrument(skip(creds), fields(addr, source_token))]
+pub async fn imaging_get_move_options(
+    addr: &str,
+    creds: &Credentials,
+    source_token: &str,
+) -> Result<oxvif::ImagingMoveOptions, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "GetMoveOptions",
+        addr,
+        s.imaging_get_move_options(source_token).await,
+    )
+}
+
+/// Current focus position and move state for this video source.
+#[instrument(skip(creds), fields(addr, source_token))]
+pub async fn imaging_get_status(
+    addr: &str,
+    creds: &Credentials,
+    source_token: &str,
+) -> Result<oxvif::ImagingStatus, ApiError> {
+    let s = session_for(addr, creds).await?;
+    trace_result(
+        "GetImagingStatus",
+        addr,
+        s.imaging_get_status(source_token).await,
+    )
+}
+
+/// Map the UI's speed slider onto the device's declared continuous focus speed
+/// range, in the requested direction.
+///
+/// `dir` is `+1.0` to focus farther and `-1.0` to focus nearer; on the wire the
+/// **sign of the speed is what carries direction**, so the two are the same
+/// number with different signs — which is exactly why the declared range has to
+/// be consulted separately for each. `slider` is the 0..1 fraction the UI holds.
+///
+/// `None` means *the device declares no speed in that direction*, and the
+/// caller should disable the control rather than send a value the camera never
+/// offered. A range of `0.0..=1.0` is the common case: such a lens can focus
+/// farther and has no way to express "nearer", so a near button would send
+/// `0.0`, get an `OK` back, and never move the motor.
+pub(crate) fn focus_speed(range: oxvif::FloatRange, slider: f32, dir: f32) -> Option<f32> {
+    let target = if dir >= 0.0 {
+        range.max * slider
+    } else {
+        range.min * slider
+    };
+    let clamped = target.clamp(range.min, range.max);
+    (clamped != 0.0).then_some(clamped)
+}
+
 // ── PTZ ─────────────────────────────────────────────────────────────────────
 //
 // PTZ operations were historically gated by an externally-cached

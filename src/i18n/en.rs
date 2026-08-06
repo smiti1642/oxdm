@@ -84,6 +84,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_video_encoder" => "Video",
         "ve_no_encoder" => "This profile has no video encoder configuration.",
         "channel_fell_back" => "Showing {token} — not the selected profile's own channel.",
+        "ptz_focus_unsupported" => "This lens declares no focus speed in this direction.",
+        "ptz_focus_position" => "Focus {pos}",
         "ve_encoding" => "Encoding",
         "ve_resolution" => "Resolution",
         "ve_frame_rate" => "Frame rate (fps)",

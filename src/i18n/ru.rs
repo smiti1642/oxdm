@@ -83,6 +83,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_video_encoder" => "Видео",
         "ve_no_encoder" => "У этого профиля нет конфигурации видеокодека.",
         "channel_fell_back" => "Показан {token} — это не собственный канал выбранного профиля.",
+        "ptz_focus_unsupported" => "Этот объектив не объявляет скорость фокусировки в эту сторону.",
+        "ptz_focus_position" => "Фокус {pos}",
         "ve_encoding" => "Кодек",
         "ve_resolution" => "Разрешение",
         "ve_frame_rate" => "Частота кадров (fps)",

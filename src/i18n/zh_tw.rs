@@ -83,6 +83,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "nav_video_encoder" => "影像編碼",
         "ve_no_encoder" => "此 profile 沒有影像編碼設定。",
         "channel_fell_back" => "顯示的是 {token},並非所選 profile 自己的通道。",
+        "ptz_focus_unsupported" => "此鏡頭未宣告此方向的對焦速度。",
+        "ptz_focus_position" => "對焦 {pos}",
         "ve_encoding" => "編碼格式",
         "ve_resolution" => "解析度",
         "ve_frame_rate" => "影格率 (fps)",

@@ -1573,6 +1573,13 @@ a      { color: var(--blue); text-decoration: none; }
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* Focus position from GetImagingStatus, re-read after each stop. */
+.ptz-focus-pos {
+  font-size: 11px;
+  color: var(--overlay1);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .ptz-misc {
   display: flex;
   flex-direction: column;

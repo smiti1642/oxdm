@@ -74,6 +74,38 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
         }
     });
 
+    // What the lens says it will accept, before anything is sent to the motor.
+    // Keyed off the resolved source token so a device or profile change
+    // re-asks — the two lenses of a dual-sensor camera need not agree.
+    let move_opts = use_resource(move || {
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        let source = match &*focus_state.read_unchecked() {
+            Some(Ok(t)) => Some(t.token.clone()),
+            _ => None,
+        };
+        async move {
+            let source = source.ok_or_else(|| "no_source".to_string())?;
+            api::imaging_get_move_options(&addr_s, &creds_s, &source).await
+        }
+    });
+
+    // Focus position readout. Refreshed after every stop rather than polled:
+    // a moving lens is already visible in the preview, and a 3s poll against
+    // every camera in the list is a cost the answer does not justify.
+    let mut focus_status = use_resource(move || {
+        let addr_s = addr.read().clone();
+        let creds_s = creds.read().clone();
+        let source = match &*focus_state.read_unchecked() {
+            Some(Ok(t)) => Some(t.token.clone()),
+            _ => None,
+        };
+        async move {
+            let source = source.ok_or_else(|| "no_source".to_string())?;
+            api::imaging_get_status(&addr_s, &creds_s, &source).await
+        }
+    });
+
     // ── Action callbacks ───────────────────────────────────────────────────
     // Wrapped with `use_callback` so they're `Copy` and can be passed as
     // props to child components (DirButton, ZoomButton, PresetRow). Each
@@ -200,6 +232,8 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             if let Err(e) = api::imaging_focus_stop(&addr_s, &creds_s, &source_token).await {
                 tracing::warn!(error = %e, "focus stop failed");
             }
+            // The motor has settled — re-read where it ended up.
+            focus_status.restart();
         });
     });
 
@@ -257,6 +291,39 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
             }
         });
     });
+
+    // Resolve each focus direction against what the lens declared.
+    //
+    // The slider beside these buttons is a 0.1–1.0 fraction shared with
+    // pan/tilt/zoom; it has never had any relationship to the focus speed range
+    // the device publishes in `GetMoveOptions`. Each direction is resolved
+    // separately because the sign of the speed *is* the direction on the wire,
+    // so a range like `0.0..=1.0` offers "farther" and no way to say "nearer".
+    let (focus_far, focus_near) = {
+        let slider = *speed.read();
+        match &*move_opts.read_unchecked() {
+            // The device answered. `continuous_speed_range` is `None` only when
+            // it omitted the Continuous family entirely — `Speed` is that
+            // family's sole required member — so this is a real denial, and
+            // both buttons go dead rather than sending a speed it never offered.
+            Some(Ok(o)) => match o.continuous_speed_range {
+                Some(r) => (
+                    api::focus_speed(r, slider, 1.0),
+                    api::focus_speed(r, slider, -1.0),
+                ),
+                None => (None, None),
+            },
+            // Could not ask, or still asking. Silence is not a denial: drive
+            // the motor the way OxDM always has rather than disabling a control
+            // on no evidence.
+            _ => (Some(slider), Some(-slider)),
+        }
+    };
+
+    let focus_position = match &*focus_status.read_unchecked() {
+        Some(Ok(s)) => s.focus_position,
+        _ => None,
+    };
 
     // ── Render ─────────────────────────────────────────────────────────────
     rsx! {
@@ -341,20 +408,25 @@ pub fn PtzControlView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Ele
                                 }
                             }
                             FocusButton {
-                                dir:  1.0,
                                 icon: "arrow-up",
                                 label: i18n::t(locale, "ptz_focus_far"),
+                                unsupported_label: i18n::t(locale, "ptz_focus_unsupported"),
                                 focus_move: focus_move,
                                 focus_stop: focus_stop,
-                                speed,
+                                speed: focus_far,
                             }
                             FocusButton {
-                                dir: -1.0,
                                 icon: "arrow-down",
                                 label: i18n::t(locale, "ptz_focus_near"),
+                                unsupported_label: i18n::t(locale, "ptz_focus_unsupported"),
                                 focus_move: focus_move,
                                 focus_stop: focus_stop,
-                                speed,
+                                speed: focus_near,
+                            }
+                            if let Some(pos) = focus_position {
+                                div { class: "ptz-focus-pos",
+                                    {i18n::t(locale, "ptz_focus_position").replace("{pos}", &format!("{pos:.2}"))}
+                                }
                             }
                         }
                         div { class: "ptz-speed",
@@ -530,22 +602,30 @@ fn ZoomButton(
     }
 }
 
+/// One focus direction.
+///
+/// `speed` arrives already resolved against the device's declared range and
+/// already carrying its sign, so this component never computes a speed of its
+/// own. `None` means the lens declared no speed in this direction — the button
+/// is disabled rather than sending a value that would be accepted and ignored.
 #[component]
 fn FocusButton(
-    dir: f32,
     icon: &'static str,
     label: &'static str,
+    unsupported_label: &'static str,
     focus_move: Callback<f32>,
     focus_stop: Callback<()>,
-    speed: Signal<f32>,
+    speed: Option<f32>,
 ) -> Element {
     rsx! {
         button {
             class: "ptz-zoom-btn",
-            title: "{label}",
+            disabled: speed.is_none(),
+            title: if speed.is_some() { label } else { unsupported_label },
             onmousedown: move |_| {
-                let s = *speed.read();
-                focus_move.call(dir * s);
+                if let Some(s) = speed {
+                    focus_move.call(s);
+                }
             },
             onmouseup: move |_| focus_stop.call(()),
             onmouseleave: move |_| focus_stop.call(()),
