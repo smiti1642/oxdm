@@ -6,7 +6,7 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
-## [0.4.0] - 2026-08-06
+## [Unreleased]
 
 Headline: **the app stops guessing what a camera can do, and asks it.** Three of
 the four additions are the same move — read the range, the capability or the
