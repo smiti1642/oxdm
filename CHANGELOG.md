@@ -135,7 +135,21 @@ answerable.
   error. No existing test could see this: `tests/io_control_smoke.rs` runs
   against oxvif's mock, which *does* advertise DeviceIO, so it stayed green
   through the upgrade.
-- **The README claimed PTZ absolute moves before OxDM could send one.**
+- **The Quirks side-by-side diff paired the wrong lines whenever two adjacent
+  lines changed.** The line-level pass emits every deletion in a hunk before any
+  insertion (`- - + +`, never `- + - +`), but the merge step paired each deletion
+  that happened to be *immediately* followed by an insertion — so it matched the
+  **last** deletion to the **first** insertion. On the `<IO>` capability block
+  that rendered `<RelayOutputs>2</RelayOutputs>` against
+  `<InputConnectors>1</InputConnectors>`, highlighting the element *names* as
+  though they were the difference, while the real `InputConnectors` and
+  `RelayOutputs` lines each sat orphaned against a blank cell. `merge_changes`
+  now pairs the whole run of deletions against the whole run of insertions,
+  position by position, with any leftover staying a plain deletion or insertion.
+
+  Neither existing test could see it: both changed exactly one line, and a run
+  of length one pairs correctly however you pair it. The two new tests use a
+  two-line run and an uneven 2-against-1 run.
   `ptz_absolute_move` appeared nowhere under `src/` when the claim was found;
   the feature list was corrected to say continuous move, which was all the PTZ
   view drove. It has since been corrected back — not by withdrawing the claim a

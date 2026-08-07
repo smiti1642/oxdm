@@ -73,22 +73,47 @@ fn raw_line_diff(left: &str, right: &str) -> Vec<DiffRow> {
     rows
 }
 
-/// Merge each `Left` immediately followed by a `Right` into a `Changed` row with
-/// word-level segments; everything else passes through unchanged.
+/// Pair a run of deletions with the run of insertions that follows it, position
+/// by position, into `Changed` rows with word-level segments. Whatever is left
+/// over when the two runs are different lengths stays a plain `Left` / `Right`.
+///
+/// **The pairing must span the whole run, not one row.** `raw_line_diff` emits
+/// every deletion in a hunk before any insertion, so two changed lines arrive as
+/// `- - + +`, never as `- + - +`. Merging each `Left` that happens to be
+/// *immediately* followed by a `Right` therefore matched the **last** deletion
+/// to the **first** insertion — for the `<IO>` block that rendered
+/// `<RelayOutputs>2</RelayOutputs>` against `<InputConnectors>1</InputConnectors>`
+/// with the tag names highlighted as the difference, and left the other two
+/// lines orphaned against blank cells.
 fn merge_changes(rows: Vec<DiffRow>) -> Vec<DiffRow> {
     let mut out = Vec::with_capacity(rows.len());
     let mut it = rows.into_iter().peekable();
     while let Some(row) = it.next() {
-        match row {
-            DiffRow::Left(l) if matches!(it.peek(), Some(DiffRow::Right(_))) => {
-                let DiffRow::Right(r) = it.next().unwrap() else {
-                    unreachable!()
-                };
-                let (left, right) = word_segments(&l, &r);
-                out.push(DiffRow::Changed { left, right });
-            }
-            other => out.push(other),
+        let DiffRow::Left(first) = row else {
+            out.push(row);
+            continue;
+        };
+        let mut dels = vec![first];
+        while let Some(DiffRow::Left(_)) = it.peek() {
+            let Some(DiffRow::Left(l)) = it.next() else {
+                unreachable!()
+            };
+            dels.push(l);
         }
+        let mut adds = Vec::new();
+        while let Some(DiffRow::Right(_)) = it.peek() {
+            let Some(DiffRow::Right(r)) = it.next() else {
+                unreachable!()
+            };
+            adds.push(r);
+        }
+        let paired = dels.len().min(adds.len());
+        for (l, r) in dels.iter().zip(&adds) {
+            let (left, right) = word_segments(l, r);
+            out.push(DiffRow::Changed { left, right });
+        }
+        out.extend(dels.into_iter().skip(paired).map(DiffRow::Left));
+        out.extend(adds.into_iter().skip(paired).map(DiffRow::Right));
     }
     out
 }
@@ -374,6 +399,60 @@ mod tests {
         };
         assert!(left.iter().all(|s| s.changed) && left.iter().any(|s| s.text == "B"));
         assert!(right.iter().all(|s| s.changed) && right.iter().any(|s| s.text == "C"));
+    }
+
+    #[test]
+    fn line_diff_pairs_a_run_of_changes_element_for_element() {
+        // Two *consecutive* changed lines — the case the two tests either side
+        // of this one cannot see, because both change exactly one line and a
+        // run of length 1 pairs correctly however you pair it.
+        //
+        // The line-level pass emits every deletion before any insertion, so the
+        // rows arrive as `- - + +`. Pairing each deletion with the deletion
+        // *immediately* followed by an insertion matched `RelayOutputs` against
+        // `InputConnectors`, and rendered the first deletion and the last
+        // insertion as orphans against blank cells.
+        let rows = line_diff(
+            "<IO>\n  <InputConnectors>2</InputConnectors>\n  <RelayOutputs>2</RelayOutputs>\n</IO>",
+            "<IO>\n  <InputConnectors>1</InputConnectors>\n  <RelayOutputs>1</RelayOutputs>\n</IO>",
+        );
+        assert_eq!(shape(&rows), ["=", "~", "~", "="]);
+        for (i, elem) in [(1usize, "InputConnectors"), (2, "RelayOutputs")] {
+            let DiffRow::Changed { left, right } = &rows[i] else {
+                panic!("row {i} should be Changed: {:?}", shape(&rows));
+            };
+            // Correctly paired, each row's element name is *shared* and only
+            // the value differs. Mispaired, the tag itself reads as changed —
+            // which is what the screenshot showed.
+            assert!(
+                left.iter().any(|s| !s.changed && s.text.contains(elem)),
+                "row {i} left should share the {elem} tag"
+            );
+            assert!(
+                right.iter().any(|s| !s.changed && s.text.contains(elem)),
+                "row {i} right should share the {elem} tag"
+            );
+            assert!(left.iter().any(|s| s.changed && s.text == "2"));
+            assert!(right.iter().any(|s| s.changed && s.text == "1"));
+        }
+    }
+
+    #[test]
+    fn line_diff_leaves_an_unpaired_deletion_on_its_own_side() {
+        // A run of 2 deletions against 1 insertion: the *first* deletion pairs,
+        // the leftover stays a plain deletion. Pins that the fix pairs from the
+        // start of each run, not the end.
+        let rows = line_diff("A\nB\nC\nE", "A\nD\nE");
+        assert_eq!(shape(&rows), ["=", "~", "-", "="]);
+        let DiffRow::Changed { left, right } = &rows[1] else {
+            panic!("expected Changed at row 1");
+        };
+        assert!(left.iter().any(|s| s.text == "B"));
+        assert!(right.iter().any(|s| s.text == "D"));
+        let DiffRow::Left(orphan) = &rows[2] else {
+            panic!("expected a plain deletion at row 2");
+        };
+        assert_eq!(orphan, "C");
     }
 
     #[test]
