@@ -141,6 +141,7 @@ Changelog tracking starts at 0.1.5.
   Neither existing test could see it: both changed exactly one line, and a run
   of length one pairs correctly however you pair it. The two new tests use a
   two-line run and an uneven 2-against-1 run.
+- **The README claimed PTZ absolute moves before OxDM could send one.**
   `ptz_absolute_move` appeared nowhere under `src/` when the claim was found;
   the feature list was corrected to say continuous move, which was all the PTZ
   view drove. It has since been corrected back — not by withdrawing the claim a
