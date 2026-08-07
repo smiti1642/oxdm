@@ -386,26 +386,6 @@ Notable surfaces oxdm relies on:
   at the boundary).
 - `ImagingSettings` gained eight `Option<...>` fields for manual exposure /
   WB Cr/Cb gains / focus near-far limits — consumed by `views/imaging.rs`.
-- `oxvif::{Capabilities, MediaServiceCapabilities}` (0.4.0) — `api::DeviceGate`
-  reads both, because they answer different questions: the device-level
-  `GetCapabilities` says whether a service URL exists, a service's own
-  `GetServiceCapabilities` says what that service can do. **Neither is read as a
-  denial when it is silent** — see `DeviceGate::from_caps`; an omitted attribute
-  or a faulted probe leaves the entry point open. The other eight
-  `*_get_service_capabilities` methods are deliberately unwired until a feature
-  needs the answer.
-- `oxvif::{PtzNode, PtzSpaceRange}` + `ptz_get_node` / `ptz_get_configuration`
-  (0.4.0) — `api::ptz_node_for_profile` walks profile → PTZ config token → node
-  token **with no fallback**, since a wrong head's limits is the failure the
-  absolute-move work exists to avoid. `PtzNode::pan_tilt_spaces` flattens four
-  schema element kinds into one `Vec` with no discriminator, so
-  `api::ptz_absolute_limits` has to match on the URI suffix
-  (`PositionGenericSpace`). A `kind` field upstream would remove the guess —
-  ROADMAP §2 tracks it as a Tier 1 oxvif candidate.
-- `imaging_get_move_options` → `FloatRange` (0.4.0) — `api::focus_speed` scales
-  the UI slider into the range the lens declared. `Ok(_)` with no continuous
-  family is a *denial* (button disabled); `Err(_)` is not (button stays live).
-
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml

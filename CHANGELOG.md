@@ -8,15 +8,6 @@ Changelog tracking starts at 0.1.5.
 
 ## [Unreleased]
 
-Headline: **the app stops guessing what a camera can do, and asks it.** Three of
-the four additions are the same move — read the range, the capability or the
-space the device declared, then build the control from it, instead of offering
-one fixed shape to every camera. A dome that cannot pan no longer shows a pan
-slider; a lens that will not focus nearer no longer gets sent a speed of zero;
-a service the device never advertised no longer gets its own tab. Built on
-oxvif 0.15.0, whose PTZ and multi-sensor work is what made most of it
-answerable.
-
 ### Added
 - **PTZ shows where the head is, and can be sent to a position.** The view drove
   a camera it could not see: no position readout, and continuous move as the

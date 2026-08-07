@@ -13,18 +13,27 @@ but "what should OxDM surface".
 
 ## The measurement this is derived from
 
-Counted 2026-08-05 against oxvif 0.15.0, by intersecting every `pub async fn`
+Re-counted 2026-08-07 against oxvif 0.15.0, by intersecting every `pub async fn`
 on `OnvifSession` with every `s.<method>(` call site under `src/`:
 
-| | |
-|---|---|
-| `OnvifSession` methods | **159** |
-| called from OxDM | **60** |
-| never called | **99** |
+| | 2026-08-05 | 2026-08-07 |
+|---|---|---|
+| `OnvifSession` methods | 159 | **159** |
+| called from OxDM | 60 | **66** |
+| never called | 99 | **93** |
 
-That ratio is the roadmap. OxDM drives 38% of the protocol surface it already
-depends on, and the unused 62% needs no new protocol work — only a place to
+That ratio is the roadmap. OxDM drives 42% of the protocol surface it already
+depends on, and the unused 58% needs no new protocol work — only a place to
 put it.
+
+**The second column is why this table has two.** Items 1, 2 and 4 landed on
+2026-08-06 and moved the count by six — `media_get_service_capabilities`,
+`imaging_get_move_options`, `imaging_get_status`, `ptz_get_status`,
+`ptz_get_node`, `ptz_absolute_move`. The original figures were true when
+written and were wrong a day later, which is the failure mode oxvif's
+`CLAUDE.md` names as the commonest kind. **Re-derive both figures before
+quoting them** — the recipe is the sentence above the table, and running it is
+the only way to know whether it still holds.
 
 Two consequences worth stating plainly:
 
