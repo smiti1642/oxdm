@@ -36,8 +36,9 @@ The final 0.4.1 implementation passed formatting, Clippy with warnings denied,
 a Windows build, and all 174 tests on Rust 1.97.0. The seven localization tests
 also passed after adding the support label to the required-key list.
 The complete desktop application was not tested on oxvif's minimum Rust 1.88.
-Real-camera multicast, Linux/macOS builds, and new installer bundles were not
-validated in this preparation.
+The [main CI run](https://github.com/smiti1642/oxdm/actions/runs/34332149169)
+also passed formatting, Clippy, build and tests on Linux. Real-camera multicast,
+macOS runtime behavior and installer acceptance were not validated locally.
 
 `cargo outdated` was run before the upgrade, and `cargo outdated --depth 1`
 after it. `cargo audit --json` reports **0 vulnerabilities and 5 warnings**;
@@ -67,8 +68,17 @@ Rust 1.98 reported `clippy::chunks_exact_to_as_chunks` at `src/main.rs:45`;
 `-D warnings` made the new lint fatal. FUNDING.yml was not the failing input.
 The fix uses `buf.as_chunks::<3>().0`, preserving the previous behavior of
 processing complete RGB triples and ignoring any remainder. Local Rust 1.97
-did not report that new lint. The next main CI run will verify it on hosted
-stable Rust.
+did not report that new lint. The subsequent main CI run linked above passed
+all checks on hosted stable Rust.
+
+## GitHub bundles
+
+The release workflow now installs dioxus-cli 0.7.9 to match the exact Dioxus
+dependency in Cargo.toml; the previous workflow still installed 0.7.5.
+Pushing the `v0.4.1` tag builds a macOS ARM64 DMG, a Windows x86-64 MSI and
+portable ZIP, and an Ubuntu x86-64 DEB. Jobs attach artifacts to a draft GitHub
+Release for maintainer review. crates.io publication remains a separate manual
+action.
 
 ## Manual publication
 
