@@ -131,7 +131,7 @@ src/
                     Digest/Basic auth fallback. Every wrapper funnels
                     through `crate::sessions` for session reuse — see
                     "Session reuse" below. Discovery delegates a single
-                    round to oxvif::discovery::probe (multi-NIC +
+                    round to oxvif::discovery::probe_result (multi-NIC +
                     IP_MULTICAST_IF pinning handled upstream); the
                     multi-round scan loop lives in device_list.rs.
   sessions.rs       Process-wide cache of `oxvif::OnvifSession` keyed by
@@ -323,14 +323,15 @@ curl for Hikvision/Uniview compat) and `discover_one_round`
 
 ## oxvif version
 
-Currently pinned to the published registry crate `oxvif = "0.15"` (0.15.0 is
+Currently pinned to the published registry crate `oxvif = "0.16"` (0.16.0 is
 on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
 (`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
 branch (CI has no `../oxvif`). Features: `health, metamorph-server` in
 `[dependencies]`, and `mock-server, health, metamorph-server` in
-`[dev-dependencies]` — `mock-server` is the one the release binary never pulls
-(it is what drags in axum), and every file under `tests/` depends on it, not
-just `healthtab_smoke.rs`.
+`[dev-dependencies]`. The release binary also includes `mock-server` and axum
+through `metamorph-server`, which serves camera clones. Every file under
+`tests/` depends on the mock server, not just `healthtab_smoke.rs`.
+oxvif 0.16 requires Rust 1.88 or newer; local development and CI use stable.
 
 **This paragraph named one test file for three releases after it stopped being
 one.** `tests/` is now five files — `healthtab`, `io_control`, `recordings`,
@@ -389,14 +390,14 @@ Notable surfaces oxdm relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.15.0", path = "../oxvif", features = ["health", "metamorph-server"] }
+oxvif = { version = "0.16.0", path = "../oxvif", features = ["health", "metamorph-server"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
 pin back to the registry — CI builds on a runner without `../oxvif`, so a
 path dep makes CI fail to resolve the dependency. Also bump
 `OXVIF_VERSION` in `src/components/about_dialog.rs` to match (shown in the
-About dialog).
+About dialog and stamped into Quirks baselines).
 
 To upgrade oxvif further, bump the version and re-verify every call site
 in `src/api.rs` still compiles — types like `ImagingSettings`,
@@ -405,7 +406,7 @@ service-URL fields on `Capabilities` are the usual breakage points.
 
 ## Known quirks
 
-- WS-Discovery runs a single round per call via `oxvif::discovery::probe`,
+- WS-Discovery runs a single round per call via `oxvif::discovery::probe_result`,
   wrapped by `api::discover_one_round`. The multi-round scan loop (3 rounds,
   2 s timeout, 800 ms interval — the `ROUNDS` / `PROBE_TIMEOUT` /
   `PROBE_INTERVAL` constants) lives in `device_list.rs`. oxvif handles
@@ -413,7 +414,10 @@ service-URL fields on `Capabilities` are the usual breakage points.
   is critical on Windows — without it, multicast leaks out through Hyper-V /
   WSL virtual adapters and never reaches the camera subnet). Don't
   reintroduce a hand-rolled discovery layer in oxdm; if the upstream
-  behaviour needs tweaking, fix it in oxvif.
+  behaviour needs tweaking, fix it in oxvif. Returned I/O errors reach the
+  existing scan error toast; an empty successful scan remains a no-device
+  result. Some upstream send/receive errors are still ignored. When merged
+  XAddrs are reordered, OxDM keeps a known device's address if still advertised.
 - `api::fetch_snapshot_data_uri` patches the `digest_auth` crate output
   for Hikvision compatibility: `qop=auth` → `qop="auth"`, and `, ` → `,`
   between parameters. Removing these patches breaks Hikvision snapshots.

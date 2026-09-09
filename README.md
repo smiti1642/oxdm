@@ -7,10 +7,15 @@ on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-> **Project status — pre-release (v0.4.0).** Core device management works
+> **Project status — pre-release (v0.4.1).** Built on oxvif 0.16.0. Core device management works
 > end-to-end against real cameras and the `oxvif` mock server. Release bundles
 > are not yet code-signed, so the operating system may warn about an
 > unidentified developer on first launch.
+
+Version 0.4.1 surfaces discovery I/O errors through the existing error toast
+and keeps a known device's address when reordered discovery responses still
+advertise it. It also updates dependencies identified by the security audit.
+See the [changelog](./CHANGELOG.md) for details.
 
 ## Contents
 
@@ -56,13 +61,13 @@ Notes:
 
 ### Build from source
 
-OxDM builds with a standard Rust toolchain — no extra tooling is required to
+OxDM builds with a current stable Rust toolchain — no extra tooling is required to
 produce a runnable binary (`dx` is only needed for hot-reload development and
 for producing installer bundles). Install from
 [crates.io](https://crates.io/crates/oxvif-device-manager):
 
 ```sh
-cargo install oxvif-device-manager
+cargo install oxvif-device-manager --locked
 ```
 
 or build the latest commit directly from Git:
@@ -73,6 +78,10 @@ cargo install --git https://github.com/smiti1642/oxdm
 
 Either way the installed command is **`oxdm`** (the crate is published as
 `oxvif-device-manager` because the shorter name was already taken).
+
+oxvif 0.16 requires Rust 1.88 or newer. The complete OxDM 0.4.1 build was
+validated on Rust 1.97.0; Rust 1.88 has not been verified for the full desktop
+dependency graph. `--locked` uses the dependency versions shipped with the crate.
 
 On Linux, install the WebKitGTK/wry development packages first. For example, on
 Debian/Ubuntu:
@@ -87,8 +96,11 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
 
 ## Features
 
-- **Discovery** — WS-Discovery scan of the local network, plus manually-added
-  devices. Discovered devices persist across restarts.
+- **Discovery** — three-round WS-Discovery scan of the local network, plus
+  manually-added devices. Discovered devices persist across restarts. Returned
+  I/O errors are shown separately from a successful scan finding no devices;
+  some upstream send/receive failures are still not reported. Rediscovery keeps
+  a known device's address while the device continues to advertise it.
 - **Live video** — always-on MJPEG snapshot stream, or RTSP (H.264/H.265) via a
   bundled go2rtc bridge with H.265 → H.264 transcode and MSE fallback.
 - **Snapshots** — save a JPEG from any profile thumbnail or the Live Video view.
@@ -201,6 +213,11 @@ alarming:
   drift, in the same places"* is the answer you want most of the time. Firmware
   upgrades are when it stops saying that.
 
+Quirks baselines record the oxvif version that measured them. Baselines saved
+with oxvif 0.15 still load after this upgrade, with a version-mismatch warning:
+the library's reference may have changed even when the camera has not. Review
+the current result and save a new baseline to compare future runs on oxvif 0.16.
+
 Expanding an operation gives the git-style side-by-side: `oxvif` reference on the
 left, the camera on the right, with word-level highlighting on what differs.
 
@@ -282,3 +299,9 @@ snapshot (MJPEG) mode needs nothing extra.
 ## License
 
 Released under the [MIT License](./LICENSE). © 2026 smiti1642
+
+## Support
+
+If oxvif saves you time, consider supporting its development.
+
+[Buy me a coffee](https://buymeacoffee.com/smiti1642)

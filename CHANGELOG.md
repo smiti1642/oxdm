@@ -6,6 +6,35 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [0.4.1] - 2026-09-09
+
+Built on oxvif 0.16.0. Discovery reports returned I/O errors and keeps known
+device addresses stable when discovery responses reorder them.
+
+### Added
+- Add a Buy me a coffee link to the About dialog and README. The About button
+  follows the selected English, Traditional Chinese or Russian locale.
+
+### Changed
+- Upgrade the library dependency to oxvif 0.16.0 from crates.io, including
+  the About version and Quirks baseline stamp. Existing baselines still load;
+  those stamped with 0.15.0 now display the existing version-mismatch warning.
+  oxvif requires Rust 1.88 or newer.
+- Refresh compatible locked dependencies identified by `cargo audit`, including
+  h2, wayland-scanner (removing quick-xml 0.39), webbrowser, anyhow, memmap2,
+  rand 0.8 and the yanked chacha20 release.
+
+### Fixed
+- Use fixed-size RGB chunks when decoding the window icon, satisfying Rust
+  1.98's `chunks_exact_to_as_chunks` Clippy lint without changing pixel output.
+- Discovery now uses the fallible `probe_result` API, allowing returned socket
+  errors to reach the existing scan error toast instead of showing no devices.
+  Successful empty scans keep their existing behavior. The upstream API still
+  ignores some send/receive errors; this does not diagnose every network failure.
+- Rediscovery keeps a device's existing address while it is still advertised,
+  so merged/reordered XAddrs do not switch its session address. A withdrawn
+  address falls back to the first current XAddr.
+
 ## [0.4.0] - 2026-08-07
 
 Headline: **the app stops guessing what a camera can do, and asks it.** Three of

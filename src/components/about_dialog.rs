@@ -8,8 +8,9 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// oxvif version. Bumped manually when the Cargo.toml dependency moves —
 /// `cargo metadata` lookup at runtime would mean shipping cargo, which
 /// the single-binary release explicitly avoids.
-pub(crate) const OXVIF_VERSION: &str = "0.15.0";
+pub(crate) const OXVIF_VERSION: &str = "0.16.0";
 const REPO_URL: &str = "https://github.com/smiti1642/oxdm";
+const SUPPORT_URL: &str = "https://buymeacoffee.com/smiti1642";
 
 #[component]
 pub fn AboutDialog(open: Signal<bool>) -> Element {
@@ -43,6 +44,15 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                         div { "OxDM v{APP_VERSION}" }
                         div { "oxvif v{OXVIF_VERSION}" }
                         div { "go2rtc v{crate::video::go2rtc::BUNDLED_VERSION}" }
+                    }
+                    button {
+                        class: "btn btn-md btn-ghost",
+                        onclick: move |_| {
+                            if let Err(e) = opener::open_browser(SUPPORT_URL) {
+                                tracing::warn!(error = %e, "open support page failed");
+                            }
+                        },
+                        {i18n::t(locale, "about_support")}
                     }
                     if !log_path.is_empty() {
                         div { class: "about-logpath",

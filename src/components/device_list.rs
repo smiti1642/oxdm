@@ -24,6 +24,28 @@ enum StatusFilter {
     Unknown,
 }
 
+/// Keep a known device's address while it is still advertised. Discovery may
+/// merge and reorder XAddrs between rounds; that must not change the address
+/// used for sessions and per-device credentials. Empty endpoints are not an
+/// identity, and manual entries must not influence discovered-device matching.
+fn discovery_addr(d: &oxvif::DiscoveredDevice, devices: &[DeviceEntry]) -> String {
+    devices
+        .iter()
+        .find(|e| {
+            !e.manual
+                && !d.endpoint.is_empty()
+                && e.endpoint == d.endpoint
+                && d.xaddrs.contains(&e.addr)
+        })
+        .map(|e| e.addr.clone())
+        .or_else(|| d.xaddrs.first().cloned())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+#[path = "../tests/discovery_tests.rs"]
+mod discovery_tests;
+
 impl StatusFilter {
     fn matches(self, status: AuthStatus) -> bool {
         match self {
@@ -202,7 +224,7 @@ pub fn DeviceList() -> Element {
                 let mut new_addrs: Vec<String> = Vec::new();
 
                 for d in found {
-                    let addr = d.xaddrs.first().cloned().unwrap_or_default();
+                    let addr = discovery_addr(&d, &next);
                     let display_addr = util::extract_ip(&addr);
                     let name = d
                         .scopes

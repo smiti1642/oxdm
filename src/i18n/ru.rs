@@ -239,6 +239,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "snapshot_save_failed" => "Не удалось сохранить",
         "about_open_logs" => "Папка журналов",
         "about_github" => "GitHub",
+        "about_support" => "Угостить кофе",
         "about_log_dir" => "Журналы:",
         "about_shortcuts" => "Горячие клавиши",
         "shortcut_focus_search" => "Поиск устройств",

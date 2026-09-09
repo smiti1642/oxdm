@@ -240,6 +240,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "snapshot_save_failed" => "Save failed",
         "about_open_logs" => "Open log folder",
         "about_github" => "GitHub",
+        "about_support" => "Buy me a coffee",
         "about_log_dir" => "Logs:",
         "about_shortcuts" => "Keyboard shortcuts",
         "shortcut_focus_search" => "Focus device search",

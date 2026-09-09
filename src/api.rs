@@ -381,7 +381,7 @@ pub async fn run_live_quirk_test(
 
 /// Run a single WS-Discovery round across all network interfaces.
 ///
-/// Delegates to [`oxvif::discovery::probe`], which handles multi-NIC
+/// Delegates to [`oxvif::discovery::probe_result`], which handles multi-NIC
 /// enumeration and `IP_MULTICAST_IF` pinning (critical on Windows with
 /// Hyper-V / WSL virtual adapters). Callers that want multi-round
 /// resilience should loop and dedupe by [`DiscoveredDevice::endpoint`] —
@@ -390,7 +390,9 @@ pub async fn run_live_quirk_test(
 /// blocking on a single 9 s `probe_rounds`.
 #[instrument(skip_all, fields(timeout_secs = timeout.as_secs()))]
 pub async fn discover_one_round(timeout: Duration) -> Result<Vec<DiscoveredDevice>, ApiError> {
-    Ok(oxvif::discovery::probe(timeout).await)
+    oxvif::discovery::probe_result(timeout)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Device Info ─────────────────────────────────────────────────────────────

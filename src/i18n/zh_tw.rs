@@ -239,6 +239,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "snapshot_save_failed" => "儲存失敗",
         "about_open_logs" => "開啟日誌資料夾",
         "about_github" => "GitHub",
+        "about_support" => "請我喝杯咖啡",
         "about_log_dir" => "日誌：",
         "about_shortcuts" => "鍵盤快捷鍵",
         "shortcut_focus_search" => "聚焦裝置搜尋",

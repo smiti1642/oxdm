@@ -164,6 +164,7 @@ const ALL_KEYS: &[&str] = &[
     "snapshot_save_failed",
     "about_open_logs",
     "about_github",
+    "about_support",
     "about_log_dir",
     "about_shortcuts",
     "shortcut_focus_search",

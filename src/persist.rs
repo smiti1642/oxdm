@@ -924,6 +924,15 @@ mod tests {
         assert!(b.matches_running_oxvif());
     }
 
+    #[test]
+    fn a_015_baseline_still_loads_but_requires_a_version_warning() {
+        let envelope = format!(r#"{{ "oxvif": "0.15.0", "report": {LEGACY_BARE} }}"#);
+        let b = parse_quirk_baseline(&envelope).expect("previous baseline must still load");
+        assert_eq!(b.oxvif.as_deref(), Some("0.15.0"));
+        assert_eq!(b.report.device, "cam-1");
+        assert!(!b.matches_running_oxvif());
+    }
+
     /// A pre-0.4.0 file still loads — losing a baseline on upgrade would be
     /// worse than the drift it warns about — but reports an *unknown* version,
     /// which must not be mistaken for a match. Every unstamped file was written

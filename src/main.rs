@@ -42,7 +42,7 @@ fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
         png::ColorType::Rgba => buf,
         png::ColorType::Rgb => {
             let mut out = Vec::with_capacity(buf.len() / 3 * 4);
-            for chunk in buf.chunks_exact(3) {
+            for chunk in buf.as_chunks::<3>().0 {
                 out.extend_from_slice(chunk);
                 out.push(0xFF);
             }
