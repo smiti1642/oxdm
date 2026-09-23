@@ -5,6 +5,46 @@ use crate::api::{
 use oxvif::{Capabilities, FloatRange, MediaProfile, MediaServiceCapabilities};
 
 #[test]
+fn h265_media2_conversion_preserves_rate_and_codec_settings() {
+    let mut config = oxvif::VideoEncoderConfiguration {
+        token: "encoder-B".into(),
+        name: "second lens".into(),
+        use_count: 2,
+        encoding: oxvif::VideoEncoding::H265,
+        resolution: oxvif::Resolution {
+            width: 1920,
+            height: 1080,
+        },
+        quality: 4.0,
+        rate_control: Some(oxvif::VideoRateControl {
+            frame_rate_limit: 25,
+            encoding_interval: 1,
+            bitrate_limit: 2048,
+        }),
+        h264: None,
+        h265: Some(oxvif::H265Configuration {
+            gov_length: 50,
+            profile: "Main".into(),
+        }),
+        multicast: None,
+        session_timeout: Some("PT60S".into()),
+        guaranteed_frame_rate: None,
+    };
+    let converted = crate::api::to_video_encoder_configuration2(&config);
+    let rate = converted.rate_control.unwrap();
+    assert_eq!(rate.frame_rate_limit, 25.0);
+    assert_eq!(rate.bitrate_limit, 2048);
+    assert_eq!(converted.gov_length, Some(50));
+    assert_eq!(converted.profile.as_deref(), Some("Main"));
+    assert_eq!(converted.token, config.token);
+    assert_eq!(converted.resolution, config.resolution);
+    config.rate_control = None;
+    assert!(crate::api::to_video_encoder_configuration2(&config)
+        .rate_control
+        .is_none());
+}
+
+#[test]
 fn base_url_strips_onvif_path() {
     assert_eq!(
         base_url_from_device_addr("http://192.168.1.1/onvif/device_service"),

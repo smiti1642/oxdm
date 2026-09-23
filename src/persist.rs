@@ -326,6 +326,9 @@ struct BaselineEnvelope {
     /// diffed against.
     oxvif: String,
     report: oxvif::metamorph::QuirkReport,
+    /// Multiplicity in the full recording, including structurally clean rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ambiguous_keys: Vec<(String, String)>,
 }
 
 /// A saved quirk baseline, plus the oxvif version it was measured against.
@@ -335,6 +338,7 @@ pub struct SavedQuirkBaseline {
     /// `QuirkReport` with no stamp. Unknown is *not* the same as matching —
     /// every such file predates the stamp, so it predates oxvif 0.15 too.
     pub oxvif: Option<String>,
+    pub ambiguous_keys: Vec<(String, String)>,
 }
 
 impl SavedQuirkBaseline {
@@ -363,11 +367,13 @@ fn parse_quirk_baseline(json: &str) -> Result<SavedQuirkBaseline, serde_json::Er
         return Ok(SavedQuirkBaseline {
             report: env.report,
             oxvif: Some(env.oxvif),
+            ambiguous_keys: env.ambiguous_keys,
         });
     }
     serde_json::from_str::<oxvif::metamorph::QuirkReport>(json).map(|report| SavedQuirkBaseline {
         report,
         oxvif: None,
+        ambiguous_keys: Vec::new(),
     })
 }
 
@@ -392,6 +398,7 @@ pub fn read_quirk_baseline(addr: &str) -> Option<SavedQuirkBaseline> {
 pub fn write_quirk_baseline(
     addr: &str,
     report: &oxvif::metamorph::QuirkReport,
+    ambiguous_keys: Vec<(String, String)>,
 ) -> std::io::Result<PathBuf> {
     let path = quirk_baseline_path(addr)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "home dir unavailable"))?;
@@ -401,6 +408,7 @@ pub fn write_quirk_baseline(
     let envelope = BaselineEnvelope {
         oxvif: crate::components::OXVIF_VERSION.to_string(),
         report: report.clone(),
+        ambiguous_keys,
     };
     let json = serde_json::to_string_pretty(&envelope)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -931,6 +939,31 @@ mod tests {
         assert_eq!(b.oxvif.as_deref(), Some("0.15.0"));
         assert_eq!(b.report.device, "cam-1");
         assert!(!b.matches_running_oxvif());
+    }
+
+    #[test]
+    fn a_016_baseline_still_loads_but_requires_a_version_warning() {
+        let envelope = format!(r#"{{ "oxvif": "0.16.0", "report": {LEGACY_BARE} }}"#);
+        let b = parse_quirk_baseline(&envelope).expect("previous baseline must still load");
+        assert_eq!(b.oxvif.as_deref(), Some("0.16.0"));
+        assert_eq!(b.report.device, "cam-1");
+        assert_eq!(b.report.quirks.len(), 1);
+        assert!(!b.matches_running_oxvif());
+        assert!(b.ambiguous_keys.is_empty());
+    }
+
+    #[test]
+    fn baseline_preserves_collisions_hidden_by_structural_filtering() {
+        let envelope = BaselineEnvelope {
+            oxvif: crate::components::OXVIF_VERSION.into(),
+            report: serde_json::from_str(LEGACY_BARE).unwrap(),
+            ambiguous_keys: vec![("same-action".into(), "same-key".into())],
+        };
+        let json = serde_json::to_string(&envelope).unwrap();
+        let saved = parse_quirk_baseline(&json).unwrap();
+        assert!(saved.matches_running_oxvif());
+        assert_eq!(saved.ambiguous_keys, envelope.ambiguous_keys);
+        assert_eq!(saved.report.quirks, envelope.report.quirks);
     }
 
     /// A pre-0.4.0 file still loads — losing a baseline on upgrade would be

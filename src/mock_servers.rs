@@ -27,11 +27,17 @@
 //! [`DeviceEntry`]: crate::state::DeviceEntry
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
-use oxvif::metamorph::{
-    FixtureStore, OpOutcome, OperationDiff, ParseReport, QuirkReport, SurfaceOp,
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, OnceLock,
 };
+
+mod analysis;
+pub(crate) use analysis::{AnalysisView, AnalyzedFixture};
+
+use oxvif::metamorph::{FixtureStore, OpOutcome, SurfaceOp};
+#[cfg(test)]
+use oxvif::metamorph::{OperationDiff, ParseReport, QuirkReport};
 use oxvif::mock::MockServer;
 
 /// A served clone: its bound replay server. The material the Quirks view needs
@@ -45,7 +51,9 @@ struct Served {
 }
 
 /// Everything needed to analyse one device's recorded read surface.
-struct Analysis {
+#[derive(Clone)]
+pub(crate) struct Analysis {
+    pub id: u64,
     /// The recorded exchanges the reports are derived from.
     store: FixtureStore,
     /// Per-operation sweep outcomes — empty for a served clone (which was not
@@ -53,6 +61,26 @@ struct Analysis {
     /// has no PTZ" ([`OpOutcome::SkippedNoData`]) from "the command broke"
     /// ([`OpOutcome::Failed`]).
     sweep: HashMap<SurfaceOp, OpOutcome>,
+}
+
+impl Analysis {
+    pub async fn analyze(self) -> Result<AnalysisView, &'static str> {
+        let details = self.store.diff_details();
+        let report = self.store.diff_against_synthetic();
+        let parsed = self.store.verify_parsing().await;
+        let mut outcomes: Vec<_> = self.sweep.into_iter().collect();
+        outcomes.sort_by_key(|(op, _)| *op);
+        analysis::assemble(self.id, &self.store, details, report, parsed, outcomes)
+    }
+}
+
+/// Clone one immutable generation; all reports must be derived from this copy.
+pub(crate) fn snapshot(addr: &str) -> Option<Analysis> {
+    analyses().lock().unwrap().get(addr).cloned()
+}
+
+pub(crate) fn analysis_id(addr: &str) -> Option<u64> {
+    analyses().lock().unwrap().get(addr).map(|a| a.id)
 }
 
 /// Running clone servers, keyed by their served device-service URL — the same
@@ -126,10 +154,12 @@ pub fn active_labels() -> Vec<String> {
 /// recorded exchanges plus the sweep's per-operation outcomes. This is what
 /// makes [`quirks`] / [`details`] / [`parse_report`] answer for `addr`.
 pub fn set_analysis(addr: &str, store: FixtureStore, sweep: HashMap<SurfaceOp, OpOutcome>) {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     analyses()
         .lock()
         .unwrap()
-        .insert(addr.to_string(), Analysis { store, sweep });
+        .insert(addr.to_string(), Analysis { id, store, sweep });
 }
 
 /// Run a quirk/parse test against the **live** camera at `addr` and publish the
@@ -166,6 +196,7 @@ pub fn forget(addr: &str) {
 ///
 /// The UI renders [`OpOutcome::SkippedNoData`] ("this camera has no such path")
 /// differently from [`OpOutcome::Failed`] ("the command broke").
+#[cfg(test)]
 pub fn sweep_outcomes(addr: &str) -> Vec<(SurfaceOp, OpOutcome)> {
     let mut v: Vec<_> = analyses()
         .lock()
@@ -179,6 +210,7 @@ pub fn sweep_outcomes(addr: &str) -> Vec<(SurfaceOp, OpOutcome)> {
 
 /// The structural quirk report for the device at `addr`, if it has been
 /// recorded (served clone or live test).
+#[cfg(test)]
 pub fn quirks(addr: &str) -> Option<QuirkReport> {
     analyses()
         .lock()
@@ -189,6 +221,7 @@ pub fn quirks(addr: &str) -> Option<QuirkReport> {
 
 /// Per-operation side-by-side diff material (baseline vs recorded XML) for the
 /// device at `addr`, if it has been recorded.
+#[cfg(test)]
 pub fn details(addr: &str) -> Option<Vec<OperationDiff>> {
     analyses()
         .lock()
@@ -199,11 +232,12 @@ pub fn details(addr: &str) -> Option<Vec<OperationDiff>> {
 
 /// The parse-verification report for the device at `addr`, if it has been
 /// recorded — runs oxvif's own typed parser over each recorded response (the
-/// value/type half of the quirk diff, joined to [`quirks`]/[`details`] by
-/// `key_canon`).
+/// value/type half of the quirk diff). The production UI consumes the combined
+/// generation-scoped view; this accessor is retained for the smoke tests.
 ///
 /// Async: the store is cloned out from under the pool lock, then verified with
 /// no lock held.
+#[cfg(test)]
 pub async fn parse_report(addr: &str) -> Option<ParseReport> {
     let store = analyses()
         .lock()
@@ -221,6 +255,81 @@ mod tests {
     use oxvif::metamorph::SurfaceSelection;
     use oxvif::mock::MockServer;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn clone_writes_refresh_replay_only_after_successful_commit() {
+        let real = MockServer::start().await.unwrap();
+        real.device()
+            .modify(|state| state.video_encoders[0].name = "recorded-encoder-not-synthetic".into());
+        let credentials = Credentials::default();
+        let store = api::record_clone(real.device_url(), &credentials, "encoder-write-control")
+            .await
+            .unwrap();
+        let url = serve(store).await.unwrap();
+        let session = oxvif::OnvifSession::builder(&url).build().await.unwrap();
+        let mut config = session
+            .get_video_encoder_configurations()
+            .await
+            .unwrap()
+            .remove(0);
+        let original = config.clone();
+        assert_eq!(original.name, "recorded-encoder-not-synthetic");
+
+        config.resolution.width = 99999;
+        assert!(
+            api::set_video_encoder_configuration(&url, &credentials, &config)
+                .await
+                .is_err()
+        );
+        let reread = session
+            .get_video_encoder_configuration(&config.token)
+            .await
+            .unwrap();
+        assert_eq!(
+            reread, original,
+            "rejected write must retain the recorded read"
+        );
+        assert!(
+            api::system_reboot(&url, &credentials).await.is_err(),
+            "unmodeled reboot must not claim success"
+        );
+
+        config = original;
+        config.name = "committed-encoder-name".into();
+        api::set_video_encoder_configuration(&url, &credentials, &config)
+            .await
+            .unwrap();
+        let reread = session
+            .get_video_encoder_configuration(&config.token)
+            .await
+            .unwrap();
+        assert_eq!(
+            reread.name, config.name,
+            "successful write must retire the old recorded response"
+        );
+        stop(&url);
+    }
+
+    #[tokio::test]
+    async fn replacing_a_snapshot_keeps_in_flight_analysis_isolated() {
+        let addr = "test://analysis-generation";
+        let mut first = FixtureStore::new("first");
+        first.record("urn:test/GetFirst", "<GetFirst/>", "<first/>");
+        set_analysis(addr, first, HashMap::new());
+        let old = snapshot(addr).unwrap();
+        let mut second = FixtureStore::new("second");
+        second.record("urn:test/GetSecond", "<GetSecond/>", "<second/>");
+        set_analysis(addr, second, HashMap::new());
+        let new = snapshot(addr).unwrap();
+        assert_ne!(old.id, new.id);
+        assert_eq!(analysis_id(addr), Some(new.id));
+        let old = old.analyze().await.unwrap();
+        let new = new.analyze().await.unwrap();
+        assert_eq!(old.report.device, "first");
+        assert_eq!(new.report.device, "second");
+        assert_ne!(old.rows[0].id, new.rows[0].id);
+        forget(addr);
+    }
 
     /// The whole oxdm clone loop end-to-end, through the app-layer wrappers:
     /// record a (bound-mock) "camera" via `api::record_clone`, serve the clone

@@ -4,6 +4,10 @@ use crate::state::Locale;
 /// Collect all keys from a locale's get() function by testing known keys.
 /// This is the canonical key list defined in en.rs.
 const ALL_KEYS: &[&str] = &[
+    "quirk_diff_unmatched",
+    "quirk_diff_current",
+    "quirk_diff_previous",
+    "quirk_analysis_failed",
     // Topbar
     "search_placeholder",
     "tooltip_credentials",

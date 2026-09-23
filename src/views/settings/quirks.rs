@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::components::Icon;
 use crate::i18n;
+use crate::mock_servers::{AnalysisView, AnalyzedFixture};
 use crate::state::{Credentials, Ctx, Locale, ToastLevel};
 use crate::util::{line_diff, DiffRow};
 use dioxus::prelude::*;
 use oxvif::metamorph::{
-    OpOutcome, OperationDiff, OperationQuirk, ParseStatus, SurfaceGroup, SurfaceOp,
-    SurfaceSelection,
+    OpOutcome, OperationQuirk, ParseStatus, SurfaceGroup, SurfaceOp, SurfaceSelection,
 };
 
 /// Quirks tab. Two entry states:
@@ -28,7 +28,7 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let mut selected = use_signal(HashSet::<String>::new);
-    let expanded = use_signal(HashSet::<String>::new);
+    let mut expanded = use_signal(HashSet::<String>::new);
     // Result groups whose open/closed state the user flipped away from the
     // default (open iff the group has something wrong in it), so no effect has
     // to seed the set before the first render.
@@ -40,14 +40,26 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     // Re-opens the test panel for a camera that already carries a result.
     let mut panel_open = use_signal(|| false);
 
-    // Parse verification (value/type layer) runs oxvif's own parser over the
-    // recorded responses — async, so it loads via a resource and is joined to
-    // the structural quirks below by `key_canon`.
-    let parse = use_resource(move || {
-        let url = addr.read().clone();
-        // Subscribe to the run counter: a fresh sweep replaces the store.
+    let analysis_id = use_memo(move || {
         let _ = run_seq.read();
-        async move { crate::mock_servers::parse_report(&url).await }
+        crate::mock_servers::analysis_id(&addr.read())
+    });
+    let analysis = use_resource(move || {
+        let _ = analysis_id.read();
+        let snapshot = crate::mock_servers::snapshot(&addr.read());
+        async move {
+            match snapshot {
+                Some(snapshot) => Some((snapshot.id, snapshot.analyze().await)),
+                None => None,
+            }
+        }
+    });
+    use_effect(move || {
+        let _ = addr.read();
+        let _ = analysis_id.read();
+        selected.write().clear();
+        expanded.write().clear();
+        flipped.write().clear();
     });
 
     // Bumped when a baseline is written, so the two hooks below re-read it and
@@ -66,37 +78,49 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         crate::persist::quirk_baseline_saved_at(&addr.read())
     });
 
-    // Cheap pool lookups each render (no PartialEq on the report → no use_memo).
-    let _ = run_seq.read();
-    let report = crate::mock_servers::quirks(&addr.read());
+    // A completed old resource may remain visible while the new one loads.
+    // Accept only the current generation, including for export and baseline save.
+    let current_id = *analysis_id.read();
+    let analysis_read = analysis.read_unchecked();
+    let result = analysis_read
+        .as_ref()
+        .and_then(|r| r.as_ref())
+        .filter(|(id, _)| Some(*id) == current_id)
+        .map(|(_, result)| result);
+    let view = result.and_then(|r| r.as_ref().ok());
+    let report = view.map(|v| &v.report);
     let served = crate::mock_servers::is_served(&addr.read());
     // A served clone replays a store recorded elsewhere; only a real device can
     // be swept, and only it needs the panel.
-    let show_panel = !served && (report.is_none() || *panel_open.read());
+    let show_panel = !served && (current_id.is_none() || *panel_open.read());
 
     // Verdict per operation (for the row badge), the failure list (ops oxvif
     // can't parse — including structurally-clean ones the SOAP diff can't see)
     // and the declined list (ops the *device* refused with a SOAP Fault).
-    let (verdicts, parse_failures, parse_declined) = match &*parse.read_unchecked() {
-        Some(Some(pr)) => (
-            pr.verdicts
+    let (parse_failures, parse_declined) = match view {
+        Some(view) => (
+            view.rows
                 .iter()
-                .map(|v| (v.key_canon.clone(), v.status))
-                .collect::<HashMap<String, ParseStatus>>(),
-            pr.failures().map(verdict_line).collect::<Vec<_>>(),
-            pr.faulted().map(verdict_line).collect::<Vec<_>>(),
+                .map(|r| &r.verdict)
+                .filter(|v| v.status == ParseStatus::Failed)
+                .map(verdict_line)
+                .collect::<Vec<_>>(),
+            view.rows
+                .iter()
+                .map(|r| &r.verdict)
+                .filter(|v| v.status == ParseStatus::Faulted)
+                .map(verdict_line)
+                .collect::<Vec<_>>(),
         ),
-        _ => (HashMap::new(), Vec::new(), Vec::new()),
+        _ => (Vec::new(), Vec::new()),
     };
 
     // Per-group result blocks. 52 operations do not read as a flat list, so
     // rows are bucketed by service zone and each zone collapses.
-    let blocks = report.as_ref().map(|rep| {
+    let blocks = view.map(|view| {
         group_results(
-            crate::mock_servers::details(&addr.read()).unwrap_or_default(),
-            &rep.quirks,
-            &verdicts,
-            crate::mock_servers::sweep_outcomes(&addr.read()),
+            &view.rows,
+            view.outcomes.clone(),
             i18n::t(locale, "quirk_group_other"),
         )
     });
@@ -108,23 +132,29 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         .map(|bs| bs.iter().map(|b| b.problems()).sum())
         .unwrap_or(0);
 
-    let all_keys: Vec<String> = report
-        .as_ref()
-        .map(|r| r.quirks.iter().map(|q| q.key_canon.clone()).collect())
+    let all_keys: Vec<String> = view
+        .map(|v| {
+            v.rows
+                .iter()
+                .filter(|r| r.quirk.is_some())
+                .map(|r| r.id.clone())
+                .collect()
+        })
         .unwrap_or_default();
-    let sel_count = selected.read().len();
+    let sel_count = all_keys
+        .iter()
+        .filter(|id| selected.read().contains(*id))
+        .count();
     let all_selected = !all_keys.is_empty() && all_keys.iter().all(|k| selected.read().contains(k));
 
     let export = move |_| {
-        let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
+        let data = analysis.read();
+        let Some(view) = current_view(&data, crate::mock_servers::analysis_id(&addr.read())) else {
             return;
         };
+        let rep = &view.report;
         let sel = selected.read().clone();
-        let chosen: Vec<&oxvif::metamorph::OperationQuirk> = rep
-            .quirks
-            .iter()
-            .filter(|q| sel.contains(&q.key_canon))
-            .collect();
+        let chosen = view.selected_quirks(&sel);
         if chosen.is_empty() {
             ctx.push_toast(ToastLevel::Info, i18n::t(locale, "quirk_export_nothing"));
             return;
@@ -170,7 +200,15 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
     // The diff only exists once this device has both a baseline and a current
     // report; `QuirkReport::diff` is keyed on `(action, key_canon)`.
     let baseline_diff = match (report.as_ref(), &*quirk_baseline.read()) {
-        (Some(now), Some(prev)) => Some(now.diff(&prev.report)),
+        (Some(now), Some(prev)) => Some(compare_baseline(
+            now,
+            &prev.report,
+            view.map(|v| v.ambiguous_keys())
+                .unwrap_or_default()
+                .into_iter()
+                .chain(prev.ambiguous_keys.clone())
+                .collect(),
+        )),
         _ => None,
     };
 
@@ -191,14 +229,16 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
         .unwrap_or_else(|| i18n::t(locale, "quirk_baseline_oxvif_unknown").to_string());
 
     let save_baseline = move |_| {
-        let Some(rep) = crate::mock_servers::quirks(&addr.read()) else {
+        let data = analysis.read();
+        let Some(view) = current_view(&data, crate::mock_servers::analysis_id(&addr.read())) else {
             return;
         };
+        let rep = &view.report;
         let addr_s = addr.read().clone();
         if addr_s.is_empty() {
             return;
         }
-        match crate::persist::write_quirk_baseline(&addr_s, &rep) {
+        match crate::persist::write_quirk_baseline(&addr_s, rep, view.ambiguous_keys()) {
             Ok(_path) => {
                 baseline_seq += 1;
                 ctx.push_toast(ToastLevel::Success, i18n::t(locale, "quirk_baseline_saved"));
@@ -215,6 +255,12 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
 
             if show_panel {
                 LiveTestPanel { addr, creds, has_result: report.is_some(), run_seq, panel_open }
+            }
+
+            if matches!(result, Some(Err(_))) {
+                div { class: "health-row health-fail", {i18n::t(locale, "quirk_analysis_failed")} }
+            } else if current_id.is_some() && view.is_none() {
+                div { class: "health-empty", {i18n::t(locale, "loading")} }
             }
 
             if let Some(rep) = report.as_ref() {
@@ -352,7 +398,7 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                 // because "did anything change?" is the question a returning
                 // tester has; the 52-row list answers "what is wrong today".
                 if let Some(d) = baseline_diff.as_ref() {
-                    QuirkDiffSection { locale, diff: d.clone() }
+                    QuirkDiffSection { locale, comparison: d.clone() }
                 }
 
                 // Nothing wrong anywhere: keep the one-line verdict rather than
@@ -385,8 +431,9 @@ pub fn QuirkTab(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element {
                                             div { class: "quirk-list",
                                                 for row in b.rows.iter().filter(|r| show_all || r.problem) {
                                                     QuirkRow {
-                                                        key: "{row.key_canon}",
-                                                        key_canon: row.key_canon.clone(),
+                                                        key: "{row.id}",
+                                                        row_id: row.id.clone(),
+                                                        selectable: row.selectable,
                                                         op: row.op.clone(),
                                                         added_count: row.added,
                                                         removed_count: row.removed,
@@ -752,7 +799,59 @@ fn LiveProgress(
     }
 }
 
+type LoadedAnalysis = Option<Option<(u64, Result<AnalysisView, &'static str>)>>;
+
+fn current_view(data: &LoadedAnalysis, current: Option<u64>) -> Option<&AnalysisView> {
+    data.as_ref()?
+        .as_ref()
+        .filter(|(id, _)| Some(*id) == current)?
+        .1
+        .as_ref()
+        .ok()
+}
+
 // ── Diff vs saved baseline ──────────────────────────────────────────────────
+
+#[derive(Clone, PartialEq)]
+struct BaselineComparison {
+    diff: oxvif::metamorph::QuirkDiff,
+    unmatched_now: Vec<OperationQuirk>,
+    unmatched_before: Vec<OperationQuirk>,
+}
+
+fn compare_baseline(
+    now: &oxvif::metamorph::QuirkReport,
+    before: &oxvif::metamorph::QuirkReport,
+    known_ambiguous: Vec<(String, String)>,
+) -> BaselineComparison {
+    let mut ambiguous: HashSet<_> = known_ambiguous.iter().map(|(a, k)| (a, k)).collect();
+    for report in [now, before] {
+        let mut seen = HashSet::new();
+        for q in &report.quirks {
+            let key = (&q.action, &q.key_canon);
+            if !seen.insert(key) {
+                ambiguous.insert(key);
+            }
+        }
+    }
+    let split = |report: &oxvif::metamorph::QuirkReport| {
+        let (unmatched, unique): (Vec<_>, Vec<_>) = report
+            .quirks
+            .iter()
+            .cloned()
+            .partition(|q| ambiguous.contains(&(&q.action, &q.key_canon)));
+        let mut filtered = report.clone();
+        filtered.quirks = unique;
+        (unmatched, filtered)
+    };
+    let (unmatched_now, unique_now) = split(now);
+    let (unmatched_before, unique_before) = split(before);
+    BaselineComparison {
+        diff: unique_now.diff(&unique_before),
+        unmatched_now,
+        unmatched_before,
+    }
+}
 
 /// What this device's structural quirks gained, lost or reshaped since the
 /// saved baseline — [`oxvif::metamorph::QuirkDiff`].
@@ -763,11 +862,24 @@ fn LiveProgress(
 /// drifted before and drifts now, but not in the same places — so it carries
 /// the net path counts rather than only the name.
 #[component]
-fn QuirkDiffSection(locale: Locale, diff: oxvif::metamorph::QuirkDiff) -> Element {
+fn QuirkDiffSection(locale: Locale, comparison: BaselineComparison) -> Element {
+    let diff = &comparison.diff;
+    let unmatched = !comparison.unmatched_now.is_empty() || !comparison.unmatched_before.is_empty();
     rsx! {
         div { class: "health-group health-diff",
             div { class: "health-group-title", {i18n::t(locale, "quirk_diff_title")} }
-            if diff.is_empty() {
+            if unmatched {
+                div { class: "health-row health-warn", {i18n::t(locale, "quirk_diff_unmatched")} }
+                details {
+                    summary { {i18n::t(locale, "quirk_diff_current")} }
+                    pre { class: "log-viewer-pre", {serde_json::to_string_pretty(&comparison.unmatched_now).unwrap_or_default()} }
+                }
+                details {
+                    summary { {i18n::t(locale, "quirk_diff_previous")} }
+                    pre { class: "log-viewer-pre", {serde_json::to_string_pretty(&comparison.unmatched_before).unwrap_or_default()} }
+                }
+            }
+            if diff.is_empty() && !unmatched {
                 div { class: "health-row health-pass",
                     span { class: "health-row-status",
                         Icon { name: "check", size: 14 }
@@ -829,7 +941,8 @@ fn QuirkDiffRow(icon: &'static str, cls: &'static str, label: String, ops: Strin
 
 /// One recorded operation in the result list.
 struct ResultRow {
-    key_canon: String,
+    id: String,
+    selectable: bool,
     op: String,
     added: usize,
     removed: usize,
@@ -891,17 +1004,10 @@ impl GroupBlock {
 /// no zone (`GetCapabilities`, which the session build issues and no
 /// `SurfaceOp` covers) lands in a trailing "other" block.
 fn group_results(
-    details: Vec<OperationDiff>,
-    quirks: &[OperationQuirk],
-    verdicts: &HashMap<String, ParseStatus>,
+    rows: &[AnalyzedFixture],
     outcomes: Vec<(SurfaceOp, OpOutcome)>,
     other_label: &'static str,
 ) -> Vec<GroupBlock> {
-    let quirk_by_key: HashMap<&str, &OperationQuirk> = quirks
-        .iter()
-        .map(|q| (q.key_canon.as_str(), q))
-        .collect::<HashMap<_, _>>();
-
     let mut blocks: Vec<GroupBlock> = SurfaceGroup::ALL
         .iter()
         .map(|g| GroupBlock {
@@ -921,9 +1027,10 @@ fn group_results(
             .unwrap_or(other)
     };
 
-    for d in details {
-        let q = quirk_by_key.get(d.key_canon.as_str());
-        let parse = verdicts.get(&d.key_canon).copied();
+    for row in rows {
+        let d = &row.detail;
+        let q = row.quirk.as_ref();
+        let parse = Some(row.verdict.status);
         blocks[index_of(group_of_action(&d.action))]
             .rows
             .push(ResultRow {
@@ -931,10 +1038,11 @@ fn group_results(
                 added: q.map(|q| q.only_in_clone.len()).unwrap_or(0),
                 removed: q.map(|q| q.only_in_synthetic.len()).unwrap_or(0),
                 problem: q.is_some() || parse == Some(ParseStatus::Failed),
-                key_canon: d.key_canon,
+                id: row.id.clone(),
+                selectable: q.is_some(),
                 parse,
-                baseline: d.baseline_xml,
-                clone_xml: d.clone_xml,
+                baseline: d.baseline_xml.clone(),
+                clone_xml: d.clone_xml.clone(),
             });
     }
 
@@ -954,7 +1062,8 @@ fn group_results(
 /// side-by-side (baseline | clone) line diff of the two SOAP responses.
 #[component]
 fn QuirkRow(
-    key_canon: String,
+    row_id: String,
+    selectable: bool,
     op: String,
     added_count: usize,
     removed_count: usize,
@@ -966,10 +1075,10 @@ fn QuirkRow(
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let is_sel = selected.read().contains(&key_canon);
-    let is_exp = expanded.read().contains(&key_canon);
-    let k_sel = key_canon.clone();
-    let k_exp = key_canon.clone();
+    let is_sel = selected.read().contains(&row_id);
+    let is_exp = expanded.read().contains(&row_id);
+    let k_sel = row_id.clone();
+    let k_exp = row_id.clone();
 
     rsx! {
         div { class: "quirk-item",
@@ -977,6 +1086,7 @@ fn QuirkRow(
                 input {
                     r#type: "checkbox",
                     checked: is_sel,
+                    disabled: !selectable,
                     onchange: move |_| {
                         let mut s = selected.write();
                         if !s.remove(&k_sel) {
@@ -1196,13 +1306,24 @@ fn join_ops(ops: &[SurfaceOp]) -> String {
 mod tests {
     use super::*;
 
-    fn diff(action: &str, key: &str) -> OperationDiff {
-        OperationDiff {
-            action: action.to_string(),
-            key_canon: key.to_string(),
-            baseline_xml: String::new(),
-            clone_xml: String::new(),
-            differs: false,
+    fn row(action: &str, key: &str, status: ParseStatus) -> AnalyzedFixture {
+        AnalyzedFixture {
+            id: key.into(),
+            quirk: None,
+            verdict: oxvif::metamorph::ParseVerdict {
+                action: action.into(),
+                key_canon: key.into(),
+                status,
+                error: None,
+                value: None,
+            },
+            detail: oxvif::metamorph::OperationDiff {
+                action: action.to_string(),
+                key_canon: key.to_string(),
+                baseline_xml: String::new(),
+                clone_xml: String::new(),
+                differs: false,
+            },
         }
     }
 
@@ -1403,12 +1524,11 @@ mod tests {
     #[test]
     fn only_failures_count_as_problems() {
         let blocks = group_results(
-            vec![diff(
+            &[row(
                 "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
                 "k1",
+                ParseStatus::Parsed,
             )],
-            &[],
-            &HashMap::new(),
             vec![
                 (SurfaceOp::GetPtzPresets, OpOutcome::SkippedNoData),
                 (SurfaceOp::GetPtzStatus, OpOutcome::SkippedPrerequisite),
@@ -1440,21 +1560,89 @@ mod tests {
     /// declining with a SOAP Fault is not.
     #[test]
     fn a_declined_operation_is_not_a_problem() {
-        let verdicts = HashMap::from([
-            ("k1".to_string(), ParseStatus::Failed),
-            ("k2".to_string(), ParseStatus::Faulted),
-            ("k3".to_string(), ParseStatus::Parsed),
-        ]);
         let action = "http://www.onvif.org/ver10/device/wsdl/GetHostname";
         let blocks = group_results(
-            vec![diff(action, "k1"), diff(action, "k2"), diff(action, "k3")],
-            &[],
-            &verdicts,
+            &[
+                row(action, "k1", ParseStatus::Failed),
+                row(action, "k2", ParseStatus::Faulted),
+                row(action, "k3", ParseStatus::Parsed),
+            ],
             Vec::new(),
             "Other",
         );
         let identity = &blocks[0];
         assert_eq!(identity.label, SurfaceGroup::Identity.label());
         assert_eq!(identity.problems(), 1, "only the Failed verdict");
+    }
+
+    #[test]
+    fn colliding_rows_do_not_mark_a_clean_sibling_as_a_problem() {
+        let action = "http://www.onvif.org/ver10/media/wsdl/GetProfiles";
+        let mut changed = row(action, "shared", ParseStatus::Parsed);
+        changed.id = "1:0".into();
+        changed.detail.differs = true;
+        changed.quirk = Some(quirk(action, &["VendorExtension"], &[]));
+        let mut clean = row(action, "shared", ParseStatus::Parsed);
+        clean.id = "1:1".into();
+        let blocks = group_results(&[changed, clean], Vec::new(), "Other");
+        assert_eq!(blocks[0].rows.len(), 2);
+        assert_eq!(blocks[0].problems(), 1);
+        assert!(blocks[0].rows[0].selectable);
+        assert!(!blocks[0].rows[1].selectable);
+        assert_ne!(blocks[0].rows[0].id, blocks[0].rows[1].id);
+    }
+
+    #[test]
+    fn ambiguous_baselines_preserve_observations_without_claiming_changes() {
+        let q = quirk("urn:test/GetProfiles", &["A"], &[]);
+        let ambiguous = report(vec![q.clone(), q.clone()]);
+        let result = compare_baseline(&ambiguous, &ambiguous, vec![]);
+        assert!(result.diff.is_empty());
+        assert_eq!(result.unmatched_now, ambiguous.quirks);
+        assert_eq!(result.unmatched_before, ambiguous.quirks);
+        // Ambiguity on either side also isolates a singleton on the other side.
+        for (now, before) in [
+            (report(vec![q.clone()]), ambiguous.clone()),
+            (ambiguous.clone(), report(vec![q.clone()])),
+        ] {
+            let result = compare_baseline(&now, &before, vec![]);
+            assert!(result.diff.is_empty());
+            assert_eq!(result.unmatched_now, now.quirks);
+            assert_eq!(result.unmatched_before, before.quirks);
+        }
+        let different = quirk("urn:test/GetHostname", &["B"], &[]);
+        let result = compare_baseline(
+            &report(vec![q.clone(), q, different.clone()]),
+            &ambiguous,
+            vec![],
+        );
+        assert_eq!(result.diff.appeared, vec![different]);
+    }
+
+    #[test]
+    fn old_async_results_cannot_be_used_after_retest_or_device_switch() {
+        let loaded = Some(Some((
+            10,
+            Ok(AnalysisView {
+                report: report(Vec::new()),
+                rows: Vec::new(),
+                outcomes: Vec::new(),
+            }),
+        )));
+        assert!(current_view(&loaded, Some(10)).is_some());
+        assert!(current_view(&loaded, Some(11)).is_none());
+        assert!(current_view(&loaded, None).is_none());
+        assert!(current_view(&Some(Some((10, Err("mismatch")))), Some(10)).is_none());
+    }
+
+    #[test]
+    fn full_store_collision_metadata_prevents_pairing_filtered_singletons() {
+        let q = quirk("urn:test/GetProfiles", &["A"], &[]);
+        let known = vec![(q.action.clone(), q.key_canon.clone())];
+        let report = report(vec![q.clone()]);
+        let result = compare_baseline(&report, &report, known);
+        assert!(result.diff.is_empty());
+        assert_eq!(result.unmatched_now, vec![q.clone()]);
+        assert_eq!(result.unmatched_before, vec![q]);
     }
 }

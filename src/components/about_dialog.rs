@@ -8,7 +8,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// oxvif version. Bumped manually when the Cargo.toml dependency moves —
 /// `cargo metadata` lookup at runtime would mean shipping cargo, which
 /// the single-binary release explicitly avoids.
-pub(crate) const OXVIF_VERSION: &str = "0.16.0";
+pub(crate) const OXVIF_VERSION: &str = "0.17.0";
 const REPO_URL: &str = "https://github.com/smiti1642/oxdm";
 const SUPPORT_URL: &str = "https://buymeacoffee.com/smiti1642";
 

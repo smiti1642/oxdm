@@ -6,6 +6,35 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Upgrade the registry dependency to oxvif 0.17.0, including the About version
+  and Quirks baseline stamp. Convert the existing integer H.265 encoder rate to
+  Media2's floating-point type; fractional FPS editing remains separate work.
+- Health checks inherit oxvif's bounded, image-signature-checked snapshot
+  downloader and corrected Digest handling. These changes apply to diagnostics;
+  thumbnails and MJPEG still use OxDM's separate downloader. Health snapshots
+  require the device host, verified TLS and no redirects or HTTPS downgrade.
+- Camera clones follow oxvif 0.17's stricter write and replay contracts.
+  Unmodeled effects such as reboot return a refusal instead of a success receipt.
+  Back up recordings before downgrading: older readers can collapse distinct
+  recordings that share a canonical key.
+- Update rustls to 0.23.45 for RUSTSEC-2026-0285 and its required compatible
+  TLS dependencies. Five existing dependency warnings remain; see the upgrade
+  plan and audit records for their scope.
+
+### Fixed
+- Quirks now associates XML, parse verdicts, issue counts and selected exports
+  by recording ordinal within one immutable analysis generation. Distinct
+  recordings sharing a canonical key no longer overwrite each other's results
+  or share selection/expansion state. Stale analysis results cannot be exported
+  or saved as the current device's baseline.
+- Baseline comparisons retain ambiguous observations separately instead of
+  claiming they appeared or resolved. New baselines also record collisions
+  hidden by structurally clean responses; old stamped and unstamped baselines
+  still load. Re-saving is explicit, and cross-version warnings remain visible.
+
 ## [0.4.1] - 2026-09-09
 
 Built on oxvif 0.16.0. Discovery reports returned I/O errors and keeps known

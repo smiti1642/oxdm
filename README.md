@@ -17,6 +17,11 @@ and keeps a known device's address when reordered discovery responses still
 advertise it. It also updates dependencies identified by the security audit.
 See the [changelog](./CHANGELOG.md) for details.
 
+The unreleased source checkout now uses oxvif 0.17.0, with collision-aware
+Quirks rows and baseline comparisons. See the [upgrade record](docs/oxvif-0.17-upgrade-plan.md)
+for verification and remaining manual acceptance; published 0.4.1 bundles still
+use oxvif 0.16.0.
+
 ## Contents
 
 - [Installation](#installation)
@@ -79,7 +84,7 @@ cargo install --git https://github.com/smiti1642/oxdm
 Either way the installed command is **`oxdm`** (the crate is published as
 `oxvif-device-manager` because the shorter name was already taken).
 
-oxvif 0.16 requires Rust 1.88 or newer. The complete OxDM 0.4.1 build was
+oxvif 0.16 and 0.17 require Rust 1.88 or newer. The complete OxDM 0.4.1 build was
 validated on Rust 1.97.0; Rust 1.88 has not been verified for the full desktop
 dependency graph. `--locked` uses the dependency versions shipped with the crate.
 
@@ -213,10 +218,19 @@ alarming:
   drift, in the same places"* is the answer you want most of the time. Firmware
   upgrades are when it stops saying that.
 
-Quirks baselines record the oxvif version that measured them. Baselines saved
-with oxvif 0.15 still load after this upgrade, with a version-mismatch warning:
-the library's reference may have changed even when the camera has not. Review
-the current result and save a new baseline to compare future runs on oxvif 0.16.
+Quirks baselines record the oxvif version that measured them. Older baselines
+still load, with a version-mismatch warning when appropriate: the library's
+reference may have changed even when the camera has not. Review the current
+result and explicitly save a new baseline to compare future runs on the same
+version. The unreleased 0.17 integration keeps ambiguous observations separate
+from newly appearing or resolved differences. New baselines preserve known key
+collisions even when only one of the recorded responses has structural drift.
+Older baselines lack that extra collision information; it cannot be reconstructed
+from their filtered report alone.
+
+Back up clone recordings before downgrading: older oxvif readers may collapse
+distinct requests sharing a canonical key when re-saving `fixtures.json`.
+Older OxDM builds also discard the new baseline collision metadata on re-save.
 
 Expanding an operation gives the git-style side-by-side: `oxvif` reference on the
 left, the camera on the right, with word-level highlighting on what differs.

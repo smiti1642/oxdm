@@ -1996,7 +1996,9 @@ pub async fn set_video_encoder_configuration(
 /// sub-struct) and drops `encoding_interval` from rate control —
 /// those drop on the wire. Multicast / session-timeout /
 /// guaranteed-frame-rate aren't carried in Media2's struct here either.
-fn to_video_encoder_configuration2(cfg: &VideoEncoderConfiguration) -> VideoEncoderConfiguration2 {
+pub(crate) fn to_video_encoder_configuration2(
+    cfg: &VideoEncoderConfiguration,
+) -> VideoEncoderConfiguration2 {
     let (gov_length, profile) = match cfg.encoding {
         VideoEncoding::H264 => cfg
             .h264
@@ -2018,7 +2020,7 @@ fn to_video_encoder_configuration2(cfg: &VideoEncoderConfiguration) -> VideoEnco
         resolution: cfg.resolution,
         quality: cfg.quality,
         rate_control: cfg.rate_control.as_ref().map(|rc| VideoRateControl2 {
-            frame_rate_limit: rc.frame_rate_limit,
+            frame_rate_limit: rc.frame_rate_limit as f32,
             bitrate_limit: rc.bitrate_limit,
         }),
         gov_length,
