@@ -134,14 +134,14 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                         let addr = addr.read().clone();
                         let creds = creds.read().clone();
                         let toast_ctx = ctx;
-                        let default_name = format!("{}.jpg", crate::util::sanitize_filename(&token));
+                        let default_stem = crate::util::sanitize_filename(&token);
                         let saved_label = i18n::t(locale, "snapshot_saved").to_string();
                         let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
                         spawn(async move {
                             let snap = match crate::api::get_snapshot_uri(&addr, &creds, &token).await {
                                 Ok(s) => {
                                     let url = crate::api::resolve_snapshot_url(&addr, &s.uri);
-                                    match crate::api::fetch_snapshot_data_uri(&url, &creds).await {
+                                    match crate::api::fetch_snapshot(&addr, &url, &creds).await {
                                         Ok(uri) => uri,
                                         Err(e) => {
                                             toast_ctx.push_toast(crate::state::ToastLevel::Error, format!("{failed_label}: {e}"));
@@ -155,16 +155,16 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                                 }
                             };
                             let Some(handle) = rfd::AsyncFileDialog::new()
-                                .set_file_name(&default_name)
-                                .add_filter("JPEG", &["jpg", "jpeg"])
+                                .set_file_name(format!("{default_stem}.{}", snap.format))
+                                .add_filter(snap.format.to_uppercase(), &[snap.format])
                                 .save_file()
                                 .await
                             else {
                                 return;
                             };
                             let path = handle.path().to_path_buf();
-                            match crate::util::decode_jpeg_data_uri(&snap) {
-                                Some(bytes) => match std::fs::write(&path, &bytes) {
+                            let bytes = snap.bytes;
+                            match std::fs::write(&path, &bytes) {
                                     Ok(()) => {
                                         tracing::info!(path = %path.display(), bytes = bytes.len(), "live snapshot saved");
                                         toast_ctx.push_toast(crate::state::ToastLevel::Success, format!("{}: {}", saved_label, path.display()));
@@ -173,8 +173,6 @@ pub fn LiveVideoView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Elem
                                         tracing::warn!(error = %e, path = %path.display(), "live snapshot save failed");
                                         toast_ctx.push_toast(crate::state::ToastLevel::Error, format!("{failed_label}: {e}"));
                                     }
-                                },
-                                None => toast_ctx.push_toast(crate::state::ToastLevel::Error, failed_label),
                             }
                         });
                     },

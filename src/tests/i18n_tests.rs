@@ -91,6 +91,7 @@ const ALL_KEYS: &[&str] = &[
     "ve_profile",
     "ve_save",
     "ve_saved",
+    "ve_invalid_fps",
     "osd_add",
     "osd_empty",
     "osd_create",

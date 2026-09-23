@@ -76,21 +76,9 @@ pub fn AboutDialog(open: Signal<bool>) -> Element {
                             {i18n::t(locale, "about_log_takes_effect")}
                         }
                     }
-                    label { class: "about-log-toggle",
-                        input {
-                            r#type: "checkbox",
-                            checked: *ctx.tls_strict.read(),
-                            onchange: {
-                                let mut sig = ctx.tls_strict;
-                                move |evt: Event<FormData>| sig.set(evt.checked())
-                            },
-                        }
-                        span { class: "about-log-toggle-text",
-                            {i18n::t(locale, "about_tls_strict")}
-                        }
-                        span { class: "about-log-toggle-hint",
-                            {i18n::t(locale, "about_tls_strict_hint")}
-                        }
+                    div { class: "about-log-toggle",
+                        span { class: "about-log-toggle-text", {i18n::t(locale, "about_tls_strict")} }
+                        span { class: "about-log-toggle-hint", {i18n::t(locale, "about_tls_strict_hint")} }
                     }
 
                     div { class: "about-shortcuts",

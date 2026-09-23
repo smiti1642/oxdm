@@ -3,7 +3,7 @@ use crate::components::TabError;
 use crate::state::{Credentials, Ctx, ToastLevel};
 use crate::{api, i18n};
 use dioxus::prelude::*;
-use oxvif::{VideoEncoderConfiguration, VideoEncoderConfigurationOptions, VideoEncoding};
+use oxvif::VideoEncoding;
 
 /// Encoder (stream) settings for the selected profile, embedded inside
 /// the Imaging view so image quality and stream parameters live in one
@@ -22,28 +22,7 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
         let addr = addr.read().clone();
         let creds = creds.read().clone();
         let profile = profile_sig.read().clone();
-        async move {
-            let profiles = api::get_profiles(&addr, &creds).await?;
-            // Prefer the selected profile's encoder; fall back to the first
-            // profile that has one so the section isn't blank when
-            // selected_profile is stale. `pick` reports which happened —
-            // on a multi-sensor camera the fallback is lens 0's encoder and
-            // says nothing about it unless the view does.
-            let pick = api::pick_channel(&profiles, profile.as_deref(), api::ChannelKind::Encoder)
-                .ok_or_else(|| "no_encoder".to_string())?;
-            let cfg = api::get_video_encoder_configuration(&addr, &creds, &pick.token).await?;
-            let opts = api::get_video_encoder_configuration_options(&addr, &creds, &pick.token)
-                .await
-                .ok();
-            Ok::<
-                (
-                    api::ChannelPick,
-                    VideoEncoderConfiguration,
-                    Option<VideoEncoderConfigurationOptions>,
-                ),
-                String,
-            >((pick, cfg, opts))
-        }
+        async move { api::get_encoder_settings(&addr, &creds, profile.as_deref()).await }
     });
 
     // Read once, up here: the note cannot live inside the match arm below,
@@ -51,7 +30,7 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
     // allows a key only on the first node of a block. That key is load-bearing
     // (see the comment where it is built), so the note moves instead.
     let fell_back_to = match &*data.read_unchecked() {
-        Some(Ok((pick, _, _))) if pick.fell_back => Some(pick.token.clone()),
+        Some(Ok((pick, _))) if pick.fell_back => Some(pick.token.clone()),
         _ => None,
     };
 
@@ -71,25 +50,25 @@ pub fn VideoEncoderSection(addr: ReadSignal<String>, creds: Memo<Credentials>) -
                 TabError { error: e.clone(), on_retry: move |_| data.restart() }
             },
             // `pick` is consumed above, where the fallback note is built.
-            Some(Ok((_pick, cfg, opts))) => {
+            Some(Ok((_pick, settings))) => {
+                let cfg = &settings.config;
                 // Content-based key: a successful Apply refetches, and if
                 // the fetched values differ the key changes and the form
                 // remounts/reseeds. So when a camera silently ignores a
                 // change, the form reverts to the camera's real value and
                 // the user can see the edit didn't take.
-                let fps = cfg.rate_control.as_ref().map(|r| r.frame_rate_limit).unwrap_or(0);
+                let fps = cfg.rate_control.as_ref().map(|r| r.frame_rate_limit).unwrap_or(0.0);
                 let kbps = cfg.rate_control.as_ref().map(|r| r.bitrate_limit).unwrap_or(0);
                 let key = format!(
-                    "{}|{}x{}|{}|{}|{}",
-                    cfg.token, cfg.resolution.width, cfg.resolution.height, fps, kbps, cfg.quality
+                    "{}|{}|{}x{}|{}|{}|{}|{:?}|{:?}|{:?}",
+                    settings.is_media2(), cfg.token, cfg.resolution.width, cfg.resolution.height, fps, kbps, cfg.quality, cfg.gov_length, cfg.profile, settings.options
                 );
                 rsx! {
                     VideoEncoderForm {
                         key: "{key}",
                         addr,
                         creds,
-                        config: cfg.clone(),
-                        options: opts.clone(),
+                        settings: settings.clone(),
                         on_saved: move |_| data.restart(),
                     }
                 }
@@ -116,76 +95,46 @@ fn encoding_label(enc: &VideoEncoding) -> String {
 fn VideoEncoderForm(
     addr: ReadSignal<String>,
     creds: Memo<Credentials>,
-    config: VideoEncoderConfiguration,
-    options: Option<VideoEncoderConfigurationOptions>,
+    settings: ReadSignal<api::EncoderSettings>,
     on_saved: EventHandler<()>,
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
 
-    // Per-encoding option subset, flattened into plain locals so the rsx
-    // below doesn't branch on the differently-typed h264/h265/jpeg structs.
-    let res_options: Vec<String> = match (&config.encoding, options.as_ref()) {
-        (VideoEncoding::H264, Some(o)) => o
-            .h264
-            .as_ref()
-            .map(|h| h.resolutions.iter().map(|r| r.to_string()).collect())
-            .unwrap_or_default(),
-        (VideoEncoding::H265, Some(o)) => o
-            .h265
-            .as_ref()
-            .map(|h| h.resolutions.iter().map(|r| r.to_string()).collect())
-            .unwrap_or_default(),
-        (VideoEncoding::Jpeg, Some(o)) => o
-            .jpeg
-            .as_ref()
-            .map(|j| j.resolutions.iter().map(|r| r.to_string()).collect())
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    let frame_rate_range: Option<(i32, i32)> = match (&config.encoding, options.as_ref()) {
-        (VideoEncoding::H264, Some(o)) => o.h264.as_ref().and_then(|h| h.frame_rate_range),
-        (VideoEncoding::H265, Some(o)) => o.h265.as_ref().and_then(|h| h.frame_rate_range),
-        (VideoEncoding::Jpeg, Some(o)) => o.jpeg.as_ref().and_then(|j| j.frame_rate_range),
-        _ => None,
-    }
-    .map(|r| (r.min, r.max));
-    let bitrate_range: Option<(i32, i32)> = match (&config.encoding, options.as_ref()) {
-        (VideoEncoding::H264, Some(o)) => o.h264.as_ref().and_then(|h| h.bitrate_range),
-        (VideoEncoding::H265, Some(o)) => o.h265.as_ref().and_then(|h| h.bitrate_range),
-        _ => None,
-    }
-    .map(|r| (r.min, r.max));
-    let gov_range: Option<(i32, i32)> = match (&config.encoding, options.as_ref()) {
-        (VideoEncoding::H264, Some(o)) => o.h264.as_ref().and_then(|h| h.gov_length_range),
-        (VideoEncoding::H265, Some(o)) => o.h265.as_ref().and_then(|h| h.gov_length_range),
-        _ => None,
-    }
-    .map(|r| (r.min, r.max));
-    let profiles: Vec<String> = match (&config.encoding, options.as_ref()) {
-        (VideoEncoding::H264, Some(o)) => o.h264.as_ref().map(|h| h.profiles.clone()),
-        (VideoEncoding::H265, Some(o)) => o.h265.as_ref().map(|h| h.profiles.clone()),
-        _ => None,
-    }
-    .unwrap_or_default();
-    let quality_range: Option<(f32, f32)> = options
-        .as_ref()
-        .and_then(|o| o.quality_range)
-        .map(|r| (r.min, r.max));
-
+    let settings = settings.read();
+    let config = &settings.config;
+    let options = &settings.options;
+    let res_options: Vec<String> = options
+        .resolutions
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let frame_rate_range = options.frame_rate_range.map(|r| (r.min, r.max));
+    let bitrate_range = options.bitrate_range.map(|r| (r.min, r.max));
+    let gov_range = options.gov_length_range.map(|r| (r.min, r.max));
+    let quality_range = options.quality_range.map(|r| (r.min, r.max));
+    let profiles = options.profiles.clone();
     let is_video_codec = matches!(config.encoding, VideoEncoding::H264 | VideoEncoding::H265);
     let has_rate_control = config.rate_control.is_some();
-    let has_gov = match config.encoding {
-        VideoEncoding::H264 => config.h264.is_some(),
-        VideoEncoding::H265 => config.h265.is_some(),
-        _ => false,
-    };
-    let codec_profile = match config.encoding {
-        VideoEncoding::H264 => config.h264.as_ref().map(|h| h.profile.clone()),
-        VideoEncoding::H265 => config.h265.as_ref().map(|h| h.profile.clone()),
-        _ => None,
-    };
+    let has_gov = is_video_codec && config.gov_length.is_some();
+    let codec_profile = config.profile.clone();
     let has_profile = codec_profile.is_some() && !profiles.is_empty();
+    let fractional_fps = settings.is_media2();
+    let mut frame_rate_choices: Vec<String> = options
+        .frame_rates
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    if let Some(rc) = config
+        .rate_control
+        .as_ref()
+        .filter(|_| !frame_rate_choices.is_empty())
+    {
+        let current = rc.frame_rate_limit.to_string();
+        if !frame_rate_choices.contains(&current) {
+            frame_rate_choices.insert(0, current);
+        }
+    }
 
     // Current resolution must always be selectable even if the camera
     // didn't itemise it in the options list.
@@ -212,26 +161,15 @@ fn VideoEncoderForm(
             .map(|rc| rc.bitrate_limit.to_string())
             .unwrap_or_default()
     });
-    let mut gov = use_signal(|| match config.encoding {
-        VideoEncoding::H264 => config
-            .h264
-            .as_ref()
-            .map(|h| h.gov_length.to_string())
-            .unwrap_or_default(),
-        VideoEncoding::H265 => config
-            .h265
-            .as_ref()
-            .map(|h| h.gov_length.to_string())
-            .unwrap_or_default(),
-        _ => String::new(),
-    });
+    let mut gov = use_signal(|| config.gov_length.map(|g| g.to_string()).unwrap_or_default());
     let mut quality = use_signal(|| config.quality.to_string());
     let mut profile = use_signal(|| codec_profile.clone().unwrap_or_default());
     let saving = use_signal(|| false);
 
     let res_cur = resolution.read().clone();
     let prof_cur = profile.read().clone();
-    let config_for_save = config.clone();
+    let fps_valid = !has_rate_control || settings.parse_frame_rate(&frame_rate.read()).is_some();
+    let settings_for_save = settings.clone();
 
     rsx! {
         div { class: "imaging-row",
@@ -254,13 +192,28 @@ fn VideoEncoderForm(
         if has_rate_control {
             div { class: "imaging-row",
                 span { class: "imaging-label", {i18n::t(locale, "ve_frame_rate")} }
-                input {
-                    class: "imaging-select",
-                    r#type: "number",
-                    min: frame_rate_range.map(|(min, _)| min.to_string()),
-                    max: frame_rate_range.map(|(_, max)| max.to_string()),
-                    value: "{frame_rate}",
-                    oninput: move |e: Event<FormData>| frame_rate.set(e.value()),
+                if frame_rate_choices.is_empty() {
+                    input {
+                        class: "imaging-select",
+                        r#type: "number",
+                        step: if fractional_fps { "any" } else { "1" },
+                        min: frame_rate_range.map(|(min, _)| min.to_string()).unwrap_or_else(|| "0".into()),
+                        max: frame_rate_range.map(|(_, max)| max.to_string()),
+                        value: "{frame_rate}",
+                        oninput: move |e: Event<FormData>| frame_rate.set(e.value()),
+                    }
+                } else {
+                    select {
+                        class: "imaging-select",
+                        value: "{frame_rate}",
+                        onchange: move |e: Event<FormData>| frame_rate.set(e.value()),
+                        for fps in frame_rate_choices {
+                            option { value: "{fps}", "{fps}" }
+                        }
+                    }
+                }
+                if !fps_valid {
+                    span { class: "tab-error", {i18n::t(locale, "ve_invalid_fps")} }
                 }
             }
         }
@@ -323,14 +276,14 @@ fn VideoEncoderForm(
         div { class: "imaging-footer",
             button {
                 class: "btn btn-md btn-primary",
-                disabled: *saving.read(),
+                disabled: *saving.read() || !fps_valid,
                 onclick: move |_| {
                     let mut saving = saving;
-                    if *saving.read() { return; }
+                    if *saving.read() || !fps_valid { return; }
                     saving.set(true);
                     let addr_s = addr.read().clone();
                     let creds_s = creds.read().clone();
-                    let mut cfg = config_for_save.clone();
+                    let mut settings = settings_for_save.clone();
                     let resolution_v = resolution.read().clone();
                     let frame_rate_v = frame_rate.read().clone();
                     let bitrate_v = bitrate.read().clone();
@@ -340,6 +293,13 @@ fn VideoEncoderForm(
                     let on_saved = on_saved;
 
                     spawn(async move {
+                        let fps = settings.parse_frame_rate(&frame_rate_v);
+                        if settings.config.rate_control.is_some() && fps.is_none() {
+                            ctx.push_toast(ToastLevel::Error, i18n::t(locale, "ve_invalid_fps"));
+                            saving.set(false);
+                            return;
+                        }
+                        let cfg = &mut settings.config;
                         if let Some((w, h)) = parse_resolution(&resolution_v) {
                             cfg.resolution.width = w;
                             cfg.resolution.height = h;
@@ -348,38 +308,19 @@ fn VideoEncoderForm(
                             cfg.quality = q;
                         }
                         if let Some(rc) = cfg.rate_control.as_mut() {
-                            if let Ok(f) = frame_rate_v.parse::<u32>() {
+                            if let Some(f) = fps {
                                 rc.frame_rate_limit = f;
                             }
                             if let Ok(b) = bitrate_v.parse::<u32>() {
                                 rc.bitrate_limit = b;
                             }
                         }
-                        match cfg.encoding {
-                            VideoEncoding::H264 => {
-                                if let Some(h) = cfg.h264.as_mut() {
-                                    if let Ok(g) = gov_v.parse::<u32>() {
-                                        h.gov_length = g;
-                                    }
-                                    if !profile_v.is_empty() {
-                                        h.profile = profile_v;
-                                    }
-                                }
-                            }
-                            VideoEncoding::H265 => {
-                                if let Some(h) = cfg.h265.as_mut() {
-                                    if let Ok(g) = gov_v.parse::<u32>() {
-                                        h.gov_length = g;
-                                    }
-                                    if !profile_v.is_empty() {
-                                        h.profile = profile_v;
-                                    }
-                                }
-                            }
-                            _ => {}
+                        if cfg.gov_length.is_some() {
+                            if let Ok(g) = gov_v.parse::<u32>() { cfg.gov_length = Some(g); }
                         }
+                        if cfg.profile.is_some() && !profile_v.is_empty() { cfg.profile = Some(profile_v); }
 
-                        match api::set_video_encoder_configuration(&addr_s, &creds_s, &cfg).await {
+                        match api::save_encoder_settings(&addr_s, &creds_s, &settings).await {
                             Ok(()) => {
                                 ctx.push_toast(ToastLevel::Success, i18n::t(locale, "ve_saved"));
                                 on_saved.call(());

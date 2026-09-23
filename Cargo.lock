@@ -3572,7 +3572,6 @@ dependencies = [
  "arboard",
  "async-trait",
  "base64 0.22.1",
- "digest_auth",
  "dioxus",
  "dirs",
  "ico",

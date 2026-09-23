@@ -572,7 +572,7 @@ fn ProfileCard(
                 }
             };
 
-            let result = api::fetch_snapshot_data_uri(&url, &creds).await;
+            let result = api::fetch_snapshot_data_uri(&device_addr, &url, &creds).await;
             if result.is_err() && !needs_refresh {
                 broken.set(true);
             }
@@ -632,23 +632,25 @@ fn ProfileCard(
                             Some(Ok(uri)) => uri.clone(),
                             _ => return,
                         };
-                        let default_name =
-                            format!("{}.jpg", crate::util::sanitize_filename(&name_for_save));
+                        let default_stem = crate::util::sanitize_filename(&name_for_save);
                         let toast_ctx = ctx;
                         let saved_label = i18n::t(locale, "snapshot_saved").to_string();
                         let failed_label = i18n::t(locale, "snapshot_save_failed").to_string();
                         spawn(async move {
+                            let Some((bytes, format)) = crate::util::decode_snapshot_data_uri(&snap) else {
+                                toast_ctx.push_toast(crate::state::ToastLevel::Error, failed_label);
+                                return;
+                            };
                             let Some(handle) = rfd::AsyncFileDialog::new()
-                                .set_file_name(&default_name)
-                                .add_filter("JPEG", &["jpg", "jpeg"])
+                                .set_file_name(format!("{default_stem}.{format}"))
+                                .add_filter(format.to_uppercase(), &[format])
                                 .save_file()
                                 .await
                             else {
                                 return;
                             };
                             let path = handle.path().to_path_buf();
-                            match crate::util::decode_jpeg_data_uri(&snap) {
-                                Some(bytes) => match std::fs::write(&path, &bytes) {
+                            match std::fs::write(&path, &bytes) {
                                     Ok(()) => {
                                         tracing::info!(path = %path.display(), bytes = bytes.len(), "snapshot saved");
                                         toast_ctx.push_toast(
@@ -663,13 +665,6 @@ fn ProfileCard(
                                             format!("{failed_label}: {e}"),
                                         );
                                     }
-                                },
-                                None => {
-                                    toast_ctx.push_toast(
-                                        crate::state::ToastLevel::Error,
-                                        failed_label,
-                                    );
-                                }
                             }
                         });
                     },

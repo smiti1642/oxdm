@@ -114,7 +114,8 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
   PC sync and timezone/DST); user management (create/read/update/delete); and
   maintenance (reboot and factory reset, both confirmation-gated).
 - **Media** — profile create/delete, video-encoder configuration (H.264 and
-  H.265, with H.265 automatically routed through Media2), imaging controls
+  H.265, native Media2 fractional FPS and device-reported frame-rate choices;
+  Media1-only devices retain integer FPS), imaging controls
   (brightness/contrast plus manual exposure, white-balance gains, and focus
   limits), and OSD management. Focus is driven at a speed the lens declared, not
   a fixed one, and a direction it declares no speed for is disabled rather than
@@ -309,6 +310,12 @@ RUST_LOG=oxdm=debug dx serve --platform desktop
 
 RTSP mode additionally requires `ffmpeg` on `PATH` for H.265 transcoding;
 snapshot (MJPEG) mode needs nothing extra.
+
+In the unreleased checkout, previews, snapshot saves and health checks share
+the oxvif downloader. HTTPS snapshots require trusted certificates; the legacy
+TLS bypass setting is no longer used. Downloads stay on the device host, do not
+follow redirects and never switch to Basic after a failed Digest challenge.
+
 
 ## License
 

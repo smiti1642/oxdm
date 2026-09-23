@@ -5,9 +5,8 @@
 //!
 //! 1. Look up `(addr, profile_token, creds)` for the stream id.
 //! 2. Resolve the camera's snapshot URI via ONVIF `GetSnapshotUri`.
-//! 3. Fetch the JPEG with whatever auth the camera demands (delegated to
-//!    [`crate::api::fetch_snapshot_data_uri`], which already handles Digest
-//!    auth + the raw-TCP fallback for picky vendors).
+//! 3. Fetch image bytes through [`crate::api::fetch_snapshot`], shared with
+//!    thumbnails, health checks and the CLI.
 //! 4. Write the JPEG as a `multipart/x-mixed-replace` part.
 //! 5. Sleep `frame_interval`, repeat.
 //!
@@ -15,14 +14,12 @@
 //! into an `<img>` tag with no JS or polyfill needed — it's the same
 //! technology mid-2000s IP-cam web UIs used.
 //!
-//! No new third-party dependency: the HTTP server is hand-rolled over a
-//! `tokio::net::TcpListener`, mirroring the raw-TCP pattern already used
-//! for the snapshot Digest fallback in [`crate::api`].
+//! The local HTTP server uses `tokio::net::TcpListener`. Camera downloads
+//! use the bounded HTTP(S) client in oxvif.
 
 use crate::api;
 use crate::state::Credentials;
 use crate::video::{EmbedKind, VideoBackend, VideoSource};
-use base64::Engine;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -236,11 +233,13 @@ async fn handle_connection(
             }
         };
 
-        match fetch_jpeg(&meta).await {
-            Ok(bytes) => {
+        match fetch_frame(&meta).await {
+            Ok(image) => {
+                let mime_type = image.mime_type();
+                let bytes = image.bytes;
                 let part = format!(
                     "--{MULTIPART_BOUNDARY}\r\n\
-                     Content-Type: image/jpeg\r\n\
+                     Content-Type: {mime_type}\r\n\
                      Content-Length: {}\r\n\
                      \r\n",
                     bytes.len()
@@ -267,21 +266,11 @@ async fn handle_connection(
     Ok(())
 }
 
-/// Pull a single JPEG for the meta. Re-resolves the snapshot URI each call —
-/// some cameras (GeoVision) embed a per-call timestamp and TTL into the URL,
-/// so caching across frames isn't safe.
-async fn fetch_jpeg(meta: &StreamMeta) -> Result<Vec<u8>, String> {
+/// Re-resolve temporary snapshot URLs for every frame.
+async fn fetch_frame(meta: &StreamMeta) -> Result<api::SnapshotImage, String> {
     let snap = api::get_snapshot_uri(&meta.device_addr, &meta.creds, &meta.profile_token).await?;
     let snapshot_url = api::resolve_snapshot_url(&meta.device_addr, &snap.uri);
-    let data_uri = api::fetch_snapshot_data_uri(&snapshot_url, &meta.creds).await?;
-    data_uri_to_bytes(&data_uri).ok_or_else(|| "malformed data URI from snapshot".to_string())
-}
-
-/// Decode the base64 payload of a `data:image/...;base64,…` URI.
-fn data_uri_to_bytes(uri: &str) -> Option<Vec<u8>> {
-    let comma = uri.find(',')?;
-    let b64 = &uri[comma + 1..];
-    base64::engine::general_purpose::STANDARD.decode(b64).ok()
+    api::fetch_snapshot(&meta.device_addr, &snapshot_url, &meta.creds).await
 }
 
 async fn write_text(
@@ -367,17 +356,6 @@ mod tests {
         assert!(enc.contains("%3A"), "expected colon escape: {enc}");
         assert!(enc.contains("%2F"), "expected slash escape: {enc}");
         assert_eq!(url_decode(&enc), s);
-    }
-
-    #[test]
-    fn data_uri_extracts_jpeg_bytes() {
-        let bytes = data_uri_to_bytes("data:image/jpeg;base64,SGVsbG8=").unwrap();
-        assert_eq!(bytes, b"Hello");
-    }
-
-    #[test]
-    fn data_uri_handles_missing_comma() {
-        assert!(data_uri_to_bytes("not a data uri").is_none());
     }
 
     // base_url_from_device_addr / resolve_snapshot_url moved to api.rs;

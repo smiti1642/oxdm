@@ -10,12 +10,18 @@ Changelog tracking starts at 0.1.5.
 
 ### Changed
 - Upgrade the registry dependency to oxvif 0.17.0, including the About version
-  and Quirks baseline stamp. Convert the existing integer H.265 encoder rate to
-  Media2's floating-point type; fractional FPS editing remains separate work.
-- Health checks inherit oxvif's bounded, image-signature-checked snapshot
-  downloader and corrected Digest handling. These changes apply to diagnostics;
-  thumbnails and MJPEG still use OxDM's separate downloader. Health snapshots
-  require the device host, verified TLS and no redirects or HTTPS downgrade.
+  and Quirks baseline stamp.
+- Thumbnails, snapshot saving, MJPEG and health checks share oxvif's bounded,
+  image-signature-checked downloader. Digest failure never downgrades to Basic;
+  Basic is used only when offered without Digest. Downloads require the device
+  host, verified TLS and no redirects or HTTPS downgrade. The old TLS bypass
+  toggle is removed; legacy `tls_strict = false` no longer bypasses verification.
+- Read and edit native Media2 encoder settings, including fractional FPS and
+  advertised discrete frame rates. Media1-only cameras retain integer FPS and
+  their existing encoding interval, multicast and other unedited fields.
+  Saving refetches the device's values; invalid FPS cannot be submitted.
+- MJPEG forwards original image bytes with the detected MIME type, avoiding
+  a Base64 round-trip. Snapshot saves retain JPEG/PNG/BMP format and extension.
 - Camera clones follow oxvif 0.17's stricter write and replay contracts.
   Unmodeled effects such as reboot return a refusal instead of a success receipt.
   Back up recordings before downgrading: older readers can collapse distinct

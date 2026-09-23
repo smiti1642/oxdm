@@ -360,22 +360,37 @@ pub fn sanitize_filename(name: &str) -> String {
     }
 }
 
-/// Decode a `data:image/jpeg;base64,...` URI into raw JPEG bytes.
-/// Returns `None` if the URI doesn't have the expected prefix or the
-/// base64 payload doesn't decode.
-pub fn decode_jpeg_data_uri(uri: &str) -> Option<Vec<u8>> {
+/// Decode a thumbnail and retain its format for the save dialog.
+pub fn decode_snapshot_data_uri(uri: &str) -> Option<(Vec<u8>, &'static str)> {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
-    // We accept both "image/jpeg" and "image/jpg" since some cameras
-    // (and our own snapshot fetcher) have shipped both at various points.
-    let payload = uri
-        .strip_prefix("data:image/jpeg;base64,")
-        .or_else(|| uri.strip_prefix("data:image/jpg;base64,"))?;
-    STANDARD.decode(payload).ok()
+    for (prefix, extension) in [
+        ("data:image/jpeg;base64,", "jpeg"),
+        ("data:image/jpg;base64,", "jpeg"),
+        ("data:image/png;base64,", "png"),
+        ("data:image/bmp;base64,", "bmp"),
+    ] {
+        if let Some(payload) = uri.strip_prefix(prefix) {
+            return Some((STANDARD.decode(payload).ok()?, extension));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_saves_keep_the_detected_format() {
+        for format in ["jpeg", "png", "bmp"] {
+            let (bytes, extension) =
+                decode_snapshot_data_uri(&format!("data:image/{format};base64,SGVsbG8=")).unwrap();
+            assert_eq!(bytes, b"Hello");
+            assert_eq!(extension, format);
+        }
+        assert!(decode_snapshot_data_uri("data:text/html;base64,SGVsbG8=").is_none());
+        assert!(decode_snapshot_data_uri("data:image/jpeg;base64,!").is_none());
+    }
 
     fn shape(rows: &[DiffRow]) -> Vec<&'static str> {
         rows.iter()

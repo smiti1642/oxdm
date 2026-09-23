@@ -127,8 +127,7 @@ src/
                     Toast/ConfirmDialog, GlobalKey (keyboard-shortcut bus).
   api.rs            Async wrappers around oxvif (discovery, device info,
                     media, imaging, PTZ, network, users, maintenance,
-                    events, OSD, profiles) + snapshot fetch with
-                    Digest/Basic auth fallback. Every wrapper funnels
+                    events, OSD, profiles) + oxvif shared snapshot downloads. Every wrapper funnels
                     through `crate::sessions` for session reuse — see
                     "Session reuse" below. Discovery delegates a single
                     round to oxvif::discovery::probe_result (multi-NIC +
@@ -140,7 +139,7 @@ src/
                     subsequent call returns a cheap Arc clone. Cred change
                     or device removal calls `sessions::invalidate(addr)` /
                     `invalidate_all()` to drop stale entries.
-  persist.rs        ~/.oxdm/config.toml (theme/locale/log/tls),
+  persist.rs        ~/.oxdm/config.toml (theme/locale/log),
                     ~/.oxdm/devices.toml (manual devices),
                     + single JSON blob in system keychain for ALL
                     credentials (one keychain prompt, not N)
@@ -167,7 +166,7 @@ src/
     credentials_dialog.rs  Global creds + Add Device modals
     edit_device_dialog.rs  Edit manual device + per-device creds
     about_dialog.rs        About modal: versions, repo link, log-to-file +
-                           TLS-strict toggles
+                           verified snapshot TLS status
     dialog.rs              Generic confirm modal (ConfirmDialogModal)
     dialog_overlay.rs      Reusable modal scaffold (click-outside +
                            Esc-to-close) wrapping every dialog body
@@ -194,8 +193,8 @@ src/
     video_encoder.rs       VideoEncoderSection — per-profile encoder edit
                            (resolution / bitrate / gov_length / quality);
                            embedded inside ImagingView, not a top-level View.
-                           H.265 profiles auto-route through Media2 via
-                           api::set_video_encoder_configuration
+                           api/encoder.rs reads/writes native Media2 configs,
+                           preserving fractional FPS; Media1 stays integer-only
     ptz.rs                 PTZ pad + zoom + preset list over a live preview
     osd.rs                 OSD text/overlay read + create / update / delete
     io_control.rs          Relay output control (Activate/Deactivate for
@@ -283,10 +282,14 @@ device is removed, the corresponding `sessions::invalidate(addr)` /
 rebuilds with the new creds. Adding a new write-path that mutates
 creds means adding the matching `invalidate` call.
 
-The two functions in `api.rs` that don't go through `sessions::` are
-`fetch_snapshot_data_uri` (custom HTTP + Digest, byte-identical to
-curl for Hikvision/Uniview compat) and `discover_one_round`
-(WS-Discovery is its own protocol).
+Snapshot HTTP downloads (`fetch_snapshot` / `fetch_snapshot_data_uri`) delegate
+to `oxvif::health::snapshot`, shared with diagnostics. They take the originating
+device address separately from the returned snapshot URI; never substitute the
+snapshot URL as the trust boundary. Downloads enforce same-host HTTP(S), verified
+TLS, no redirects/downgrade, a 10-second total deadline and a 16 MiB cap. Failed
+Digest must never fall back to Basic. There is no raw TCP authentication path or
+TLS bypass toggle. Existing config files with `tls_strict` still deserialize;
+that obsolete field is ignored. WS-Discovery also has its own protocol.
 
 ## Adding a new view
 
@@ -341,7 +344,7 @@ key-based join. New baseline envelopes retain `ambiguous_keys` from the full
 recording, including clean rows; legacy files omit that optional field.
 
 **This paragraph named one test file for three releases after it stopped being
-one.** `tests/` is now five files — `healthtab`, `io_control`, `recordings`,
+one.** `tests/` originally had five files — `healthtab`, `io_control`, `recordings`,
 `imaging_focus`, `ptz_absolute`, all `*_smoke.rs` — and the feature list had
 drifted on both sides. A dependency-shape claim in this file rots exactly like
 a behaviour claim does, and nothing in the four-line gate reads prose.
@@ -388,10 +391,12 @@ Notable surfaces oxdm relies on:
   `api::set_network_interfaces` still exposes the old positional shape to
   the rest of oxdm, and `api::set_network_interfaces_full` is the
   struct-passing variant the IPv6 panel calls.
-- `VideoEncoderConfiguration2` / Media2 set path — `api::set_video_encoder_configuration`
-  detects `VideoEncoding::H265` and auto-routes through Media2 (Media1's
-  schema doesn't carry H.265; oxvif now rejects it with `InvalidArgument`
-  at the boundary).
+- `api/encoder.rs` keeps `VideoEncoderConfiguration2` native for cameras that
+  advertise Media2. Profiles and encoder tokens are resolved on that service;
+  options select the matching encoding and discrete fractional FPS values.
+  No Media2 failure is silently retried as a Media1 write. Media1-only settings
+  retain the original config and only update editable fields on save, including
+  a second integer-FPS validation at the API boundary.
 - `ImagingSettings` gained eight `Option<...>` fields for manual exposure /
   WB Cr/Cb gains / focus near-far limits — consumed by `views/imaging.rs`.
 When iterating on oxvif locally before a release, switch to a path dep:
@@ -425,9 +430,15 @@ service-URL fields on `Capabilities` are the usual breakage points.
   existing scan error toast; an empty successful scan remains a no-device
   result. Some upstream send/receive errors are still ignored. When merged
   XAddrs are reordered, OxDM keeps a known device's address if still advertised.
-- `api::fetch_snapshot_data_uri` patches the `digest_auth` crate output
-  for Hikvision compatibility: `qop=auth` → `qop="auth"`, and `, ` → `,`
-  between parameters. Removing these patches breaks Hikvision snapshots.
+- Preview, MJPEG and snapshot saves use the same bounded downloader as health.
+  MIME types and save extensions follow recognized JPEG/PNG/BMP signatures;
+  signature validation is not full image decoding. MJPEG forwards bytes directly.
 - Snapshot URIs returned by some cameras are relative or schemeless;
   `device_panel.rs::ProfileThumbnails` resolves them against the device
   base URL before fetching.
+
+`tests/snapshot_encoder_smoke.rs` adds application-level coverage for shared
+snapshot authentication/bounds and native Media2 fractional FPS round-trips.
+Its ignored `live_camera_readonly_snapshot_and_encoder` test is opt-in: inject
+`OXDM_TEST_TARGET`, `OXVIF_USERNAME`, and `OXVIF_PASSWORD` into the process.
+It performs no camera writes and prints no credentials or snapshot URLs.
