@@ -10,6 +10,14 @@ Changelog tracking starts at 0.1.5.
 
 ### Security
 
+- Replace yanked clipboard-win 5.4.1 with 5.4.3 in the Windows clipboard dependency
+  graph, including the upstream HTML fragment bounds fix. OxDM currently writes
+  clipboard text and does not call the affected HTML reader. Add Windows CI and
+  run both desktop checks on `develop`; preserve the reviewed lockfile in CI.
+  The [remaining audit warning review](https://github.com/smiti1642/oxdm/blob/develop/docs/dependency-audit-2026-10-23.md)
+  records inactive Android paths, build-time maintenance warnings and the Linux
+  glib source review with its limits. No advisory ignores were added.
+
 - Update rustls-webpki to 0.103.16 and webpki-root-certs to 1.0.10 for the
   compromised emSign certificate keys (RUSTSEC-2026-0382 / RUSTSEC-2026-0383),
   and rustls to 0.23.46 for its latest security fixes. Refresh aws-lc-rs and
