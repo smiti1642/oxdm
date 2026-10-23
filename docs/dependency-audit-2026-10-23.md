@@ -31,6 +31,12 @@ adds a redundant `#[must_use]` to boxed futures, rejected by Rust 1.99 Clippy.
 The follow-up updates the macro to 0.1.92, which no longer emits that attribute,
 instead of suppressing the lint or pinning an older compiler.
 
+Native Windows testing also rejected the original TLS test's non-CA self-signed
+leaf as a trust anchor. The fixture now generates a CA with certificate-signing
+usage and a separate localhost server certificate signed by that CA, with server
+authentication/digital-signature usage. The negative trust/hostname cases remain
+enabled. This changes the fixture, not production certificate validation.
+
 ## glib applicability and limits
 
 The [upstream fix](https://github.com/gtk-rs/gtk-rs-core/pull/1343) changes an

@@ -37,6 +37,10 @@ Changelog tracking starts at 0.1.5.
 - Update async-trait to 0.1.92 so generated video-backend futures do not carry a
   redundant `must_use` attribute rejected by Rust 1.99 Clippy. This was exposed
   by the Windows CI added for the dependency review; backend behavior is unchanged.
+- Use a real CA-signed localhost certificate in the TLS regression fixture so
+  private trust is tested with Windows-compatible CA constraints and server key
+  usage. Keep all certificate/hostname refusal checks. CI uses the same debug
+  symbol settings as local validation and caches compilation on failed runs.
 
 ## [0.4.1] - 2026-09-09
 

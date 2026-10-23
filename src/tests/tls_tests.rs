@@ -35,14 +35,35 @@ fn snapshot_tls_preserves_explicit_saved_choices() {
 
 #[tokio::test]
 async fn snapshot_tls_checks_trust_and_hostname_before_sending_http() {
-    let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()])
-        .expect("test certificate should generate");
-    let der = certificate.cert.der().clone();
+    let mut ca_params = rcgen::CertificateParams::default();
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::CrlSign,
+    ];
+    ca_params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, "OxDM TLS test CA");
+    let ca_key = rcgen::KeyPair::generate().expect("test CA key should generate");
+    let ca = ca_params.self_signed(&ca_key).expect("test CA should sign");
+    let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key);
+    let mut server_params = rcgen::CertificateParams::new(vec!["localhost".into()])
+        .expect("test server names should parse");
+    server_params
+        .distinguished_name
+        .push(rcgen::DnType::CommonName, "localhost");
+    server_params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
+    server_params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+    server_params.use_authority_key_identifier_extension = true;
+    let server_key = rcgen::KeyPair::generate().expect("test server key should generate");
+    let certificate = server_params
+        .signed_by(&server_key, &issuer)
+        .expect("CA should sign the test server certificate");
     let tls = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(
-            vec![der.clone()],
-            PrivatePkcs8KeyDer::from(certificate.signing_key.serialize_der()).into(),
+            vec![certificate.der().clone()],
+            PrivatePkcs8KeyDer::from(server_key.serialize_der()).into(),
         )
         .expect("test TLS server should configure");
     let acceptor = TlsAcceptor::from(Arc::new(tls));
@@ -97,10 +118,10 @@ async fn snapshot_tls_checks_trust_and_hostname_before_sending_http() {
     );
     assert_eq!(requests.load(Ordering::SeqCst), 0);
 
-    // An explicitly trusted private certificate works without disabling verification.
+    // A private CA works without disabling verification on native verifiers too.
     let trusted = snapshot_client_builder(strict)
         .no_proxy()
-        .tls_certs_merge([reqwest::Certificate::from_der(der.as_ref()).unwrap()])
+        .tls_certs_merge([reqwest::Certificate::from_der(ca.der().as_ref()).unwrap()])
         .build()
         .unwrap();
     let response = trusted
