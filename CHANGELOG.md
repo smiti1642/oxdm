@@ -8,6 +8,8 @@ Changelog tracking starts at 0.1.5.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-23
+
 ### Security
 
 - Replace yanked clipboard-win 5.4.1 with 5.4.3 in the Windows clipboard dependency

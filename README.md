@@ -7,14 +7,15 @@ on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-> **Project status — pre-release (v0.4.1).** Built on oxvif 0.16.0. Core device management works
+> **Project status — pre-release (v0.4.2).** Built on oxvif 0.16.0. Core device management works
 > end-to-end against real cameras and the `oxvif` mock server. Release bundles
 > are not yet code-signed, so the operating system may warn about an
 > unidentified developer on first launch.
 
-Version 0.4.1 surfaces discovery I/O errors through the existing error toast
-and keeps a known device's address when reordered discovery responses still
-advertise it. It also updates dependencies identified by the security audit.
+Version 0.4.2 updates the TLS/QUIC security dependencies and verifies HTTPS
+snapshot certificates and hostnames by default for new or missing settings.
+Existing explicit `tls_strict = false` settings remain opt-outs. Trust a camera's
+private CA in the operating-system certificate store before enabling verification.
 See the [changelog](./CHANGELOG.md) for details.
 
 ## Contents

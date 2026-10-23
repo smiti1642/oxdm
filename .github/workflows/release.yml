@@ -68,7 +68,10 @@ jobs:
         run: cargo binstall -y --force dioxus-cli@0.7.9
 
       - name: Bundle
-        run: dx bundle --release --platform desktop --package-types ${{ matrix.pkg }}
+        run: dx bundle --release --locked --platform desktop --package-types ${{ matrix.pkg }}
+
+      - name: Verify the reviewed lockfile
+        run: git diff --exit-code -- Cargo.lock
 
       - name: Collect artifact
         shell: bash
