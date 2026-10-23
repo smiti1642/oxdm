@@ -6,4 +6,5 @@
 mod api_tests;
 mod i18n_tests;
 mod state_tests;
+mod tls_tests;
 mod util_tests;

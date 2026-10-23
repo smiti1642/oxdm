@@ -6,6 +6,24 @@ Changelog tracking starts at 0.1.5.
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- Update rustls-webpki to 0.103.16 and webpki-root-certs to 1.0.10 for the
+  compromised emSign certificate keys (RUSTSEC-2026-0382 / RUSTSEC-2026-0383),
+  and rustls to 0.23.46 for its latest security fixes. Refresh aws-lc-rs and
+  aws-lc-sys as required by the updated verifier. Update quinn-proto to 0.11.18
+  for its connection-state and datagram memory exhaustion advisories
+  (RUSTSEC-2026-0338 through RUSTSEC-2026-0342).
+- Verify HTTPS snapshot certificates and hostnames by default for new installs
+  and configurations without a `tls_strict` entry. Existing explicit `false`
+  settings remain opt-outs; enable verification in About after trusting the
+  camera's private CA in the operating-system certificate store. The About hint
+  now explains the interception risk of disabling verification in all locales.
+  This setting affects snapshots only; ONVIF SOAP retains its existing verified
+  transport. Keep operating-system trust and revocation data up to date.
+
 ## [0.4.1] - 2026-09-09
 
 Built on oxvif 0.16.0. Discovery reports returned I/O errors and keeps known

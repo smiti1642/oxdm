@@ -140,6 +140,22 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
 Credentials (a global default plus optional per-device overrides) are stored in
 the operating-system keychain and are never written to disk in plaintext.
 
+### HTTPS snapshot certificates
+
+HTTPS snapshots verify the certificate chain and hostname by default. For cameras
+using a private CA, verify that CA's fingerprint through a trusted channel and add
+its public certificate to the operating-system trust store. Use a snapshot URL
+whose hostname or IP address matches the camera certificate. Keep system trust
+and revocation updates current; macOS and Windows use native verification, while
+Linux uses rustls with system roots.
+
+The **Verify TLS certificates (HTTPS snapshots)** option in About controls only
+snapshot fetching. Turning it off skips certificate and hostname verification,
+allowing forged certificates and interception. Existing configurations with an
+explicit `tls_strict = false` keep that choice after upgrading; configurations
+without the entry now enable verification. ONVIF SOAP calls keep their separate,
+verified transport.
+
 ## Diagnostics — the ONVIF health check
 
 ![Health Overview in OxDM: one row per camera with pass/warn/fail/skip counts, Profile S/T/G badges, and live stream and recording probe results](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/health-check.png)

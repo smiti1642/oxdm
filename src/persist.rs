@@ -4,6 +4,7 @@
 //! - `~/.oxdm/devices.toml`: manually added devices (per-device creds in keychain)
 //! - System keychain: global credentials + per-device credential overrides
 
+use crate::api::DEFAULT_TLS_STRICT;
 use crate::state::{Credentials, DeviceEntry, HealthGroup, Locale, Theme};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,7 +17,11 @@ const CREDS_KEY_GLOBAL: &str = "__global__";
 
 // ── On-disk structures ──────────────────────────────────────────────────────
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+fn default_tls_strict() -> bool {
+    DEFAULT_TLS_STRICT
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
     #[serde(default)]
     pub theme: String,
@@ -28,16 +33,28 @@ pub struct ConfigFile {
     #[serde(default)]
     pub log_to_file: bool,
     /// When `true`, snapshot HTTPS connections refuse self-signed and
-    /// otherwise-invalid TLS certificates. Default is `false` because
-    /// most IP cameras ship a self-signed cert; flipping this on without
-    /// thinking would break HTTPS snapshots. Toggle in About.
-    #[serde(default)]
+    /// otherwise-invalid TLS certificates. Defaults to `true`; an explicit
+    /// `false` retains the compatibility opt-out selected in About.
+    #[serde(default = "default_tls_strict")]
     pub tls_strict: bool,
     // Legacy fields — read for migration, not written
     #[serde(default)]
     pub username: String,
     #[serde(default)]
     pub password: String,
+}
+
+impl Default for ConfigFile {
+    fn default() -> Self {
+        Self {
+            theme: String::new(),
+            locale: String::new(),
+            log_to_file: false,
+            tls_strict: DEFAULT_TLS_STRICT,
+            username: String::new(),
+            password: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

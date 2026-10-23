@@ -61,6 +61,8 @@ ico = "0.5"
 winresource = "0.1"
 
 [dev-dependencies]
+rcgen = "0.14.10"
+tokio-rustls = "0.26"
 # Pull in oxvif's mock-server + metamorph features so the smoke tests can
 # record / serve / diff a clone against a real bound-port ONVIF mock without
 # needing a camera. (metamorph-server is already on for the release binary

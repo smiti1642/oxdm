@@ -36,15 +36,17 @@ use crate::state::Credentials;
 
 pub type ApiError = String;
 
-/// Process-wide TLS strictness for snapshot HTTPS calls. `false` (default)
-/// preserves the legacy `danger_accept_invalid_certs(true)` behaviour
-/// most cameras need; flipping to `true` makes the snapshot fetcher
-/// refuse self-signed and expired certs. Driven from the About dialog
-/// toggle via `set_tls_strict` and persisted in config.toml.
+pub(crate) const DEFAULT_TLS_STRICT: bool = true;
+
+/// Process-wide TLS strictness for snapshot HTTPS calls. Enabled by default;
+/// an explicit `false` opts out of certificate and hostname verification for
+/// compatibility. Driven from the About dialog toggle via `set_tls_strict`
+/// and persisted in config.toml.
 ///
 /// Stored as a static atomic so the synchronous reqwest builder doesn't
 /// need to thread a Dioxus signal through every call site.
-static TLS_STRICT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static TLS_STRICT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(DEFAULT_TLS_STRICT);
 
 pub fn set_tls_strict(strict: bool) {
     TLS_STRICT.store(strict, std::sync::atomic::Ordering::Relaxed);
@@ -635,6 +637,23 @@ pub fn resolve_snapshot_url(device_addr: &str, raw_uri: &str) -> String {
     }
 }
 
+pub(crate) fn snapshot_client_builder(strict: bool) -> reqwest::ClientBuilder {
+    // Match curl's wire shape (Uniview LAPI rejects requests that diverge
+    // from curl's exact header set + Authorization field order):
+    //   - no Accept-Encoding         (no_gzip / no_brotli / no_deflate / no_zstd)
+    //   - User-Agent: curl/8.13.0
+    //   - Accept: */*                (added per-request)
+    //   - Authorization fields reordered to curl's order in try_digest_auth
+    reqwest::Client::builder()
+        .danger_accept_invalid_certs(!strict)
+        .timeout(Duration::from_secs(5))
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .user_agent("curl/8.13.0")
+}
+
 /// Download a snapshot image and return it as a `data:` URI (base64-encoded).
 ///
 /// When credentials are available, tries authenticated methods first:
@@ -650,20 +669,7 @@ pub async fn fetch_snapshot_data_uri(
     snapshot_url: &str,
     creds: &Credentials,
 ) -> Result<String, ApiError> {
-    // Match curl's wire shape (Uniview LAPI rejects requests that diverge
-    // from curl's exact header set + Authorization field order):
-    //   - no Accept-Encoding         (no_gzip / no_brotli / no_deflate / no_zstd)
-    //   - User-Agent: curl/8.13.0
-    //   - Accept: */*                (added per-request)
-    //   - Authorization fields reordered to curl's order in try_digest_auth
-    let http = reqwest::Client::builder()
-        .danger_accept_invalid_certs(!tls_strict())
-        .timeout(Duration::from_secs(5))
-        .no_gzip()
-        .no_brotli()
-        .no_deflate()
-        .no_zstd()
-        .user_agent("curl/8.13.0")
+    let http = snapshot_client_builder(tls_strict())
         .build()
         .map_err(|e| e.to_string())?;
 
