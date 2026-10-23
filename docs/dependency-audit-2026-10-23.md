@@ -26,6 +26,11 @@ The reviewed registry release maps to upstream commit
 [`ed27008`](https://github.com/DoumanAsh/clipboard-win/blob/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/src/raw.rs)
 through its `.cargo_vcs_info.json`; `raw::get_html` is the repaired reader.
 
+The first Windows CI run exposed an existing async-trait 0.1.89 expansion that
+adds a redundant `#[must_use]` to boxed futures, rejected by Rust 1.99 Clippy.
+The follow-up updates the macro to 0.1.92, which no longer emits that attribute,
+instead of suppressing the lint or pinning an older compiler.
+
 ## glib applicability and limits
 
 The [upstream fix](https://github.com/gtk-rs/gtk-rs-core/pull/1343) changes an

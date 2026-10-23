@@ -32,6 +32,12 @@ Changelog tracking starts at 0.1.5.
   This setting affects snapshots only; ONVIF SOAP retains its existing verified
   transport. Keep operating-system trust and revocation data up to date.
 
+### Fixed
+
+- Update async-trait to 0.1.92 so generated video-backend futures do not carry a
+  redundant `must_use` attribute rejected by Rust 1.99 Clippy. This was exposed
+  by the Windows CI added for the dependency review; backend behavior is unchanged.
+
 ## [0.4.1] - 2026-09-09
 
 Built on oxvif 0.16.0. Discovery reports returned I/O errors and keeps known
