@@ -4,6 +4,8 @@ default_platform = "desktop"
 [bundle]
 identifier = "com.smiti1642.oxdm"
 publisher = "smiti1642"
+# Staged by scripts/stage-console-cli.py for the native bundle's target.
+external_bin = ["target/console-sidecar/oxdm-oxvif", "target/console-sidecar/oxdm-oxvif.exe"]
 # App icon: a SINGLE 1024 PNG. dx/tao then synthesizes the full .icns ladder
 # itself — including the @2x/Retina slots — which is what keeps the macOS Dock
 # icon sharp. Feeding a multi-size list (icon-32/128/256/512 + 1024, used from

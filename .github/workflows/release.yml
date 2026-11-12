@@ -5,6 +5,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      oxvif_sha:
+        description: "Compatible oxvif source commit (40-character SHA)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -41,8 +47,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve pinned oxvif source
+        id: oxvif
+        shell: bash
+        env:
+          OXVIF_SHA: ${{ inputs.oxvif_sha || vars.OXVIF_CONSOLE_SHA }}
+        run: |
+          if [[ ! "$OXVIF_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Set OXVIF_CONSOLE_SHA to the compatible oxvif commit."
+            exit 1
+          fi
+          echo "sha=$OXVIF_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: smiti1642/oxvif
+          ref: ${{ steps.oxvif.outputs.sha }}
+          path: target/oxvif-source
+          persist-credentials: false
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build oxvif sidecar
+        working-directory: target/oxvif-source
+        run: cargo build --locked --release -p oxvif-cli --bin oxvif --example console_mock
+
+      - name: Verify CLI event watch and cancellation
+        working-directory: target/oxvif-source
+        run: cargo test --locked --release -p oxvif-cli --test event_watch
+
+      - name: Stage oxvif sidecar
+        shell: bash
+        run: |
+          cli=target/oxvif-source/target/release/oxvif
+          if [ "$RUNNER_OS" = Windows ]; then cli="$cli.exe"; fi
+          python scripts/stage-console-cli.py "$cli"
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -83,10 +126,7 @@ jobs:
           cp "$src" "out/oxdm-${version}-${{ matrix.label }}.${{ matrix.ext }}"
           ls -la out
 
-      # Windows also gets a no-install portable build alongside the MSI: just
-      # the single self-contained oxdm.exe (CSS + icon are embedded, no sibling
-      # assets dir), zipped. Like the MSI it relies on the WebView2 runtime,
-      # which ships with Windows 10/11.
+      # Windows also gets a portable zip with the GUI and its CLI sidecar.
       - name: Add Windows portable zip
         if: matrix.pkg == 'msi'
         shell: bash
@@ -99,11 +139,28 @@ jobs:
           # Copy to a flat name first so the zip holds `oxdm.exe` at its root,
           # not the full target/.../release/ path (7z stores paths as given).
           cp "$exe" oxdm.exe
-          7z a "out/oxdm-${version}-windows-x86_64-portable.zip" oxdm.exe
-          rm oxdm.exe
+          cp target/oxvif-source/target/release/oxvif.exe oxdm-oxvif.exe
+          7z a "out/oxdm-${version}-windows-x86_64-portable.zip" oxdm.exe oxdm-oxvif.exe
+          rm oxdm.exe oxdm-oxvif.exe
           ls -la out
 
+      - name: Verify the CLI from the packaged payload against MockServer
+        shell: bash
+        run: |
+          mock=target/oxvif-source/target/release/examples/console_mock
+          if [ "$RUNNER_OS" = Windows ]; then mock="$mock.exe"; fi
+          python scripts/stage-console-cli.py --bundle out/*.${{ matrix.ext }} --mock "$mock"
+          node tests/console-editor.cjs
+
+      - name: Upload verification bundle
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxdm-console-${{ matrix.label }}
+          path: out/*
+
       - name: Upload to release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           # Draft so the maintainer reviews/assembles all platforms before
