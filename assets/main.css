@@ -123,6 +123,8 @@ a      { color: var(--blue); text-decoration: none; }
 }
 .icon-btn:hover { background: var(--surface0); color: var(--text); }
 .icon-btn--label { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.console-nav { width: auto; padding: 0 10px; white-space: nowrap; }
+.console-nav[aria-pressed="true"] { color: var(--text); background: var(--surface0); }
 .icon-btn--warn { color: var(--yellow); }
 .icon-btn--warn:hover { color: var(--yellow); }
 
@@ -2807,6 +2809,7 @@ iframe.live-video-frame {
   color: var(--text);
 }
 .events-topic-row:hover { background: var(--surface0); }
+.events-topic-row label { display: flex; align-items: center; gap: 8px; flex: 1; }
 .events-topic-row input { cursor: pointer; }
 .events-topic-row-name { flex: 1; word-break: break-all; }
 .events-topics-loading,

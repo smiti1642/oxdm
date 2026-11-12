@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 
 mod api;
 mod components;
+mod console;
 mod device_ops;
 mod i18n;
 mod mock_servers;
@@ -179,6 +180,7 @@ fn App() -> Element {
         log_to_file: use_signal(|| cfg.log_to_file),
     };
     use_context_provider(|| ctx);
+    console::provide();
 
     // Auto-save appearance and logging preferences.
     use_effect(move || {

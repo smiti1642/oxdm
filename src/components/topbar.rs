@@ -32,6 +32,12 @@ pub fn Topbar() -> Element {
             div { class: "topbar-center" }
             div { class: "topbar-right",
                 button {
+                    class: "icon-btn icon-btn--label console-nav",
+                    aria_pressed: *ctx.view.read() == View::Console,
+                    onclick: move |_| ctx.view.clone().set(View::Console),
+                    {i18n::t(locale, "console_title")}
+                }
+                button {
                     class: "icon-btn",
                     title: i18n::t(locale, "hbatch_title"),
                     onclick: {

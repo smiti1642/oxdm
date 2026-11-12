@@ -90,6 +90,7 @@ pub enum View {
     /// Global (device-independent) batch health check across selected devices,
     /// with an exportable cross-brand conformance report.
     HealthOverview,
+    Console,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

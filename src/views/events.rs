@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use crate::components::Icon;
+use crate::console::{event_subscriptions, ViewSubscription};
 use crate::state::{Credentials, Ctx};
 use crate::{api, i18n};
 use dioxus::prelude::*;
@@ -76,19 +77,24 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         async move { api::get_event_properties(&addr_now, &creds_now).await }
     });
 
-    // Long-running subscription task. Reads hidden_topics so any toggle
-    // triggers Dioxus to drop this future (running the SubscriptionGuard)
-    // and spawn a new one with the updated filter.
-    let _task = use_future(move || {
+    let subscriptions = event_subscriptions();
+    // Restart on device, credentials, or filter changes. The previous
+    // subscription keeps its permit until its unsubscribe request finishes.
+    let _task = use_resource(move || {
+        let subscriptions = subscriptions.clone();
         let addr_now = addr.read().clone();
         let creds_now = creds.read().clone();
         let filter = build_filter_expression(&hidden_topics.read(), topics_info);
         async move {
-            let sub = match api::create_pull_subscription(
-                &addr_now,
-                &creds_now,
-                filter.as_deref(),
-                Some(SUBSCRIPTION_LIFETIME),
+            status.set(StatusKind::Waiting);
+            let permit = subscriptions.acquire(&addr_now).await;
+            status.set(StatusKind::Connecting);
+            let subscription = match ViewSubscription::create(
+                addr_now.clone(),
+                creds_now.clone(),
+                filter,
+                SUBSCRIPTION_LIFETIME,
+                permit,
             )
             .await
             {
@@ -98,19 +104,11 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                     return;
                 }
             };
-            let sub_url = sub.reference_url.clone();
-
-            let _guard = SubscriptionGuard {
-                addr: addr_now.clone(),
-                creds: creds_now.clone(),
-                sub_url: sub_url.clone(),
-            };
-
             status.set(StatusKind::Connected);
 
             let mut pulls_since_renew: u32 = 0;
             loop {
-                if *paused.read() {
+                if *paused.peek() {
                     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                     continue;
                 }
@@ -118,7 +116,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                 match api::pull_event_messages(
                     &addr_now,
                     &creds_now,
-                    &sub_url,
+                    &subscription.url,
                     PULL_TIMEOUT,
                     PULL_MAX_MESSAGES,
                 )
@@ -167,7 +165,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                     if let Err(e) = api::renew_event_subscription(
                         &addr_now,
                         &creds_now,
-                        &sub_url,
+                        &subscription.url,
                         SUBSCRIPTION_LIFETIME,
                     )
                     .await
@@ -182,6 +180,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
 
     let total_count = events.read().len();
     let status_text = match &*status.read() {
+        StatusKind::Waiting => i18n::t(locale, "events_status_waiting").to_string(),
         StatusKind::Connecting => i18n::t(locale, "events_status_connecting").to_string(),
         StatusKind::Connected => i18n::t(locale, "events_status_connected").to_string(),
         StatusKind::Error(e) => format!("{}: {e}", i18n::t(locale, "events_status_error")),
@@ -231,6 +230,11 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                     },
                 }
                 TopicsButton { topics_info, hidden_topics, topics_panel_open, label: topics_label }
+                button {
+                    class: "btn btn--small",
+                    onclick: move |_| crate::console::open_with("events watch --duration 30s".into()),
+                    {i18n::t(locale, "console_open_watch")}
+                }
                 button {
                     class: "btn btn--small",
                     onclick: {
@@ -430,24 +434,35 @@ fn TopicsPanel(
 
 #[component]
 fn TopicRow(topic: String, hidden_topics: Signal<HashSet<String>>) -> Element {
+    let locale = *use_context::<Ctx>().locale.read();
     let checked = !hidden_topics.read().contains(&topic);
     let topic_for_toggle = topic.clone();
     rsx! {
-        label { class: "events-topic-row",
-            input {
-                r#type: "checkbox",
-                checked,
-                onchange: move |evt: Event<FormData>| {
-                    let mut h = hidden_topics;
-                    let mut w = h.write();
-                    if evt.checked() {
-                        w.remove(&topic_for_toggle);
-                    } else {
-                        w.insert(topic_for_toggle.clone());
-                    }
-                },
+        div { class: "events-topic-row",
+            label {
+                input {
+                    r#type: "checkbox",
+                    checked,
+                    onchange: move |evt: Event<FormData>| {
+                        let mut h = hidden_topics;
+                        let mut w = h.write();
+                        if evt.checked() {
+                            w.remove(&topic_for_toggle);
+                        } else {
+                            w.insert(topic_for_toggle.clone());
+                        }
+                    },
+                }
+                span { class: "events-topic-row-name", "{topic}" }
             }
-            span { class: "events-topic-row-name", "{topic}" }
+            button {
+                class: "btn btn--small",
+                onclick: move |_| {
+                    let topic = crate::console::grammar::quote(&topic);
+                    crate::console::open_with(format!("events watch --duration 30s --topic {topic}"));
+                },
+                {i18n::t(locale, "console_open_topic")}
+            }
         }
     }
 }
@@ -608,41 +623,12 @@ fn sorted_pairs(map: &std::collections::HashMap<String, String>) -> Vec<(String,
     v
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum StatusKind {
+    Waiting,
     Connecting,
     Connected,
     Error(String),
-}
-
-impl PartialEq for StatusKind {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (StatusKind::Connecting, StatusKind::Connecting)
-                | (StatusKind::Connected, StatusKind::Connected)
-        ) || matches!((self, other), (StatusKind::Error(a), StatusKind::Error(b)) if a == b)
-    }
-}
-
-struct SubscriptionGuard {
-    addr: String,
-    creds: crate::state::Credentials,
-    sub_url: String,
-}
-
-impl Drop for SubscriptionGuard {
-    fn drop(&mut self) {
-        let addr = std::mem::take(&mut self.addr);
-        let creds = std::mem::take(&mut self.creds);
-        let sub_url = std::mem::take(&mut self.sub_url);
-        if sub_url.is_empty() {
-            return;
-        }
-        tokio::spawn(async move {
-            let _ = api::unsubscribe_events(&addr, &creds, &sub_url).await;
-        });
-    }
 }
 
 fn format_now() -> String {

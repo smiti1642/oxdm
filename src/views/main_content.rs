@@ -50,6 +50,7 @@ pub fn MainContent() -> Element {
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
                 View::HealthOverview  => rsx! { HealthOverviewView {} },
+                View::Console         => rsx! { crate::console::ConsoleView {} },
                 View::DeviceSettings  => rsx! { DeviceSettingsView { key: "{addr_key}", addr, creds } },
                 View::LiveVideo       => rsx! { LiveVideoView      { key: "{addr_key}", addr, creds } },
                 View::ImagingSettings => rsx! { ImagingView        { key: "{addr_key}", addr, creds } },

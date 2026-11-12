@@ -804,7 +804,9 @@ fn DeviceCard(
                     return;
                 }
                 sel.set(Some(index));
-                view.set(View::DeviceSettings);
+                if *view.peek() != View::Console {
+                    view.set(View::DeviceSettings);
+                }
             },
             oncontextmenu: move |e| {
                 e.prevent_default();
