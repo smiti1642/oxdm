@@ -85,7 +85,9 @@ impl ConsoleState {
         self.terminal.set(false);
         ctx.view
             .set(console_destination(*self.return_view.peek(), has_device));
-        let _ = document::eval("requestAnimationFrame(() => document.getElementById('oxdm-console-nav')?.focus());");
+        let _ = document::eval(
+            "requestAnimationFrame(() => document.getElementById('oxdm-console-nav')?.focus());",
+        );
     }
 
     pub(crate) fn back(mut self, ctx: Ctx) {

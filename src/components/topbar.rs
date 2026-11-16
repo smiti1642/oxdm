@@ -18,7 +18,14 @@ pub fn Topbar() -> Element {
     let logs_open = use_signal(|| false);
 
     let locale_label = locale.label();
-    let console_label = i18n::t(locale, if in_console { "console_leave" } else { "console_title" });
+    let console_label = i18n::t(
+        locale,
+        if in_console {
+            "console_leave"
+        } else {
+            "console_title"
+        },
+    );
     let theme_icon = match theme {
         Theme::Dark => "moon",
         Theme::Light => "sun",

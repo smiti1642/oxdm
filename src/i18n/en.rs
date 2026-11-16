@@ -674,7 +674,9 @@ pub fn get(key: &str) -> Option<&'static str> {
 }
 pub(super) fn console_option(id: &str) -> Option<&'static str> {
     Some(match id {
-        "discovery_snapshot_name" => "Save the observations under this CLI discovery snapshot name.",
+        "discovery_snapshot_name" => {
+            "Save the observations under this CLI discovery snapshot name."
+        }
         "shell" => "Select the shell that will use the generated completion script.",
         "no_verify" => "Do not verify authentication before saving the device.",
         "no_use" => "Keep the current CLI device selection.",
@@ -699,7 +701,9 @@ pub(super) fn console_option(id: &str) -> Option<&'static str> {
         "against" => "Compare with the exported settings inventory at this path.",
         "snapshot" => "Use the named discovery snapshot stored by the CLI.",
         "filters" => "Apply a field filter. Repeat to combine filters.",
-        "interfaces" => "Use a specific local interface for WS-Discovery. Repeat to add interfaces.",
+        "interfaces" => {
+            "Use a specific local interface for WS-Discovery. Repeat to add interfaces."
+        }
         "query" => "Search discovery results by text.",
         "command" => "Show the CLI contract for a command ID such as device.info.",
         "details" => "Show every health check in terminal output.",

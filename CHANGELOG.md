@@ -41,6 +41,42 @@ Changelog tracking starts at 0.1.5.
   hidden by structurally clean responses; old stamped and unstamped baselines
   still load. Re-saving is explicit, and cross-version warnings remain visible.
 
+## [0.4.2] - 2026-10-23
+
+### Security
+
+- Replace yanked clipboard-win 5.4.1 with 5.4.3 in the Windows clipboard dependency
+  graph, including the upstream HTML fragment bounds fix. OxDM currently writes
+  clipboard text and does not call the affected HTML reader. Add Windows CI and
+  run both desktop checks on `develop`; preserve the reviewed lockfile in CI.
+  The [remaining audit warning review](https://github.com/smiti1642/oxdm/blob/develop/docs/dependency-audit-2026-10-23.md)
+  records inactive Android paths, build-time maintenance warnings and the Linux
+  glib source review with its limits. No advisory ignores were added.
+
+- Update rustls-webpki to 0.103.16 and webpki-root-certs to 1.0.10 for the
+  compromised emSign certificate keys (RUSTSEC-2026-0382 / RUSTSEC-2026-0383),
+  and rustls to 0.23.46 for its latest security fixes. Refresh aws-lc-rs and
+  aws-lc-sys as required by the updated verifier. Update quinn-proto to 0.11.18
+  for its connection-state and datagram memory exhaustion advisories
+  (RUSTSEC-2026-0338 through RUSTSEC-2026-0342).
+- Verify HTTPS snapshot certificates and hostnames by default for new installs
+  and configurations without a `tls_strict` entry. Existing explicit `false`
+  settings remain opt-outs; enable verification in About after trusting the
+  camera's private CA in the operating-system certificate store. The About hint
+  now explains the interception risk of disabling verification in all locales.
+  This setting affects snapshots only; ONVIF SOAP retains its existing verified
+  transport. Keep operating-system trust and revocation data up to date.
+
+### Fixed
+
+- Update async-trait to 0.1.92 so generated video-backend futures do not carry a
+  redundant `must_use` attribute rejected by Rust 1.99 Clippy. This was exposed
+  by the Windows CI added for the dependency review; backend behavior is unchanged.
+- Use a real CA-signed localhost certificate in the TLS regression fixture so
+  private trust is tested with Windows-compatible CA constraints and server key
+  usage. Keep all certificate/hostname refusal checks. CI uses the same debug
+  symbol settings as local validation and caches compilation on failed runs.
+
 ## [0.4.1] - 2026-09-09
 
 Built on oxvif 0.16.0. Discovery reports returned I/O errors and keeps known

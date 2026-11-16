@@ -7,20 +7,17 @@ on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-> **Project status — pre-release (v0.4.1).** Built on oxvif 0.16.0. Core device management works
+> **Development checkout (v0.4.2).** Built on oxvif 0.17.0. Core device management works
 > end-to-end against real cameras and the `oxvif` mock server. Release bundles
 > are not yet code-signed, so the operating system may warn about an
 > unidentified developer on first launch.
 
-Version 0.4.1 surfaces discovery I/O errors through the existing error toast
-and keeps a known device's address when reordered discovery responses still
-advertise it. It also updates dependencies identified by the security audit.
-See the [changelog](./CHANGELOG.md) for details.
+Version 0.4.2 updates the TLS/QUIC security dependencies. See the
+[changelog](./CHANGELOG.md) for details.
 
-The unreleased source checkout now uses oxvif 0.17.0, with collision-aware
-Quirks rows and baseline comparisons. See the [upgrade record](docs/oxvif-0.17-upgrade-plan.md)
-for verification and remaining manual acceptance; published 0.4.1 bundles still
-use oxvif 0.16.0.
+Quirks handles collisions in recording rows and baseline comparisons.
+See the [upgrade record](docs/oxvif-0.17-upgrade-plan.md) for verification.
+Published 0.4.1 bundles use oxvif 0.16.0.
 
 ## Contents
 
@@ -145,6 +142,19 @@ The equivalent Fedora packages are `webkit2gtk4.1-devel`, `gtk3-devel`,
 
 Credentials (a global default plus optional per-device overrides) are stored in
 the operating-system keychain and are never written to disk in plaintext.
+
+### HTTPS snapshot certificates
+
+HTTPS snapshots verify the certificate chain and hostname. For cameras
+using a private CA, verify that CA's fingerprint through a trusted channel and add
+its public certificate to the operating-system trust store. Use a snapshot URL
+whose hostname or IP address matches the camera certificate. Keep system trust
+and revocation updates current; macOS and Windows use native verification, while
+Linux uses rustls with system roots.
+
+The current shared snapshot downloader verifies HTTPS even when an older
+configuration contains `tls_strict = false`. ONVIF SOAP uses its own verified
+transport.
 
 ## Diagnostics — the ONVIF health check
 
