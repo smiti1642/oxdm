@@ -25,6 +25,7 @@ pub fn DialogOverlay(on_close: Callback<()>, inner_class: String, children: Elem
             onmousedown: move |_| on_close.call(()),
             onkeydown: move |evt: KeyboardEvent| {
                 if evt.key() == Key::Escape {
+                    evt.stop_propagation();
                     on_close.call(());
                 }
             },

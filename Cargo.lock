@@ -3586,6 +3586,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "tempfile",
  "time",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
@@ -3593,7 +3594,9 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "winresource",
+ "windows-sys 0.61.2",
 ]
+ "zeroize",
 
 [[package]]
 name = "pango"

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::components::{DialogOverlay, PasswordField};
 use crate::i18n;
-use crate::state::{Credentials, Ctx, ToastLevel, View};
+use crate::state::{Credentials, Ctx, ToastLevel};
 use crate::util;
 use dioxus::prelude::*;
 
@@ -104,8 +104,6 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
 
     let mut open_sig = open;
     let mut devices = ctx.devices;
-    let mut selected = ctx.selected;
-    let mut view = ctx.view;
 
     rsx! {
         DialogOverlay {
@@ -202,11 +200,10 @@ pub fn AddDeviceDialog(open: Signal<bool>) -> Element {
                             });
                             let new_idx = devs.len() - 1;
                             drop(devs);
-                            selected.set(Some(new_idx));
-                            view.set(View::DeviceSettings);
+                            open_sig.set(false);
+                            crate::console::select_device(ctx, new_idx);
                             ctx.push_toast(ToastLevel::Info, i18n::t(locale, "add_device_ok"));
                             crate::device_ops::reverify_device(ctx, devices, new_idx);
-                            open_sig.set(false);
                         },
                         {i18n::t(locale, "btn_add_short")}
                     }

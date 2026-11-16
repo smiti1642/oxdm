@@ -37,6 +37,8 @@ base64 = "0.22"
 percent-encoding = "2"
 reqwest = "0.13"
 serde_json = "1"
+tempfile = "3"
+zeroize = "1"
 toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -51,6 +53,9 @@ time = { version = "0.3", features = ["local-offset"] }
 png = "0.18"
 
 [build-dependencies]
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+
 # Build-time only — used by build.rs on Windows to (1) generate a multi-
 # resolution `icon.ico` from `assets/icons/icon.png` and (2) embed that ICO
 # into the .exe via the Windows resource section, so Explorer / shortcuts

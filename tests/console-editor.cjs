@@ -44,7 +44,11 @@ async function test() {
         listeners.get("input")();
     }
     function key(key) {
-        const event = { key, stopPropagation() {}, preventDefault() { this.prevented = true; } };
+        const event = {
+            key,
+            stopPropagation() { this.stopped = true; },
+            preventDefault() { this.prevented = true; },
+        };
         listeners.get("keydown")(event);
         return event;
     }
@@ -64,10 +68,19 @@ async function test() {
     key("Tab");
     assert.equal(input.value, "events wa");
 
+    assert.equal(key("Escape").stopped, true);
+    assert.equal(messages.at(-1).action, "Escape");
+    assert.equal(attrs.get("aria-expanded"), "false");
+    const afterDismiss = messages.length;
+    assert.equal(key("Escape").stopped, undefined);
+    assert.equal(messages.length, afterDismiss);
+
     const before = messages.length;
     listeners.get("compositionstart")();
     type("鏡頭🙂");
     assert.equal(key("Enter").prevented, undefined);
+    assert.equal(key("Escape").stopped, true);
+    listeners.get("console-run")();
     assert.equal(messages.length, before);
     listeners.get("compositionend")();
     assert.equal(messages.at(-1).caret, 13);
@@ -80,7 +93,38 @@ async function test() {
     assert.equal(messages.at(-1).action, "multiline");
 }
 
-test().catch((error) => {
+async function testPicker() {
+    const pickerScript = fs.readFileSync(path.join(__dirname, "../assets/console-picker.js"), "utf8");
+    const document = {};
+    const focusable = () => ({ focus() { document.activeElement = this; } });
+    const filter = focusable();
+    const first = focusable();
+    const second = focusable();
+    let cards = [first, second];
+    const picker = {
+        querySelector: () => filter,
+        querySelectorAll: () => cards,
+    };
+    document.getElementById = (id) => id === "oxdm-console-sidebar-content" ? picker : null;
+    const move = (previous) => vm.runInNewContext("(async () => {" + pickerScript + "})()", {
+        document, dioxus: { recv: async () => previous },
+    });
+
+    filter.focus();
+    await move(false);
+    assert.equal(document.activeElement, first);
+    await move(false);
+    assert.equal(document.activeElement, second);
+    await move(false);
+    assert.equal(document.activeElement, filter);
+    await move(true);
+    assert.equal(document.activeElement, second);
+    cards = [];
+    await move(true);
+    assert.equal(document.activeElement, filter);
+}
+
+Promise.all([test(), testPicker()]).catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });

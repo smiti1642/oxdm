@@ -254,6 +254,10 @@ fn icon_paths(name: &str) -> Element {
             path { d: "m12 19-7-7 7-7" }
             path { d: "M19 12H5" }
         },
+        "terminal" => rsx! {
+            rect { x: "3", y: "4", width: "18", height: "16", rx: "2" }
+            path { d: "m7 9 3 3-3 3m6 0h4" }
+        },
         "arrow-right" => rsx! {
             path { d: "M5 12h14" }
             path { d: "m12 5 7 7-7 7" }

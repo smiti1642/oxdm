@@ -9,12 +9,27 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::state::Credentials;
+use crate::state::{Credentials, Locale, View};
 
 use super::{
     grammar::{normalize_target, shell_command, Camera, DynamicValues},
     process::{load_grammar, Controller, OutputKind, Snapshot},
 };
+
+#[test]
+fn presentation_preserves_user_expansion_across_modes_and_expires_old_entries() {
+    let mut presentation = super::RunPresentation::default();
+    assert!(presentation.is_expanded(1, true, false));
+    assert!(!presentation.is_expanded(1, false, false));
+    presentation.set_expanded(1, false, 1);
+    assert!(presentation.is_expanded(1, true, true));
+    assert!(!presentation.is_expanded(1, true, false));
+    presentation.set_expanded(1, true, 1);
+    assert!(presentation.is_expanded(1, false, false));
+    presentation.set_expanded(2, false, 2);
+    assert!(!presentation.is_expanded(1, false, false));
+    assert!(!presentation.is_expanded(2, true, false));
+}
 
 #[test]
 fn direct_targets_keep_https_ipv6_port_and_service_path() {
@@ -29,10 +44,649 @@ fn direct_targets_keep_https_ipv6_port_and_service_path() {
     assert!(normalize_target("https://user:secret@camera/service").is_none());
 }
 
+#[test]
+fn console_returns_to_its_source_page_when_available() {
+    assert_eq!(super::console_destination(View::Events, true), View::Events);
+    assert_eq!(
+        super::console_destination(View::Events, false),
+        View::Welcome
+    );
+    assert_eq!(
+        super::console_destination(View::HealthOverview, false),
+        View::HealthOverview
+    );
+}
+
 fn executable() -> PathBuf {
     std::env::var_os("OXDM_OXVIF_TEST")
         .expect("set OXDM_OXVIF_TEST to the absolute path of the compatible CLI")
         .into()
+}
+
+#[cfg(windows)]
+#[tokio::test]
+#[ignore = "requires the bundled CLI and Windows Credential Manager"]
+async fn bundled_cli_round_trips_a_synthetic_native_credential() {
+    use std::process::Stdio;
+
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let id = format!("oxdm-qa-{}-{now}", std::process::id());
+    let reference = format!("profile/{id}");
+    let entry = keyring::Entry::new("oxvif", &reference).unwrap();
+    assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+    struct RemoveFixture(keyring::Entry);
+    impl Drop for RemoveFixture {
+        fn drop(&mut self) {
+            let _ = self.0.delete_credential();
+        }
+    }
+    let fixture = RemoveFixture(entry);
+    let input = format!("credential profile set {id}");
+    let request = grammar.prepare(executable.clone(), &input, None).unwrap();
+    assert!(request.credential_input);
+    let mut child = super::process::command(&executable)
+        .args(&request.argv)
+        .arg("--password-stdin")
+        .env("OXVIF_CONFIG_DIR", directory.path())
+        .env("OXVIF_USERNAME", "oxdm-qa-native-user")
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"oxdm-qa-native-password")
+        .await
+        .unwrap();
+    let result = timeout(Duration::from_secs(10), child.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "native credential set exited with {}",
+        result.status
+    );
+    assert!(!String::from_utf8_lossy(&result.stdout).contains("oxdm-qa-native-password"));
+    assert!(fixture
+        .0
+        .get_password()
+        .is_ok_and(|value| value == "oxdm-qa-native-password"));
+
+    let remove = grammar
+        .prepare(
+            executable.clone(),
+            &format!("credential profile delete {id}"),
+            None,
+        )
+        .unwrap();
+    let removed = super::process::command(&executable)
+        .args(remove.argv)
+        .env("OXVIF_CONFIG_DIR", directory.path())
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        removed.status.success(),
+        "native credential delete exited with {}",
+        removed.status
+    );
+    assert!(matches!(
+        fixture.0.get_password(),
+        Err(keyring::Error::NoEntry)
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI and its matching console_mock fixture"]
+async fn credential_commands_use_a_private_pipe_and_keep_the_transcript_clean() {
+    let cli = executable();
+    let grammar = load_grammar(&cli).await.unwrap();
+    let controller = Controller::default();
+    for input in [
+        "auth fixture",
+        "device credential set fixture",
+        "credential profile set fixture",
+        "setup localhost --id fixture",
+    ] {
+        let mut invocation = grammar.prepare(cli.clone(), input, None).unwrap();
+        assert!(invocation.credential_input && invocation.workspace_change.is_some());
+        assert!(invocation.credential.is_none() && invocation.credentials.is_none());
+        assert!(!invocation.argv.iter().any(|arg| arg == "--password-stdin"));
+        invocation.executable = mock_executable();
+        invocation
+            .argv
+            .insert(0, "--credential-pipe-fixture".into());
+        invocation.credential = Some(super::grammar::CredentialInput {
+            username: zeroize::Zeroizing::new("synthetic-account".into()),
+            password: zeroize::Zeroizing::new("synthetic-password".into()),
+        });
+        assert!(controller.start(invocation, input.into(), None));
+        let result = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+        assert_eq!(result.finished.unwrap().exit_code, Some(0), "{input}");
+        assert!(result.lines.is_empty());
+        assert_eq!(result.command, input);
+    }
+    for input in [
+        "auth fixture --username wrong-channel",
+        "auth fixture --password-stdin",
+        "setup",
+        "setup http://user:password@localhost --id fixture",
+    ] {
+        assert!(
+            grammar.prepare(cli.clone(), input, None).is_err(),
+            "{input}"
+        );
+    }
+    assert!(!controller.start(
+        grammar.prepare(cli, "auth fixture", None).unwrap(),
+        "auth fixture".into(),
+        None
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn completion_script_retains_exact_output_for_copying() {
+    let cli = executable();
+    let grammar = load_grammar(&cli).await.unwrap();
+    let input = "completion bash";
+    let request = grammar.prepare(cli.clone(), input, None).unwrap();
+    let reference = super::process::command(&cli)
+        .args(&request.argv)
+        .output()
+        .await
+        .unwrap();
+    assert!(reference.status.success());
+    for invalid in [
+        "completion bash --output json",
+        "--output json completion bash",
+        "--json completion bash",
+    ] {
+        assert!(
+            grammar.prepare(cli.clone(), invalid, None).is_err(),
+            "{invalid}"
+        );
+    }
+    let controller = Controller::default();
+    assert!(controller.start(request, input.into(), None));
+    let snapshot = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+    assert_eq!(snapshot.finished.unwrap().exit_code, Some(0));
+    assert_eq!(
+        snapshot.completion_script.as_deref().unwrap().as_bytes(),
+        reference.stdout
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI and its matching console_mock fixture"]
+async fn import_preview_generates_an_apply_draft_and_rejects_stale_fingerprints() {
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let seeded = super::process::command(&mock_executable())
+        .arg("--seed-import")
+        .env("OXVIF_CONFIG_DIR", directory.path())
+        .status()
+        .await
+        .unwrap();
+    assert!(seeded.success());
+
+    let preview = "device import --from console-fixture --plan";
+    let request = grammar.prepare(executable.clone(), preview, None).unwrap();
+    assert!(request.import_plan && request.workspace_change.is_none());
+    let command = shell_command(&request.argv);
+    let result = super::process::command(&executable)
+        .args(request.argv)
+        .env("OXVIF_CONFIG_DIR", directory.path())
+        .output()
+        .await
+        .unwrap();
+    assert!(result.status.success());
+    let json = serde_json::from_slice(&result.stdout).unwrap();
+    let fingerprint = super::process::import_plan_fingerprint(&json).unwrap();
+    let draft = grammar.apply_import_draft(&command, fingerprint).unwrap();
+    let request = grammar.prepare(executable.clone(), &draft, None).unwrap();
+    assert!(!request.import_plan && request.workspace_change.is_some());
+    let options = grammar.available_arguments(preview, "overrides", Locale::En);
+    let override_path = r"C:\QA files\site's overrides.json";
+    let token = options[0].insertion(override_path).unwrap();
+    let with_file = grammar
+        .prepare(executable.clone(), &format!("{preview} {token}"), None)
+        .unwrap();
+    let editor_draft = with_file
+        .argv
+        .iter()
+        .map(|token| super::grammar::quote(token))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let edited = grammar
+        .apply_import_draft(&editor_draft, fingerprint)
+        .unwrap();
+    let with_file = grammar.prepare(executable.clone(), &edited, None).unwrap();
+    assert!(with_file
+        .argv
+        .contains(&format!("--overrides={override_path}")));
+    let stale = draft.replace(fingerprint, &format!("sha256:{}", "0".repeat(64)));
+    for (input, expected) in [(stale.as_str(), false), (draft.as_str(), true)] {
+        let invocation = grammar.prepare(executable.clone(), input, None).unwrap();
+        let result = super::process::command(&executable)
+            .args(invocation.argv)
+            .env("OXVIF_CONFIG_DIR", directory.path())
+            .output()
+            .await
+            .unwrap();
+        assert_eq!(result.status.success(), expected);
+        let json: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        if expected {
+            assert_eq!(json["data"]["applied"], true);
+        } else {
+            assert_eq!(json["error"]["code"], "IMPORT_PLAN_MISMATCH");
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn bundled_command_help_and_completion_cover_all_supported_locales() {
+    let grammar = load_grammar(&executable()).await.unwrap();
+    for locale in [Locale::En, Locale::ZhTw, Locale::Ru] {
+        let missing = grammar.missing_translations(locale);
+        assert!(missing.is_empty(), "{locale:?}: {missing:?}");
+    }
+
+    let input = "events watch --to";
+    let completion = grammar.analyze(input, input.len(), &DynamicValues::default(), Locale::Ru);
+    assert!(completion.candidates.iter().any(|candidate| {
+        candidate.label == "--topic" && candidate.detail.contains("темы ONVIF")
+    }));
+    assert!(grammar
+        .available_arguments("events watch", "темы", Locale::Ru)
+        .iter()
+        .any(|option| option.label == "--topic" && option.detail.contains("темы ONVIF")));
+    let input = "events watch dur";
+    let completion = grammar.analyze(input, input.len(), &DynamicValues::default(), Locale::Ru);
+    assert!(completion.candidates.iter().any(|candidate| {
+        candidate.label == "--duration"
+            && candidate.replacement == "--duration "
+            && &input[candidate.range.clone()] == "dur"
+    }));
+    let input = "events watch --topic 'VideoSource/MotionAlarm' --quiet";
+    let chips = grammar.argument_chips(input, &DynamicValues::default());
+    let (edited, _) = chips[0].edited(input, "VideoSource/測試").unwrap();
+    assert_eq!(edited, "events watch --topic=VideoSource/測試 --quiet");
+    assert_eq!(chips[1].value.as_deref(), Some("true"));
+    let options = grammar.available_arguments("events watch", "duration", Locale::En);
+    assert_eq!(options[0].insertion("30").as_deref(), Some("--duration=30"));
+    let draft = "events watch --duration 30s";
+    let chip = &grammar.argument_chips(draft, &DynamicValues::default())[0];
+    assert!(options[0].insertion("60m").is_some());
+    assert!(chip.edited(draft, "60m").is_some());
+    for invalid in ["0s", "+30s", "61m", "18446744073709551615m"] {
+        assert!(options[0].insertion(invalid).is_none(), "{invalid}");
+        assert!(chip.edited(draft, invalid).is_none(), "{invalid}");
+        let draft = format!("events watch --target localhost --duration {invalid}");
+        assert!(
+            grammar.prepare(executable(), &draft, None).is_err(),
+            "{draft}"
+        );
+    }
+
+    let options = grammar.available_arguments("group member add lab", "", Locale::Ru);
+    let positional = options
+        .iter()
+        .find(|option| option.label == "device_id")
+        .unwrap();
+    assert_eq!(
+        positional.insertion("fixture-camera").as_deref(),
+        Some("fixture-camera")
+    );
+    assert!(options.iter().all(|option| option.label != "group_id"));
+
+    let options = grammar.available_arguments("config diff", "against", Locale::En);
+    assert_eq!(options[0].value_kind, super::grammar::ValueKind::InputFile);
+    let token = options[0].insertion(r"C:\test data\盤點.json").unwrap();
+    let request = grammar
+        .prepare(
+            executable(),
+            &format!("config diff --target localhost {token}"),
+            None,
+        )
+        .unwrap();
+    assert!(request
+        .argv
+        .contains(&r"--against=C:\test data\盤點.json".to_owned()));
+
+    let draft = "device info -vv --verbose --target localhost";
+    let chips = grammar.argument_chips(draft, &DynamicValues::default());
+    assert_eq!(chips[0].value.as_deref(), Some("3"));
+    let (edited, _) = chips[0].edited(draft, "4").unwrap();
+    let request = grammar.prepare(executable(), &edited, None).unwrap();
+    assert!(request.argv.contains(&"-vvvv".into()));
+    assert!(!request.argv.contains(&"--verbose".into()));
+
+    let draft = "media stream-uri --profile Pro";
+    let dynamic = DynamicValues {
+        media_profiles: vec!["Profile 1".into()],
+        ..Default::default()
+    };
+    assert!(grammar.needs_media_profiles(draft, "localhost"));
+    assert!(!grammar.needs_media_profiles("media stream-uri --device other", "localhost"));
+    assert!(!grammar.needs_media_profiles("media stream-uri --target elsewhere", "localhost"));
+    assert!(grammar
+        .analyze(draft, draft.len(), &dynamic, Locale::Ru)
+        .candidates
+        .iter()
+        .any(|candidate| candidate.label == "Profile 1"));
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn coverage_document_matches_every_public_command_route() {
+    let grammar = load_grammar(&executable()).await.unwrap();
+    let document = include_str!("../../docs/oxvif-console-coverage.md");
+    let listed = document
+        .lines()
+        .filter_map(|line| {
+            let (command, rest) = line.strip_prefix("| `")?.split_once("` | ")?;
+            let (route, detail) = rest.split_once(" | ")?;
+            assert!(!detail.trim_matches([' ', '|']).is_empty(), "{command}");
+            Some((command.to_owned(), route))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(grammar.command_coverage(), listed);
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI and its matching console_mock fixture"]
+async fn expanded_routes_handle_profile_options_local_ids_and_workspace_selectors() {
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let (_mock, camera) = mock_camera(&[]).await;
+    let input = "media stream-uri --profile Profile_1 --media-service=media1";
+    let request = grammar
+        .prepare(executable.clone(), input, Some(&camera))
+        .unwrap();
+    assert_eq!(
+        &request.argv[..3],
+        ["--media-service=media1", "media", "stream-uri"]
+    );
+    assert_eq!(request.target, camera.address);
+    assert_eq!(
+        grammar
+            .prepare(executable.clone(), "media stream-uri", Some(&camera))
+            .err(),
+        Some("console_required_argument")
+    );
+
+    let controller = Controller::default();
+    let files = tempfile::tempdir().unwrap();
+    let inventory = super::grammar::quote(files.path().join("inventory.json").to_str().unwrap());
+    let image = super::grammar::quote(files.path().join("snapshot.jpg").to_str().unwrap());
+    for input in [
+        "device test".to_owned(),
+        "device capabilities".to_owned(),
+        "device services".to_owned(),
+        "media stream-uri --profile Profile_1 --media-service=media1".to_owned(),
+        "media snapshot-uri --profile Profile_1".to_owned(),
+        "ptz status --profile Profile_1".to_owned(),
+        "ptz presets --profile Profile_1".to_owned(),
+        "health check".to_owned(),
+        "device list".to_owned(),
+        "config path".to_owned(),
+        format!("config export --save {inventory}"),
+        format!("config diff --against {inventory}"),
+        format!("media snapshot-save --profile Profile_1 --save {image}"),
+    ] {
+        let request = grammar
+            .prepare(executable.clone(), &input, Some(&camera))
+            .unwrap();
+        assert!(controller.start(request, input.clone(), None));
+        let completed = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+        assert_eq!(completed.finished.unwrap().exit_code, Some(0), "{input}");
+        assert_eq!(completed.malformed, 0, "{input}");
+        assert!(
+            completed
+                .lines
+                .iter()
+                .any(|line| line.kind == OutputKind::Json),
+            "{input}"
+        );
+    }
+    assert!(files.path().join("inventory.json").is_file());
+    assert!(files.path().join("snapshot.jpg").is_file());
+    let request = grammar
+        .prepare(
+            executable.clone(),
+            "device show -- front-door",
+            Some(&camera),
+        )
+        .unwrap();
+    assert_eq!(
+        request.argv,
+        [
+            "device",
+            "show",
+            "--non-interactive",
+            "--output",
+            "json",
+            "--",
+            "front-door"
+        ]
+    );
+    assert!(request.target.is_empty() && request.credentials.is_none());
+    let request = grammar
+        .prepare(
+            executable.clone(),
+            "device test --group north --jobs 2",
+            Some(&camera),
+        )
+        .unwrap();
+    assert_eq!(
+        &request.argv[..6],
+        ["--group", "north", "--jobs", "2", "device", "test"]
+    );
+    assert!(request.target.is_empty() && request.credentials.is_none());
+    let request = grammar
+        .prepare(executable, "discover scan --save fixture", None)
+        .unwrap();
+    assert!(request.workspace_change.is_some());
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn external_manage_accepts_only_its_supported_selectors() {
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    assert_eq!(
+        grammar.external_terminal_args("manage").unwrap().unwrap(),
+        ["manage"]
+    );
+    assert_eq!(
+        grammar
+            .external_terminal_args("manage front-door")
+            .unwrap()
+            .unwrap(),
+        ["manage", "--", "front-door"]
+    );
+    assert_eq!(
+        grammar
+            .external_terminal_args("manage --target 127.0.0.1")
+            .unwrap()
+            .unwrap(),
+        [
+            "manage",
+            "--target",
+            "http://127.0.0.1/onvif/device_service"
+        ]
+    );
+    for input in [
+        "manage --output json",
+        "manage a --target localhost",
+        "manage --target http://user:password@localhost",
+        "manage --username admin",
+    ] {
+        assert!(
+            grammar.external_terminal_args(input).unwrap().is_err(),
+            "{input}"
+        );
+    }
+    assert!(grammar.prepare(executable, "manage", None).is_err());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+#[ignore = "requires the matching console_mock fixture and Windows console host"]
+async fn external_terminal_provides_native_terminal_handles() {
+    let directory = tempfile::tempdir().unwrap();
+    let result_path = directory.path().join("terminal status.json");
+    let argv = vec![
+        "--terminal-fixture".to_owned(),
+        result_path.to_str().unwrap().to_owned(),
+        "台北 \"A\" \\".to_owned(),
+        String::new(),
+    ];
+    let child = super::terminal::spawn(&mock_executable(), &argv).unwrap();
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    let status = tokio::task::spawn_blocking(move || {
+        // The handle belongs to this test child and remains open during the wait.
+        unsafe { WaitForSingleObject(child.as_raw_handle(), 10_000) }
+    })
+    .await
+    .unwrap();
+    assert_eq!(status, windows_sys::Win32::Foundation::WAIT_OBJECT_0);
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(result_path).unwrap()).unwrap();
+    assert_eq!(
+        result,
+        serde_json::json!({"stdin": true, "stdout": true, "stderr": true, "isolated": true, "args": &argv[2..]})
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn workspace_writes_use_cli_registry_and_keep_passwords_out_of_arguments() {
+    use super::grammar::WorkspaceChange;
+
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    for (input, expected) in [
+        (
+            "device add fixture --target localhost --name 'Fixture camera'",
+            Some(WorkspaceChange::Write),
+        ),
+        ("group create test-group", Some(WorkspaceChange::Write)),
+        (
+            "group member add test-group fixture --alias cam",
+            Some(WorkspaceChange::Write),
+        ),
+        ("group show test-group", None),
+        (
+            "group member remove test-group cam",
+            Some(WorkspaceChange::Remove),
+        ),
+    ] {
+        let request = grammar.prepare(executable.clone(), input, None).unwrap();
+        assert!(request.workspace_change == expected, "{input}");
+        assert!(request.target.is_empty() && request.credentials.is_none());
+        let output = super::process::command(&executable)
+            .args(request.argv)
+            .env("OXVIF_CONFIG_DIR", directory.path())
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{input}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+    assert!(grammar
+        .prepare(
+            executable,
+            "device add fixture --target http://user:password@localhost",
+            None
+        )
+        .is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires the bundled CLI and its matching console_mock fixture"]
+async fn shareable_diagnosis_keeps_only_the_validated_report() {
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let (_mock, camera) = mock_camera(&[]).await;
+    let controller = Controller::default();
+    let config = grammar
+        .prepare(executable.clone(), "config validate --share", Some(&camera))
+        .unwrap();
+    assert!(config.target.is_empty() && config.credentials.is_none());
+    assert!(config.share_report);
+    let invocation = grammar
+        .prepare(executable, "diagnose --share", Some(&camera))
+        .unwrap();
+    assert_eq!(invocation.target, camera.address);
+    assert!(invocation.share_report);
+    assert!(controller.start(invocation, "diagnose --share".into(), None));
+    let completed = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+    let report = completed.share_report.expect("valid share report");
+    let json = report.json().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let destination = temporary.path().join("shareable.json");
+    std::fs::write(&destination, "old report").unwrap();
+    report.save(destination.clone()).unwrap();
+    assert_eq!(std::fs::read_to_string(destination).unwrap(), json);
+    assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 1);
+    assert!(!json.contains(&camera.address));
+    assert!(!json.contains("MockCam-1080p"));
+    assert!(!json.contains("Profile_1"));
+    assert!(super::share_report::ShareReport::parse(json.as_bytes()).is_some());
+    let truncated = json.trim_end().strip_suffix('}').unwrap();
+    assert!(super::share_report::ShareReport::parse(truncated.as_bytes()).is_none());
+    let mut oversized = json.as_bytes().to_vec();
+    oversized.resize(super::share_report::MAX_BYTES + 1, b' ');
+    assert!(super::share_report::ShareReport::parse(&oversized).is_none());
+    let mut poisoned: serde_json::Value = serde_json::from_str(&json).unwrap();
+    poisoned["checks"][0]["target"] = serde_json::json!("secret-address");
+    assert!(
+        super::share_report::ShareReport::parse(&serde_json::to_vec(&poisoned).unwrap()).is_none()
+    );
+
+    let (_auth_mock, mut camera) = mock_camera(&["--auth"]).await;
+    camera.credentials = Credentials {
+        username: "fixture-private-username".into(),
+        password: "fixture-private-password".into(),
+    };
+    let request = grammar
+        .prepare(self::executable(), "diagnose --share", Some(&camera))
+        .unwrap();
+    assert!(controller.start(request, "diagnose --share".into(), None));
+    let failed = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+    assert_ne!(failed.finished.as_ref().unwrap().exit_code, Some(0));
+    let failed_report = failed.share_report.unwrap();
+    let (stage, reason, action) = failed_report.issue(Locale::Ru).unwrap();
+    for translated in [stage, reason, action] {
+        assert!(translated
+            .chars()
+            .any(|c| ('\u{0400}'..='\u{04ff}').contains(&c)));
+    }
+    let encoded = failed_report.json().unwrap();
+    for secret in [
+        "fixture-private-username",
+        "fixture-private-password",
+        &camera.address,
+    ] {
+        assert!(!encoded.contains(secret));
+    }
 }
 
 fn mock_executable() -> PathBuf {
@@ -264,16 +918,50 @@ async fn real_cli_completion_execution_and_graceful_watch() {
     let executable = executable();
     let grammar = load_grammar(&executable).await.unwrap();
     let (_mock, camera) = mock_camera(&[]).await;
+    let empty = grammar.analyze("", 0, &DynamicValues::default(), Locale::ZhTw);
+    assert!(empty
+        .candidates
+        .iter()
+        .all(|item| !item.label.starts_with('-')));
+    let flags = grammar.analyze("--", 2, &DynamicValues::default(), Locale::ZhTw);
+    for option in [
+        "--clock-sync",
+        "--soap-auth",
+        "--media-service",
+        "--rtsp-probe",
+    ] {
+        assert!(
+            flags.candidates.iter().any(|item| {
+                item.label == option
+                    && item
+                        .detail
+                        .chars()
+                        .any(|ch| ('\u{4e00}'..='\u{9fff}').contains(&ch))
+            }),
+            "missing translated option {option}"
+        );
+    }
+    let incomplete = "device info --target https://camera.example/onvif --";
+    let analysis = grammar.analyze(
+        incomplete,
+        incomplete.len(),
+        &DynamicValues::default(),
+        Locale::ZhTw,
+    );
+    assert_eq!(
+        analysis.explicit_target.as_deref(),
+        Some("https://camera.example/onvif")
+    );
     let candidates = grammar
-        .analyze("ev", 2, &DynamicValues::default())
+        .analyze("ev", 2, &DynamicValues::default(), Locale::ZhTw)
         .candidates;
     assert!(candidates
         .iter()
-        .any(|candidate| candidate.label == "events"));
+        .any(|candidate| candidate.label == "events" && candidate.detail.contains("攝影機")));
     let partial = "events watch --output=j --duration 30s";
     let caret = partial.find(" --duration").unwrap();
     let candidates = grammar
-        .analyze(partial, caret, &DynamicValues::default())
+        .analyze(partial, caret, &DynamicValues::default(), Locale::En)
         .candidates;
     let jsonl = candidates
         .iter()
@@ -281,6 +969,25 @@ async fn real_cli_completion_execution_and_graceful_watch() {
         .unwrap();
     assert_eq!(&partial[jsonl.range.clone()], "j");
     assert_eq!(jsonl.replacement, "jsonl");
+
+    let group = grammar.command_help("events ", Locale::ZhTw);
+    assert_eq!(group.path, "events");
+    assert!(group.subcommands.iter().any(|node| node.name == "watch"));
+    let help = grammar.command_help("oxvif events watch --duration", Locale::ZhTw);
+    assert_eq!(help.path, "events watch");
+    assert!(help.watch);
+    assert!(help.summary.unwrap().contains("篩選"));
+    assert!(help.arguments.iter().any(|arg| {
+        arg.label() == "--topic"
+            && arg
+                .description(Locale::ZhTw)
+                .is_some_and(|description| description.contains("主題"))
+    }));
+    assert!(!help.arguments.iter().any(|arg| arg.label() == "--device"));
+    assert!(!help.arguments.iter().any(|arg| arg.label() == "--output"));
+    assert!(grammar
+        .prepare(executable.clone(), &help.template.unwrap(), Some(&camera))
+        .is_ok());
 
     let invocation = grammar
         .prepare(executable.clone(), "device info", Some(&camera))
@@ -316,13 +1023,33 @@ async fn real_cli_completion_execution_and_graceful_watch() {
             Some(&other)
         )
         .is_err());
-    assert!(grammar
+    let workspace = grammar
         .prepare(
             executable.clone(),
-            "--device another device info",
-            Some(&other)
+            "device info --device another",
+            Some(&other),
         )
-        .is_err());
+        .unwrap();
+    assert!(workspace.target.is_empty() && workspace.credentials.is_none());
+    assert_eq!(
+        &workspace.argv[..4],
+        ["--device", "another", "device", "info"]
+    );
+    for conflict in [
+        "device info another --target localhost",
+        "device info --group lab --device another",
+        "diagnose --share --group lab",
+        "config validate --soap-auth combined",
+        "events watch another",
+        "events watch --device another",
+    ] {
+        assert!(
+            grammar
+                .prepare(executable.clone(), conflict, Some(&other))
+                .is_err(),
+            "{conflict}"
+        );
+    }
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

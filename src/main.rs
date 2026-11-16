@@ -16,13 +16,14 @@ pub(crate) mod util;
 mod video;
 mod views;
 
-use components::{ConfirmDialogModal, DeviceList, DevicePanel, ToastContainer, Topbar};
+use components::{ConfirmDialogModal, DevicePanel, ToastContainer, Topbar};
 use state::{Ctx, GlobalKey, SettingsTab, View};
 use views::MainContent;
 
 /// CSS is embedded directly in the binary so the release ships as a
 /// single executable — no sibling `assets/` directory needed at runtime.
 const MAIN_CSS: &str = include_str!("../assets/main.css");
+const CONSOLE_CSS: &str = include_str!("../assets/console.css");
 
 /// App icon — same master PNG `build.rs` uses to mint the embedded ICO,
 /// re-decoded here at startup so `WindowBuilder::with_window_icon` has
@@ -180,7 +181,7 @@ fn App() -> Element {
         log_to_file: use_signal(|| cfg.log_to_file),
     };
     use_context_provider(|| ctx);
-    console::provide();
+    let mut console = console::provide();
 
     // Auto-save appearance and logging preferences.
     use_effect(move || {
@@ -230,6 +231,7 @@ fn App() -> Element {
         persist::save_health_groups(&creds, &devices, &groups);
     });
 
+    let in_console = *ctx.view.read() == View::Console;
     let theme_class = ctx.theme.read().css_class();
     // While a pointer drag is active, force the grabbing cursor + suppress text
     // selection app-wide (CSS `.dragging-active`), so there's no stuck no-drop
@@ -245,6 +247,7 @@ fn App() -> Element {
 
     rsx! {
         document::Style { {MAIN_CSS} }
+        document::Style { {CONSOLE_CSS} }
         ErrorBoundary {
             handle_error: |errors: ErrorContext| {
                 rsx! {
@@ -287,9 +290,7 @@ fn App() -> Element {
                         ctx.finish_drag_at(c.x, c.y, label);
                     }
                 },
-                // App-level shortcuts. Esc is handled per-modal because each
-                // dialog has its own close semantics; the keys here are the
-                // ones that should always work no matter what's focused.
+                // Dialogs and console popups handle Escape before it reaches navigation.
                 onkeydown: move |evt| {
                     let key = evt.key();
                     let mods = evt.modifiers();
@@ -298,7 +299,14 @@ fn App() -> Element {
                         mods.contains(Modifiers::CONTROL) || mods.contains(Modifiers::META);
                     let mut action = ctx.keyboard_action;
                     match key {
+                        Key::Escape if in_console && !evt.is_composing() && !evt.is_auto_repeating() => {
+                            console.back(ctx);
+                            evt.prevent_default();
+                        }
                         Key::Character(ref s) if ctrl_or_meta && s.eq_ignore_ascii_case("f") => {
+                            if in_console && !console.is_picking_target() {
+                                console.show_devices();
+                            }
                             action.set(Some(GlobalKey::FocusSearch));
                             evt.prevent_default();
                         }
@@ -306,11 +314,11 @@ fn App() -> Element {
                             action.set(Some(GlobalKey::Scan));
                             evt.prevent_default();
                         }
-                        Key::ArrowUp => {
+                        Key::ArrowUp if !in_console || console.devices_visible() => {
                             action.set(Some(GlobalKey::NavUp));
                             evt.prevent_default();
                         }
-                        Key::ArrowDown => {
+                        Key::ArrowDown if !in_console || console.devices_visible() => {
                             action.set(Some(GlobalKey::NavDown));
                             evt.prevent_default();
                         }
@@ -319,8 +327,10 @@ fn App() -> Element {
                 },
                 Topbar {}
                 div { class: "shell-body",
-                    DeviceList {}
-                    DevicePanel {}
+                    console::ConsoleSidebar {}
+                    if !in_console {
+                        DevicePanel {}
+                    }
                     MainContent {}
                 }
                 ToastContainer {}

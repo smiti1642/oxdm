@@ -46,7 +46,7 @@ pub fn MainContent() -> Element {
     let addr_key = addr.read().clone();
 
     rsx! {
-        main { class: "main-content",
+        main { class: if view == View::Console { "main-content main-content--console" } else { "main-content" },
             match view {
                 View::Welcome         => rsx! { WelcomeView {} },
                 View::HealthOverview  => rsx! { HealthOverviewView {} },

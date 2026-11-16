@@ -17,12 +17,14 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use super::grammar::{Description, Envelope, Grammar, Invocation};
+use super::grammar::{quote, valid_import_fingerprint, Description, Envelope, Grammar, Invocation};
+use super::share_report::{self, ShareReport};
 use super::EventSubscriptions;
 
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
 const MAX_DISPLAY_BYTES: usize = 512 * 1024;
 const MAX_DISPLAY_LINES: usize = 250;
+const MAX_COMPLETED_RUNS: usize = 12;
 const EXPORT_QUEUE_RECORDS: usize = 32;
 const IO_FINISH_TIMEOUT: Duration = Duration::from_secs(3);
 const STARTUP_AND_CLEANUP_BUDGET: Duration = Duration::from_secs(45);
@@ -77,6 +79,13 @@ pub struct Snapshot {
     pub camera_name: Option<String>,
     pub command: String,
     pub watch: bool,
+    started_at: Option<std::time::Instant>,
+    pub(super) elapsed_ms: u64,
+    pub(super) share_requested: bool,
+    pub(super) share_report: Option<Arc<ShareReport>>,
+    pub(super) import_fingerprint: Option<String>,
+    pub(super) import_preview_draft: Option<String>,
+    pub(super) completion_script: Option<Arc<str>>,
     pub lines: VecDeque<OutputLine>,
     pub evicted: u64,
     pub events: u64,
@@ -137,8 +146,15 @@ impl Snapshot {
 
 #[derive(Default, Clone)]
 pub struct Controller {
-    current: Arc<Mutex<Option<Arc<Run>>>>,
+    runs: Arc<Mutex<Runs>>,
     subscriptions: EventSubscriptions,
+}
+
+#[derive(Default)]
+struct Runs {
+    current: Option<Arc<Run>>,
+    completed: VecDeque<Arc<Snapshot>>,
+    evicted: u64,
 }
 
 struct Run {
@@ -149,6 +165,9 @@ struct Run {
 impl Run {
     fn update(&self, edit: impl FnOnce(&mut Snapshot)) {
         let mut data = self.data.lock().unwrap();
+        if let Some(start) = data.started_at {
+            data.elapsed_ms = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        }
         edit(&mut data);
         data.revision += 1;
     }
@@ -160,17 +179,29 @@ impl Controller {
     }
 
     pub fn start(&self, request: Invocation, command: String, export: Option<PathBuf>) -> bool {
-        let mut current = self.current.lock().unwrap();
-        let revision = current.as_ref().map_or(1, |run| {
-            let state = run.data.lock().unwrap();
-            if state.finished.is_none() {
-                0
-            } else {
-                state.revision + 1
-            }
-        });
-        if revision == 0 {
+        if request.credential_input != request.credential.is_some() {
             return false;
+        }
+        let mut runs = self.runs.lock().unwrap();
+        let previous = runs
+            .current
+            .as_ref()
+            .map(|run| run.data.lock().unwrap().clone());
+        if previous
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.finished.is_none())
+        {
+            return false;
+        }
+        let revision = previous
+            .as_ref()
+            .map_or(1, |snapshot| snapshot.revision + 1);
+        if let Some(previous) = previous {
+            if runs.completed.len() == MAX_COMPLETED_RUNS {
+                runs.completed.pop_front();
+                runs.evicted += 1;
+            }
+            runs.completed.push_back(Arc::new(previous));
         }
         let run = Arc::new(Run {
             data: Mutex::new(Snapshot {
@@ -180,19 +211,29 @@ impl Controller {
                 camera_name: request.camera_name.clone(),
                 command,
                 watch: request.control.is_some(),
+                started_at: Some(std::time::Instant::now()),
+                share_requested: request.share_report,
+                import_preview_draft: request.import_plan.then(|| {
+                    request
+                        .argv
+                        .iter()
+                        .map(|value| quote(value))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }),
                 waiting_for_subscription: request.control.is_some(),
                 export: export.clone(),
                 ..Snapshot::default()
             }),
             stop: Notify::new(),
         });
-        *current = Some(run.clone());
+        runs.current = Some(run.clone());
         tokio::spawn(supervise(run, request, export, self.subscriptions.clone()));
         true
     }
 
     pub fn stop(&self) {
-        if let Some(run) = self.current.lock().unwrap().as_ref() {
+        if let Some(run) = self.runs.lock().unwrap().current.as_ref() {
             let mut state = run.data.lock().unwrap();
             if state.finished.is_none() && !state.stopping {
                 state.stopping = true;
@@ -203,17 +244,23 @@ impl Controller {
     }
 
     pub fn is_active(&self) -> bool {
-        self.current
+        self.runs
             .lock()
             .unwrap()
+            .current
             .as_ref()
             .is_some_and(|run| run.data.lock().unwrap().finished.is_none())
     }
 
     pub fn snapshot_after(&self, revision: u64) -> Option<Snapshot> {
-        let current = self.current.lock().unwrap();
-        let state = current.as_ref()?.data.lock().unwrap();
+        let runs = self.runs.lock().unwrap();
+        let state = runs.current.as_ref()?.data.lock().unwrap();
         (state.revision > revision).then(|| state.clone())
+    }
+
+    pub(super) fn completed(&self) -> (Vec<Arc<Snapshot>>, u64) {
+        let runs = self.runs.lock().unwrap();
+        (runs.completed.iter().cloned().collect(), runs.evicted)
     }
 }
 
@@ -229,6 +276,12 @@ pub(super) fn command(executable: &Path) -> Command {
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     cmd
+}
+
+#[cfg(windows)]
+pub(super) fn open_terminal(executable: &Path, argv: &[String]) -> io::Result<()> {
+    super::terminal::spawn(executable, argv)?;
+    Ok(())
 }
 
 pub fn default_executable() -> Option<PathBuf> {
@@ -371,7 +424,22 @@ async fn supervise(
         None
     };
     let mut command = command(&request.executable);
-    command.args(&request.argv).stderr(Stdio::piped());
+    command.stderr(Stdio::piped());
+    if let Some(secret) = &request.credential {
+        let end = request
+            .argv
+            .iter()
+            .position(|arg| arg == "--")
+            .unwrap_or(request.argv.len());
+        command
+            .args(&request.argv[..end])
+            .arg("--password-stdin")
+            .args(&request.argv[end..])
+            .env("OXVIF_USERNAME", secret.username.trim())
+            .stdin(Stdio::piped());
+    } else {
+        command.args(&request.argv);
+    }
     if let Some(control) = &request.control {
         command.arg(&control.flag).stdin(Stdio::piped());
     }
@@ -386,7 +454,13 @@ async fn supervise(
     let child = command.spawn();
     drop(command);
     let Invocation {
-        control, output, ..
+        control,
+        output,
+        share_report,
+        import_plan,
+        credential,
+        completion_script,
+        ..
     } = request;
     let mut child = match child {
         Ok(child) => child,
@@ -403,6 +477,7 @@ async fn supervise(
             return;
         }
     };
+    let sensitive = credential.is_some();
     let watch = control.is_some();
     let (export, mut export_task) = match export_path {
         Some(path) => {
@@ -413,8 +488,14 @@ async fn supervise(
         None => (None, None),
     };
     let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
-    let mut stdout = if output == "json" {
-        tokio::spawn(read_json(run.clone(), stdout))
+    let mut stdout = if sensitive {
+        tokio::spawn(drain(stdout))
+    } else if completion_script {
+        tokio::spawn(read_completion_script(run.clone(), stdout))
+    } else if share_report {
+        tokio::spawn(read_share_report(run.clone(), stdout))
+    } else if output == "json" {
+        tokio::spawn(read_json(run.clone(), stdout, import_plan))
     } else {
         tokio::spawn(read_output(
             run.clone(),
@@ -425,15 +506,34 @@ async fn supervise(
             export,
         ))
     };
-    let mut stderr = tokio::spawn(read_output(
-        run.clone(),
-        BufReader::new(child.stderr.take().expect("piped stderr")),
-        true,
-        false,
-        false,
-        None,
-    ));
+    let stderr = child.stderr.take().expect("piped stderr");
+    let mut stderr = if share_report || sensitive {
+        tokio::spawn(drain(BufReader::new(stderr)))
+    } else {
+        tokio::spawn(read_output(
+            run.clone(),
+            BufReader::new(stderr),
+            true,
+            false,
+            false,
+            None,
+        ))
+    };
     let mut stdin = child.stdin.take();
+    let mut secret_write_failed = false;
+    if let Some(secret) = credential {
+        let mut pipe = stdin.take().expect("piped credential stdin");
+        secret_write_failed = !timeout(
+            Duration::from_secs(2),
+            pipe.write_all(secret.password.as_bytes()),
+        )
+        .await
+        .is_ok_and(|result| result.is_ok());
+        drop(pipe);
+        if secret_write_failed {
+            let _ = child.start_kill();
+        }
+    }
     let mut forced = false;
     let status = tokio::select! {
         result = child.wait() => result,
@@ -507,13 +607,76 @@ async fn supervise(
             error: status
                 .err()
                 .map(|e| e.to_string())
+                .or_else(|| {
+                    secret_write_failed
+                        .then(|| "Could not deliver the credential to the CLI".to_owned())
+                })
                 .or(output_error)
                 .or(missing_summary),
         });
     });
 }
 
-async fn read_json(run: Arc<Run>, mut reader: impl AsyncReadExt + Unpin) -> io::Result<()> {
+async fn read_share_report(run: Arc<Run>, mut reader: impl AsyncReadExt + Unpin) -> io::Result<()> {
+    let mut bytes = Vec::new();
+    (&mut reader)
+        .take(share_report::MAX_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    if bytes.len() > share_report::MAX_BYTES {
+        tokio::io::copy(&mut reader, &mut tokio::io::sink()).await?;
+    }
+    let report =
+        ShareReport::parse(&bytes).and_then(|report| report.json().ok().map(|json| (report, json)));
+    run.update(|state| {
+        if let Some((report, json)) = report {
+            for line in json.lines() {
+                state.append(OutputKind::Json, line.into(), None);
+            }
+            state.share_report = Some(Arc::new(report));
+        } else {
+            state.malformed += 1;
+        }
+    });
+    Ok(())
+}
+
+async fn drain(mut reader: impl AsyncReadExt + Unpin) -> io::Result<()> {
+    tokio::io::copy(&mut reader, &mut tokio::io::sink()).await?;
+    Ok(())
+}
+
+async fn read_completion_script(
+    run: Arc<Run>,
+    mut reader: impl AsyncReadExt + Unpin,
+) -> io::Result<()> {
+    let mut bytes = Vec::new();
+    (&mut reader)
+        .take(MAX_DISPLAY_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    drain(reader).await?;
+    run.update(|state| {
+        if let Some(script) = String::from_utf8(bytes)
+            .ok()
+            .filter(|script| !script.is_empty() && script.len() <= MAX_DISPLAY_BYTES)
+        {
+            for line in script.lines() {
+                state.append(OutputKind::Text, line.to_owned(), None);
+            }
+            state.completion_script = Some(script.into());
+        } else {
+            state.malformed += 1;
+        }
+    });
+    Ok(())
+}
+
+async fn read_json(
+    run: Arc<Run>,
+    mut reader: impl AsyncReadExt + Unpin,
+    import_plan: bool,
+) -> io::Result<()> {
     let mut document = Vec::new();
     let mut chunk = [0; 8192];
     let mut oversized = false;
@@ -528,8 +691,16 @@ async fn read_json(run: Arc<Run>, mut reader: impl AsyncReadExt + Unpin) -> io::
             oversized = true;
         }
     }
-    let parsed = !oversized && serde_json::from_slice::<serde_json::Value>(&document).is_ok();
+    let json = (!oversized)
+        .then(|| serde_json::from_slice::<serde_json::Value>(&document).ok())
+        .flatten();
+    let parsed = json.is_some();
+    let import_fingerprint = import_plan
+        .then(|| json.as_ref().and_then(import_plan_fingerprint))
+        .flatten()
+        .map(str::to_owned);
     run.update(|state| {
+        state.import_fingerprint = import_fingerprint;
         if !parsed {
             state.malformed += 1;
         }
@@ -551,6 +722,16 @@ async fn read_json(run: Arc<Run>, mut reader: impl AsyncReadExt + Unpin) -> io::
         }
     });
     Ok(())
+}
+
+pub(super) fn import_plan_fingerprint(json: &serde_json::Value) -> Option<&str> {
+    (json["schema_version"] == "3"
+        && json["ok"] == true
+        && json["data"]["kind"] == "device_import"
+        && json["data"]["applied"] == false)
+        .then(|| json["data"]["plan"]["fingerprint"].as_str())
+        .flatten()
+        .filter(|value| valid_import_fingerprint(value))
 }
 
 async fn read_output(

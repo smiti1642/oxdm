@@ -28,7 +28,9 @@ for (const event of ["input", "click", "select", "keyup", "scroll"]) {
 }
 input.addEventListener("focus", () => send("focus"));
 input.addEventListener("blur", () => send("blur"));
-input.addEventListener("console-run", () => send("run"));
+input.addEventListener("console-run", () => {
+    if (!composing) send("run");
+});
 input.addEventListener("console-replace", () => {
     align();
     send("replace");
@@ -69,9 +71,12 @@ editor.addEventListener("click", (event) => {
     if (item) accept(item);
 });
 input.addEventListener("keydown", (event) => {
-    event.stopPropagation();
-    if (composing || event.isComposing || event.keyCode === 229) return;
+    const inComposition = composing || event.isComposing || event.keyCode === 229;
+    if (!inComposition && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") return;
     const open = input.getAttribute("aria-expanded") === "true";
+    if (!inComposition && !open && event.key === "Escape") return;
+    event.stopPropagation();
+    if (inComposition) return;
     const active = document.getElementById(input.getAttribute("aria-activedescendant"));
     if (open && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey))) {
         event.preventDefault();

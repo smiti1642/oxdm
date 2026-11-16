@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use crate::components::{AboutDialog, Icon, LogViewer};
+use crate::console::ConsoleState;
 use crate::i18n;
 use crate::state::{Ctx, Theme, View};
 use dioxus::prelude::*;
@@ -7,6 +8,8 @@ use dioxus::prelude::*;
 #[component]
 pub fn Topbar() -> Element {
     let ctx = use_context::<Ctx>();
+    let console = use_context::<ConsoleState>();
+    let in_console = *ctx.view.read() == View::Console;
     let locale = *ctx.locale.read();
     let theme = *ctx.theme.read();
     let mut theme_sig = ctx.theme;
@@ -15,6 +18,7 @@ pub fn Topbar() -> Element {
     let logs_open = use_signal(|| false);
 
     let locale_label = locale.label();
+    let console_label = i18n::t(locale, if in_console { "console_leave" } else { "console_title" });
     let theme_icon = match theme {
         Theme::Dark => "moon",
         Theme::Light => "sun",
@@ -32,10 +36,19 @@ pub fn Topbar() -> Element {
             div { class: "topbar-center" }
             div { class: "topbar-right",
                 button {
-                    class: "icon-btn icon-btn--label console-nav",
-                    aria_pressed: *ctx.view.read() == View::Console,
-                    onclick: move |_| ctx.view.clone().set(View::Console),
-                    {i18n::t(locale, "console_title")}
+                    id: "oxdm-console-nav",
+                    class: "icon-btn console-nav",
+                    title: console_label,
+                    aria_label: console_label,
+                    aria_pressed: in_console,
+                    onclick: move |_| {
+                        if *ctx.view.peek() == View::Console {
+                            console.leave(ctx);
+                        } else {
+                            console.enter(ctx);
+                        }
+                    },
+                    Icon { name: "terminal", size: 18 }
                 }
                 button {
                     class: "icon-btn",

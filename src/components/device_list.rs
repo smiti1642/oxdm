@@ -151,7 +151,7 @@ fn ip_to_u32(addr: &str) -> u32 {
 }
 
 #[component]
-pub fn DeviceList() -> Element {
+pub fn DeviceList(picking_target: bool) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
     let mut filter = use_signal(String::new);
@@ -164,6 +164,15 @@ pub fn DeviceList() -> Element {
     let mut list_tab = use_signal(|| DeviceListTab::Discovered);
     let mut status_filter = use_signal(|| StatusFilter::All);
     let mut sort_by = use_signal(|| SortBy::Default);
+
+    use_effect(use_reactive((&picking_target,), move |(picking_target,)| {
+        if picking_target && *list_tab.peek() == DeviceListTab::Discovered {
+            let devices = ctx.devices.peek();
+            if !devices.is_empty() && devices.iter().all(|device| device.manual) {
+                list_tab.set(DeviceListTab::Manual);
+            }
+        }
+    }));
 
     let creds = ctx.global_credentials.read();
     let creds_empty = creds.username.is_empty();
@@ -348,14 +357,13 @@ pub fn DeviceList() -> Element {
     // press doesn't fire twice if some other signal causes a re-render.
     let mut keyboard_action_sig = ctx.keyboard_action;
     use_effect(move || {
-        let action = match *keyboard_action_sig.read() {
-            Some(a) => a,
-            None => return,
-        };
+        let action = *keyboard_action_sig.read();
+        let Some(action) = action else { return };
+        keyboard_action_sig.set(None);
         match action {
             crate::state::GlobalKey::FocusSearch => {
                 let _ = document::eval(
-                    "const el = document.getElementById('device-list-filter'); if (el) el.focus();",
+                    "requestAnimationFrame(() => document.getElementById('device-list-filter')?.focus());",
                 );
             }
             crate::state::GlobalKey::Scan => {
@@ -399,7 +407,6 @@ pub fn DeviceList() -> Element {
                 ctx.selected.clone().set(Some(visible[new_pos]));
             }
         }
-        keyboard_action_sig.set(None);
     });
 
     let is_scanning = *ctx.scanning.read();
@@ -457,6 +464,8 @@ pub fn DeviceList() -> Element {
 
     rsx! {
         aside { class: "sidebar",
+            aria_labelledby: picking_target.then_some("oxdm-console-target-picker"),
+            aria_describedby: picking_target.then_some("oxdm-console-picker-hint"),
 
             div { class: "sidebar-header",
                 span { class: "sidebar-title", {i18n::t(locale, "sidebar_title")} }
@@ -500,6 +509,13 @@ pub fn DeviceList() -> Element {
                     placeholder: i18n::t(locale, "filter_placeholder"),
                     value: "{filter}",
                     oninput: move |e| filter.set(e.value()),
+                    onkeydown: move |event| {
+                        if picking_target && matches!(event.key(), Key::ArrowDown | Key::ArrowUp) {
+                            event.prevent_default();
+                            event.stop_propagation();
+                            focus_picker_card(event.key() == Key::ArrowUp);
+                        }
+                    },
                 }
             }
 
@@ -530,6 +546,13 @@ pub fn DeviceList() -> Element {
             }
 
             div { class: "device-list",
+                onkeydown: move |event| {
+                    if picking_target && matches!(event.key(), Key::ArrowDown | Key::ArrowUp) {
+                        event.prevent_default();
+                        event.stop_propagation();
+                        focus_picker_card(event.key() == Key::ArrowUp);
+                    }
+                },
                 if filtered.is_empty() {
                     div { class: "device-empty",
                         match active_tab {
@@ -608,6 +631,11 @@ pub fn DeviceList() -> Element {
         EditDeviceDialog { open: edit_dialog_open, device_index: edit_device_idx }
         AddToGroupDialog { open: picker_open, device_index: picker_device_idx }
     }
+}
+
+fn focus_picker_card(previous: bool) {
+    let eval = document::eval(include_str!("../../assets/console-picker.js"));
+    let _ = eval.send(previous);
 }
 
 /// Saved-but-inactive camera clones (mocks) in the Manual tab: one row per
@@ -691,8 +719,7 @@ fn SavedMocks() -> Element {
                                         });
                                         let idx = devs.len() - 1;
                                         drop(devs);
-                                        ctx.selected.clone().set(Some(idx));
-                                        ctx.view.clone().set(View::DeviceSettings);
+                                        crate::console::select_device(ctx, idx);
                                     }
                                     Err(e) => ctx.push_toast(
                                         ToastLevel::Error,
@@ -767,8 +794,6 @@ fn DeviceCard(
 ) -> Element {
     let ctx = use_context::<Ctx>();
     let locale = *ctx.locale.read();
-    let mut sel = ctx.selected;
-    let mut view = ctx.view;
     let mut devices = ctx.devices;
 
     let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
@@ -795,17 +820,23 @@ fn DeviceCard(
     let card_addr = display_addr.clone();
 
     rsx! {
-        div {
+        button {
             class: card_class,
+            r#type: "button",
+            aria_pressed: selected,
             onclick: move |_| {
                 // A pointer drag fires `onclick` on release too; skip the select
                 // when we just completed a drag (flag reset on next pointerdown).
                 if *ctx.drag_just_finished.peek() {
+                    ctx.drag_just_finished.clone().set(false);
                     return;
                 }
-                sel.set(Some(index));
-                if *view.peek() != View::Console {
-                    view.set(View::DeviceSettings);
+                crate::console::select_device(ctx, index);
+            },
+            onkeydown: move |event| {
+                let key = event.key();
+                if key == Key::Enter || matches!(key, Key::Character(ref value) if value == " ") {
+                    ctx.drag_just_finished.clone().set(false);
                 }
             },
             oncontextmenu: move |e| {
@@ -833,19 +864,19 @@ fn DeviceCard(
                     }));
                 }
             },
-            div { class: "device-card-header",
+            span { class: "device-card-header",
                 span { class: dot_class }
                 span { class: "device-name", "{name}" }
             }
-            div { class: "device-addr", "{display_addr}" }
+            span { class: "device-addr", "{display_addr}" }
             if !firmware.is_empty() {
-                div { class: "device-firmware", "FW {firmware}" }
+                span { class: "device-firmware", "FW {firmware}" }
             }
             if !location.is_empty() {
-                div { class: "device-location", "{location}" }
+                span { class: "device-location", "{location}" }
             }
             if is_clone {
-                div { class: "device-firmware", {i18n::t(locale, "clone_badge")} }
+                span { class: "device-firmware", {i18n::t(locale, "clone_badge")} }
             }
         }
 

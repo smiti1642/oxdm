@@ -123,7 +123,6 @@ a      { color: var(--blue); text-decoration: none; }
 }
 .icon-btn:hover { background: var(--surface0); color: var(--text); }
 .icon-btn--label { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
-.console-nav { width: auto; padding: 0 10px; white-space: nowrap; }
 .console-nav[aria-pressed="true"] { color: var(--text); background: var(--surface0); }
 .icon-btn--warn { color: var(--yellow); }
 .icon-btn--warn:hover { color: var(--yellow); }
@@ -287,6 +286,9 @@ a      { color: var(--blue); text-decoration: none; }
 
 /* Device card */
 .device-card {
+  display: block;
+  width: 100%;
+  text-align: left;
   border-radius: 7px;
   padding: 8px 10px;
   cursor: pointer;
@@ -322,16 +324,19 @@ a      { color: var(--blue); text-decoration: none; }
   text-overflow: ellipsis;
 }
 .device-addr {
+  display: block;
   font-size: 11px;
   color: var(--subtext0);
   font-family: monospace;
 }
 .device-firmware {
+  display: block;
   font-size: 10px;
   color: var(--overlay1);
   margin-top: 1px;
 }
 .device-location {
+  display: block;
   font-size: 10px;
   color: var(--overlay0);
   font-style: italic;

@@ -4,6 +4,22 @@ pub(crate) mod zh_tw;
 
 use crate::state::Locale;
 
+pub(crate) fn console_command(locale: Locale, id: &str) -> Option<&'static str> {
+    match locale {
+        Locale::ZhTw => zh_tw::console_command(id),
+        Locale::Ru => ru::console_command(id),
+        Locale::En => None,
+    }
+}
+
+pub(crate) fn console_option(locale: Locale, id: &str) -> Option<&'static str> {
+    match locale {
+        Locale::ZhTw => zh_tw::console_option(id),
+        Locale::Ru => ru::console_option(id),
+        Locale::En => en::console_option(id),
+    }
+}
+
 /// Look up a translated string by key for the given locale.
 /// Falls back to English if the key is missing in the target locale.
 /// Panics (in debug) / returns the key itself if missing everywhere.
