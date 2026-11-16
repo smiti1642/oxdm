@@ -49,6 +49,20 @@ def check_cli(executable):
     if control["kind"] != "stdin_stop_v1" or control["flag"] != "--control-stdin":
         raise ValueError("Incompatible oxvif watch control")
     print(f"oxvif {data['cli_version']}: {executable}")
+    for name, target_flag in (("diagnose", "--target"), ("config.validate", None)):
+        command = supported.get(name, {})
+        if (
+            command.get("share_report_version") != 1
+            or command.get("output") != "json"
+            or command.get("target_flag") != target_flag
+        ):
+            raise ValueError(f"Missing v1 console share report support for {name}")
+    for name in ("setup", "auth", "device.credential.set", "credential.profile.set"):
+        if supported.get(name, {}).get("credential_input") != "password_stdin_v1":
+            raise ValueError(f"Missing console credential input support for {name}")
+    manage = next((node for node in data["root"]["subcommands"] if node["command_id"] == "manage"), {})
+    if manage.get("external_terminal") != "manage_v1":
+        raise ValueError("Missing external terminal support for manage")
 
 
 def check_bundle(bundle, mock):
