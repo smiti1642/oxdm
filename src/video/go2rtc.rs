@@ -348,9 +348,7 @@ fn discover_binary() -> Option<PathBuf> {
 /// expose the camera streams to the LAN — a real surprise for users
 /// who think they're running a "local-only" tool.
 fn write_config_file() -> Result<PathBuf, String> {
-    let dir = dirs::home_dir()
-        .map(|h| h.join(".oxdm"))
-        .unwrap_or_else(std::env::temp_dir);
+    let dir = crate::persist::oxdm_dir().unwrap_or_else(std::env::temp_dir);
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
     let path = dir.join("go2rtc.yaml");
     let yaml = format!("api:\n  listen: \"{API_HOST}:{API_PORT}\"\nlog:\n  level: warn\n");

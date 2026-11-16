@@ -72,7 +72,7 @@ fn init_logging(log_to_file: bool) -> Option<tracing_appender::non_blocking::Wor
     let stderr_layer = fmt::layer().with_target(false).with_filter(env_filter());
 
     let (file_layer, guard) = if log_to_file {
-        let log_dir = dirs::home_dir().map(|h| h.join(".oxdm").join("logs"));
+        let log_dir = log_dir();
         match log_dir {
             Some(ref dir) => match std::fs::create_dir_all(dir) {
                 Ok(()) => {
@@ -106,7 +106,7 @@ fn init_logging(log_to_file: bool) -> Option<tracing_appender::non_blocking::Wor
 
 /// Path to the directory holding rotated log files.
 pub fn log_dir() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|h| h.join(".oxdm").join("logs"))
+    persist::oxdm_dir().map(|dir| dir.join("logs"))
 }
 
 fn main() {

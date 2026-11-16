@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 
 def check_cli(executable):
@@ -48,7 +49,6 @@ def check_cli(executable):
     control = supported["events.watch"]["control"]
     if control["kind"] != "stdin_stop_v1" or control["flag"] != "--control-stdin":
         raise ValueError("Incompatible oxvif watch control")
-    print(f"oxvif {data['cli_version']}: {executable}")
     for name, target_flag in (("diagnose", "--target"), ("config.validate", None)):
         command = supported.get(name, {})
         if (
@@ -63,6 +63,15 @@ def check_cli(executable):
     manage = next((node for node in data["root"]["subcommands"] if node["command_id"] == "manage"), {})
     if manage.get("external_terminal") != "manage_v1":
         raise ValueError("Missing external terminal support for manage")
+    print(f"oxvif {data['cli_version']}: {executable}")
+
+
+def extract_msi(bundle, payload):
+    subprocess.run(
+        ["msiexec.exe", "/a", bundle, "/qn", f"TARGETDIR={payload}"],
+        check=True,
+        timeout=120,
+    )
 
 
 def check_bundle(bundle, mock):
@@ -70,11 +79,7 @@ def check_bundle(bundle, mock):
         payload = Path(work) / "payload"
         payload.mkdir()
         if bundle.suffix == ".msi":
-            subprocess.run(
-                ["msiexec.exe", "/a", bundle, "/qn", f"TARGETDIR={payload}"],
-                check=True,
-                timeout=120,
-            )
+            extract_msi(bundle, payload)
         elif bundle.suffix == ".deb":
             subprocess.run(["dpkg-deb", "-x", bundle, payload], check=True, timeout=120)
         elif bundle.suffix == ".dmg":
@@ -119,13 +124,20 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check-only", action="store_true")
     mode.add_argument("--bundle", action="store_true")
+    mode.add_argument("--blind-test", action="store_true")
     parser.add_argument("--mock", type=Path, help="Matching console_mock test fixture")
     args = parser.parse_args()
     executable = args.executable.resolve(strict=True)
-    if args.bundle:
+    if args.bundle or args.blind_test:
         if args.mock is None:
-            parser.error("--bundle requires --mock")
-        check_bundle(executable, args.mock.resolve(strict=True))
+            parser.error("--bundle and --blind-test require --mock")
+        mock = args.mock.resolve(strict=True)
+        if args.blind_test:
+            if os.name != "nt" or executable.suffix.lower() != ".msi":
+                parser.error("--blind-test requires a Windows MSI")
+            blind_test(executable, mock)
+        else:
+            check_bundle(executable, mock)
         return
     check_cli(executable)
     if args.check_only:
@@ -140,6 +152,64 @@ def main():
     if os.name != "nt":
         stage.chmod(0o755)
     print(f"Staged {stage}")
+
+
+def blind_test(bundle, mock):
+    with tempfile.TemporaryDirectory(prefix="oxdm-blind-", ignore_cleanup_errors=True) as work:
+        root = Path(work)
+        payload = root / "payload"
+        payload.mkdir()
+        extract_msi(bundle, payload)
+        apps = list(payload.rglob("oxdm.exe"))
+        if len(apps) != 1:
+            raise ValueError("Expected one OxDM application in the MSI")
+        env = os.environ.copy()
+        for variable in (
+            "OXDM_OXVIF", "OXVIF_USERNAME", "OXVIF_PASSWORD", "OXVIF_DEVICE",
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
+        ):
+            env.pop(variable, None)
+        env["OXDM_CONFIG_DIR"] = str(root / "profile")
+        env["OXVIF_CONFIG_DIR"] = str(root / "cli")
+        env["WEBVIEW2_USER_DATA_FOLDER"] = str(root / "webview")
+        check_cli(apps[0].with_name("oxdm-oxvif.exe"))
+        with subprocess.Popen(
+            [mock], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ) as camera:
+            try:
+                address = camera.stdout.readline().strip()
+                if not address.startswith("http://127.0.0.1:"):
+                    raise ValueError("The mock camera did not return a loopback URL")
+                profile = Path(env["OXDM_CONFIG_DIR"])
+                profile.mkdir()
+                (profile / "devices.toml").write_text(
+                    f'[[devices]]\nname = "Local test camera"\naddr = {json.dumps(address)}\n',
+                    encoding="utf-8",
+                )
+                camera.stdin.write("burst\n")
+                camera.stdin.flush()
+                print(f"Local test camera: {address}\nOxDM: {apps[0]}", flush=True)
+                subprocess.run([apps[0]], cwd=apps[0].parent, env=env, check=True)
+            finally:
+                camera.stdin.close()
+                try:
+                    camera.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    camera.kill()
+                    camera.wait()
+                # WebView2 can hold profile files briefly after OxDM exits.
+                deadline = time.monotonic() + 10
+                while root.exists():
+                    try:
+                        shutil.rmtree(root)
+                    except FileNotFoundError:
+                        break
+                    except PermissionError:
+                        if time.monotonic() >= deadline:
+                            print(f"WebView2 still holds test files in {root}", flush=True)
+                            break
+                        time.sleep(0.25)
 
 
 if __name__ == "__main__":

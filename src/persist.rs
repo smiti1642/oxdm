@@ -59,8 +59,57 @@ struct HealthGroupsFile {
 
 // ── Paths ───────────────────────────────────────────────────────────────────
 
-fn oxdm_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".oxdm"))
+fn profile_override() -> Option<PathBuf> {
+    static PROFILE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    PROFILE
+        .get_or_init(|| {
+            let path = PathBuf::from(std::env::var_os("OXDM_CONFIG_DIR")?);
+            if !path.is_absolute() {
+                return None;
+            }
+            // Resolve the same profile before any config or keyring reads. The
+            // normal save paths report a directory error if this is unwritable.
+            let _ = std::fs::create_dir_all(&path);
+            Some(path.canonicalize().unwrap_or(path))
+        })
+        .clone()
+}
+
+pub(crate) fn oxdm_dir() -> Option<PathBuf> {
+    profile_override().or_else(|| dirs::home_dir().map(|h| h.join(".oxdm")))
+}
+
+fn credential_entry() -> keyring::Result<keyring::Entry> {
+    use sha2::{Digest, Sha256};
+
+    if let Some(path) = profile_override() {
+        let digest = Sha256::digest(path.as_os_str().as_encoded_bytes());
+        keyring::Entry::new(
+            &format!("{KEYRING_SERVICE}.profile.{digest:x}"),
+            KEYRING_USER,
+        )
+    } else {
+        keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    #[test]
+    #[ignore = "requires a dedicated OXDM_CONFIG_DIR and a local mock camera"]
+    fn seeded_profile_starts_with_only_the_mock_camera() {
+        let profile = super::profile_override().expect("set OXDM_CONFIG_DIR");
+        let cfg = super::load_config();
+        let (credentials, entries) = super::load_all_credentials(&cfg);
+        assert!(credentials.username.is_empty() && credentials.password.is_empty());
+        assert!(entries.is_empty());
+        let devices = super::load_devices(&entries);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].name, "Local test camera");
+        assert!(devices[0].addr.starts_with("http://127.0.0.1:"));
+        assert!(devices[0].credentials.is_none());
+        assert_eq!(crate::log_dir().unwrap(), profile.join("logs"));
+    }
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -468,7 +517,7 @@ pub fn write_surface_selection(selection: &oxvif::metamorph::SurfaceSelection) {
 type CredsMap = HashMap<String, (String, String)>;
 
 fn keyring_load_all() -> CredsMap {
-    let entry = match keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+    let entry = match credential_entry() {
         Ok(e) => e,
         Err(e) => {
             warn!(error = %e, "Keychain entry creation failed");
@@ -496,8 +545,14 @@ fn keyring_save_all(map: &CredsMap) {
             return;
         }
     };
-    match keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+    match credential_entry() {
         Ok(entry) => {
+            if profile_override().is_some()
+                && map.is_empty()
+                && matches!(entry.get_password(), Err(keyring::Error::NoEntry))
+            {
+                return;
+            }
             if let Err(e) = entry.set_password(&json) {
                 warn!(error = %e, "Keychain save failed, credentials not persisted");
             }
