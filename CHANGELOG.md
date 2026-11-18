@@ -8,7 +8,7 @@ Changelog tracking starts at 0.1.5.
 
 ## [Unreleased]
 
-## [0.5.0]
+## [0.5.0] - 2026-11-18
 
 [0.5.0 release notes](docs/release-0.5.0.md) · [繁體中文](docs/release-0.5.0_zh.md)
 

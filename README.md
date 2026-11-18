@@ -7,7 +7,7 @@ on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-The 0.5.0 candidate adds the oxvif command console and reconnecting event
+OxDM 0.5.0 adds the oxvif command console and reconnecting event
 monitoring. See the [release notes](docs/release-0.5.0.md) and
 [繁體中文](docs/release-0.5.0_zh.md).
 
@@ -64,8 +64,7 @@ for producing installer bundles). Install from
 cargo install oxvif-device-manager --locked
 ```
 
-To work on the candidate with local SDK changes, keep `oxdm` and `oxvif`
-as sibling checkouts and build from the OxDM directory:
+To build from a checkout, run this in the OxDM directory:
 
 ```sh
 cargo build --locked
@@ -74,9 +73,8 @@ cargo build --locked
 The executable is **`oxdm`** (the crate is published as
 `oxvif-device-manager` because the shorter name was already taken).
 
-oxvif 0.16 and 0.17 require Rust 1.88 or newer. The complete OxDM 0.4.1 build was
-validated on Rust 1.97.0; Rust 1.88 has not been verified for the full desktop
-dependency graph. `--locked` uses the dependency versions shipped with the crate.
+The oxvif 0.18 SDK supports Rust 1.88. Use current stable Rust for the full
+OxDM desktop build. `--locked` uses the dependency versions shipped with the crate.
 
 On Linux, install the WebKitGTK/wry development packages first. For example, on
 Debian/Ubuntu:

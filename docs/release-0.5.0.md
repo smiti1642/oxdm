@@ -1,6 +1,6 @@
 # OxDM 0.5.0
 
-Release candidate. [繁體中文](release-0.5.0_zh.md)
+2026-11-18 · [繁體中文](https://github.com/smiti1642/oxdm/blob/v0.5.0/docs/release-0.5.0_zh.md)
 
 - **Run oxvif commands inside OxDM.** The console supports syntax highlighting,
   command and parameter completion, and contextual help in English,
@@ -24,7 +24,7 @@ Local Windows checks include the MSI's bundled CLI and the portable ZIP's
 executable pair. Hardware checks cover
 reconnecting without stored event history and one-shot queries on a GeoVision
 camera. Reading stored event history still requires compatible hardware.
-See the [changelog](../CHANGELOG.md).
+See the [changelog](https://github.com/smiti1642/oxdm/blob/v0.5.0/CHANGELOG.md).
 
 OxDM 0.5.0 targets oxvif 0.18.0. HTTPS snapshots require certificate and
 hostname verification. For a private camera CA, trust the CA in the operating
