@@ -758,20 +758,19 @@ async fn watch_waits_for_the_events_view_lease_and_can_stop_while_waiting() {
     let controller = Controller::default();
     let subscriptions = controller.event_subscriptions();
     let permit = subscriptions.acquire(&camera.address).await;
-    let view = super::ViewSubscription::create(
+    let mut view = super::ViewSubscription::create(
         camera.address.clone(),
         camera.credentials.clone(),
         None,
-        "PT60S",
         permit,
     )
     .await
     .unwrap();
-    let old_url = view.url.clone();
-    let pull_previous = || {
-        crate::api::pull_event_messages(&camera.address, &camera.credentials, &old_url, "PT1S", 1)
-    };
-    pull_previous().await.unwrap();
+    let next = view.subscription().next();
+    assert!(matches!(
+        timeout(Duration::from_secs(6), next).await.unwrap(),
+        Some(Ok(oxvif::events::ManagedEvent::Notification(_)))
+    ));
 
     let input = "events watch --duration 30s";
     let prepare = || {
@@ -788,7 +787,10 @@ async fn watch_waits_for_the_events_view_lease_and_can_stop_while_waiting() {
     let finished = stopped.finished.unwrap();
     assert!(!finished.started);
     assert!(finished.error.is_none());
-    pull_previous().await.unwrap();
+    assert_eq!(
+        view.subscription().state(),
+        oxvif::events::ManagedEventState::Active
+    );
 
     assert!(controller.start(prepare(), input.into(), None));
     assert!(timeout(
@@ -799,10 +801,6 @@ async fn watch_waits_for_the_events_view_lease_and_can_stop_while_waiting() {
     .is_err());
     drop(view);
     wait_for(&controller, |state| state.events > 0).await;
-    assert!(
-        pull_previous().await.is_err(),
-        "the events view lease is still active"
-    );
     assert!(timeout(
         Duration::from_millis(50),
         subscriptions.acquire(&camera.address)

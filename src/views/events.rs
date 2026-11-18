@@ -4,22 +4,13 @@ use crate::console::{event_subscriptions, ViewSubscription};
 use crate::state::{Credentials, Ctx};
 use crate::{api, i18n};
 use dioxus::prelude::*;
+use oxvif::events::{ManagedEvent, ManagedEventState};
 use std::collections::{HashSet, VecDeque};
+use std::time::Duration;
 
 /// Maximum number of events kept in the in-memory log. Older events are
 /// dropped from the front of the deque as new ones arrive.
 const MAX_EVENTS: usize = 500;
-/// Long-poll timeout per PullMessages. Cameras hold the request open for at
-/// most this long before returning whatever they've buffered. Short enough
-/// that the user sees the UI react quickly when they pause/leave.
-const PULL_TIMEOUT: &str = "PT5S";
-const PULL_MAX_MESSAGES: u32 = 20;
-/// Initial subscription lifetime requested. We renew well before this fires.
-const SUBSCRIPTION_LIFETIME: &str = "PT60S";
-/// Renew the subscription every N pull cycles to stay well clear of the
-/// 60 s default expiry. With PULL_TIMEOUT=PT5S, this means renew roughly
-/// every 25 s — enough headroom even if a pull takes the full timeout.
-const RENEW_EVERY_N_PULLS: u32 = 5;
 /// Topic namespace prefix used when building filter expressions. oxvif's
 /// `EventProperties` flattens the TopicSet without preserving prefixes, so
 /// we reattach the standard ONVIF `tns1:` here. Cameras that advertise
@@ -37,12 +28,69 @@ struct EventRow {
     fields: String,
     source: Vec<(String, String)>,
     data: Vec<(String, String)>,
+    kind: RowKind,
     /// Concatenated `topic + operation + fields + utc_time`, lowercased
     /// once at construction time so the search filter can do
     /// `contains(needle)` without re-formatting per render. With the
     /// 500-row log cap this saves N allocations per keystroke / per
     /// status change / per any signal that re-runs the render closure.
     searchable_lower: String,
+}
+
+#[derive(Clone, PartialEq)]
+enum RowKind {
+    Live,
+    Recovered,
+    Snapshot,
+    Gap { through: Option<String> },
+}
+
+impl RowKind {
+    fn badge(&self) -> Option<&'static str> {
+        match self {
+            Self::Live | Self::Gap { .. } => None,
+            Self::Recovered => Some("events_recovered"),
+            Self::Snapshot => Some("events_snapshot"),
+        }
+    }
+}
+
+impl EventRow {
+    fn gap(seq: u64, since: String) -> Self {
+        Self {
+            seq,
+            received_at: format_now(),
+            utc_time: since,
+            topic: String::new(),
+            operation: String::new(),
+            fields: String::new(),
+            source: Vec::new(),
+            data: Vec::new(),
+            kind: RowKind::Gap { through: None },
+            searchable_lower: String::new(),
+        }
+    }
+
+    fn notification(seq: u64, msg: oxvif::NotificationMessage, kind: RowKind) -> Self {
+        let fields = format_fields(&msg.source, &msg.data);
+        let searchable_lower = format!(
+            "{} {} {} {}",
+            msg.topic, msg.property_operation, fields, msg.utc_time
+        )
+        .to_lowercase();
+        Self {
+            seq,
+            received_at: format_now(),
+            utc_time: msg.utc_time,
+            topic: msg.topic,
+            operation: msg.property_operation,
+            fields,
+            source: sorted_pairs(&msg.source),
+            data: sorted_pairs(&msg.data),
+            kind,
+            searchable_lower,
+        }
+    }
 }
 
 #[component]
@@ -55,6 +103,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
     let paused = use_signal(|| false);
     let show_details = use_signal(|| false);
     let mut next_seq = use_signal(|| 0u64);
+    let mut retry = use_signal(|| 0u64);
     let search = use_signal(String::new);
     // Default: newest-first by receive sequence. Clicking a column header
     // cycles that column between asc/desc; clicking Time resets to default.
@@ -85,94 +134,86 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let addr_now = addr.read().clone();
         let creds_now = creds.read().clone();
         let filter = build_filter_expression(&hidden_topics.read(), topics_info);
+        let _ = *retry.read();
         async move {
             status.set(StatusKind::Waiting);
             let permit = subscriptions.acquire(&addr_now).await;
             status.set(StatusKind::Connecting);
-            let subscription = match ViewSubscription::create(
-                addr_now.clone(),
-                creds_now.clone(),
-                filter,
-                SUBSCRIPTION_LIFETIME,
-                permit,
-            )
-            .await
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    status.set(StatusKind::Error(format!("Subscribe: {e}")));
-                    return;
-                }
-            };
-            status.set(StatusKind::Connected);
-
-            let mut pulls_since_renew: u32 = 0;
-            loop {
-                if *paused.peek() {
-                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                    continue;
-                }
-
-                match api::pull_event_messages(
-                    &addr_now,
-                    &creds_now,
-                    &subscription.url,
-                    PULL_TIMEOUT,
-                    PULL_MAX_MESSAGES,
-                )
-                .await
-                {
-                    Ok(msgs) => {
-                        if !msgs.is_empty() {
-                            let mut log = events.write();
-                            for msg in msgs {
-                                let mut seq = next_seq.write();
-                                *seq += 1;
-                                let fields = format_fields(&msg.source, &msg.data);
-                                let searchable_lower = format!(
-                                    "{} {} {} {}",
-                                    msg.topic, msg.property_operation, fields, msg.utc_time
-                                )
-                                .to_lowercase();
-                                log.push_back(EventRow {
-                                    seq: *seq,
-                                    received_at: format_now(),
-                                    utc_time: msg.utc_time,
-                                    topic: msg.topic,
-                                    operation: msg.property_operation,
-                                    fields,
-                                    source: sorted_pairs(&msg.source),
-                                    data: sorted_pairs(&msg.data),
-                                    searchable_lower,
-                                });
-                                while log.len() > MAX_EVENTS {
-                                    log.pop_front();
-                                }
-                            }
-                        }
-                    }
+            let mut view_subscription =
+                match ViewSubscription::create(addr_now, creds_now, filter, permit).await {
+                    Ok(subscription) => subscription,
                     Err(e) => {
-                        status.set(StatusKind::Error(format!("Pull: {e}")));
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        status.set(StatusKind::Connected);
-                        continue;
-                    }
-                }
-
-                pulls_since_renew += 1;
-                if pulls_since_renew >= RENEW_EVERY_N_PULLS {
-                    pulls_since_renew = 0;
-                    if let Err(e) = api::renew_event_subscription(
-                        &addr_now,
-                        &creds_now,
-                        &subscription.url,
-                        SUBSCRIPTION_LIFETIME,
-                    )
-                    .await
-                    {
-                        status.set(StatusKind::Error(format!("Renew: {e}")));
+                        status.set(StatusKind::Error(e));
                         return;
                     }
+                };
+            status.set(StatusKind::Connected);
+            let subscription = view_subscription.subscription();
+            let mut tick = tokio::time::interval(Duration::from_millis(150));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut open_gap = None;
+            loop {
+                let is_paused = *paused.peek();
+                subscription.set_paused(is_paused);
+                let state = subscription.state();
+                match state {
+                    ManagedEventState::Recovering => set_status(status, StatusKind::Recovering),
+                    ManagedEventState::Active | ManagedEventState::Renewing => {
+                        set_status(status, StatusKind::Connected);
+                    }
+                    _ => {}
+                }
+                if is_paused && !matches!(state, ManagedEventState::Finished(_)) {
+                    tick.tick().await;
+                    continue;
+                }
+                let item = tokio::select! {
+                    _ = tick.tick() => continue,
+                    item = subscription.next() => item,
+                };
+                let row = match item {
+                    Some(Ok(ManagedEvent::Notification(event))) => {
+                        EventRow::notification(*next_seq.peek(), event.to_legacy(), RowKind::Live)
+                    }
+                    Some(Ok(ManagedEvent::Recovered(event))) => EventRow::notification(
+                        *next_seq.peek(),
+                        event.to_legacy(),
+                        RowKind::Recovered,
+                    ),
+                    Some(Ok(ManagedEvent::Snapshot(event))) => EventRow::notification(
+                        *next_seq.peek(),
+                        event.to_legacy(),
+                        RowKind::Snapshot,
+                    ),
+                    Some(Ok(ManagedEvent::RecoveryGap { since })) => {
+                        let seq = *next_seq.peek();
+                        open_gap = Some(seq);
+                        EventRow::gap(seq, since)
+                    }
+                    Some(Ok(ManagedEvent::RecoveryResumed { through })) => {
+                        let Some(seq) = open_gap.take() else { continue };
+                        if let Some(row) = events.write().iter_mut().find(|row| row.seq == seq) {
+                            row.kind = RowKind::Gap { through };
+                        }
+                        continue;
+                    }
+                    Some(Ok(_)) => continue,
+                    Some(Err(stop)) => {
+                        let report = subscription.close().await;
+                        let error = report
+                            .cause
+                            .as_ref()
+                            .map_or_else(|| format!("{stop:?}"), ToString::to_string);
+                        status.set(StatusKind::Error(error));
+                        return;
+                    }
+                    None => return,
+                };
+                next_seq.set(row.seq + 1);
+                let mut log = events.write();
+                log.push_back(row);
+                if log.len() > MAX_EVENTS {
+                    log.pop_front();
                 }
             }
         }
@@ -183,6 +224,7 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         StatusKind::Waiting => i18n::t(locale, "events_status_waiting").to_string(),
         StatusKind::Connecting => i18n::t(locale, "events_status_connecting").to_string(),
         StatusKind::Connected => i18n::t(locale, "events_status_connected").to_string(),
+        StatusKind::Recovering => i18n::t(locale, "events_status_recovering").to_string(),
         StatusKind::Error(e) => format!("{}: {e}", i18n::t(locale, "events_status_error")),
     };
 
@@ -199,7 +241,11 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
         let mut v: Vec<EventRow> = events
             .read()
             .iter()
-            .filter(|r| needle.is_empty() || r.searchable_lower.contains(&needle))
+            .filter(|r| {
+                matches!(r.kind, RowKind::Gap { .. })
+                    || needle.is_empty()
+                    || r.searchable_lower.contains(&needle)
+            })
             .cloned()
             .collect();
         sort_rows(&mut v, col, dir);
@@ -218,6 +264,13 @@ pub fn EventsView(addr: ReadSignal<String>, creds: Memo<Credentials>) -> Element
                 Icon { name: "bell", size: 20 }
                 span { class: "content-title", {i18n::t(locale, "nav_events")} }
                 span { class: "events-status", "{status_text}" }
+                if matches!(&*status.read(), StatusKind::Error(_)) {
+                    button {
+                        class: "btn btn--small",
+                        onclick: move |_| *retry.write() += 1,
+                        {i18n::t(locale, "events_retry")}
+                    }
+                }
                 span { class: "events-count", "{count_label}" }
                 input {
                     class: "events-search",
@@ -482,8 +535,19 @@ fn EventsCompactTable(rows: Vec<EventRow>, sort_mode: Signal<(SortColumn, SortDi
                 for row in rows.iter().cloned() {
                     tr { key: "{row.seq}",
                         td { class: "events-time", "{row.received_at}" }
-                        td { class: "events-topic", "{row.topic}" }
-                        td { class: "events-data", "{row.fields}" }
+                        if let RowKind::Gap { through } = row.kind {
+                            td { class: "events-gap", colspan: 2,
+                                GapText { since: row.utc_time, through }
+                            }
+                        } else {
+                            td { class: "events-topic",
+                                "{row.topic}"
+                                if let Some(label) = row.kind.badge() {
+                                    span { class: "events-origin", {i18n::t(locale, label)} }
+                                }
+                            }
+                            td { class: "events-data", "{row.fields}" }
+                        }
                     }
                 }
             }
@@ -509,24 +573,51 @@ fn EventsDetailedTable(rows: Vec<EventRow>, sort_mode: Signal<(SortColumn, SortD
                 for row in rows.iter().cloned() {
                     tr { key: "{row.seq}",
                         td { class: "events-time", "{row.received_at}" }
-                        td { class: "events-time", "{row.utc_time}" }
-                        td {
-                            class: operation_class(&row.operation),
-                            "{row.operation}"
-                        }
-                        td { class: "events-topic", "{row.topic}" }
-                        td { class: "events-data",
-                            for (k, v) in row.source.iter() {
-                                div { "{k}={v}" }
+                        if let RowKind::Gap { through } = row.kind {
+                            td { class: "events-gap", colspan: 5,
+                                GapText { since: row.utc_time, through }
                             }
-                        }
-                        td { class: "events-data",
-                            for (k, v) in row.data.iter() {
-                                div { "{k}={v}" }
+                        } else {
+                            td { class: "events-time", "{row.utc_time}" }
+                            td {
+                                class: operation_class(&row.operation),
+                                "{row.operation}"
+                            }
+                            td { class: "events-topic",
+                                "{row.topic}"
+                                if let Some(label) = row.kind.badge() {
+                                    span { class: "events-origin", {i18n::t(locale, label)} }
+                                }
+                            }
+                            td { class: "events-data",
+                                for (k, v) in row.source.iter() {
+                                    div { "{k}={v}" }
+                                }
+                            }
+                            td { class: "events-data",
+                                for (k, v) in row.data.iter() {
+                                    div { "{k}={v}" }
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn GapText(since: String, through: Option<String>) -> Element {
+    let ctx = use_context::<Ctx>();
+    let locale = *ctx.locale.read();
+    let label = i18n::t(locale, "events_gap");
+    rsx! {
+        strong { "{label}" }
+        span { class: "events-gap-time",
+            "{since}"
+            if let Some(end) = through {
+                " – {end}"
             }
         }
     }
@@ -628,7 +719,14 @@ enum StatusKind {
     Waiting,
     Connecting,
     Connected,
+    Recovering,
     Error(String),
+}
+
+fn set_status(mut status: Signal<StatusKind>, value: StatusKind) {
+    if *status.peek() != value {
+        status.set(value);
+    }
 }
 
 fn format_now() -> String {

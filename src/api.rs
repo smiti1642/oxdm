@@ -19,10 +19,10 @@
 use oxvif::{
     DeviceInfo, DigitalInput, DiscoveredDevice, DnsInformation, EventProperties, FocusMove,
     Hostname, IpStackConfig, ManualAddress, MediaProfile, NetworkGateway, NetworkInterface,
-    NetworkInterfaceConfig, NetworkProtocol, NotificationMessage, NtpInfo, OnvifSession,
-    OsdConfiguration, OsdOptions, PtzPreset, PullPointSubscription, RecordingInformation,
-    RelayOutput, SnapshotUri, StreamUri, SystemDateTime, User, VideoEncoderConfiguration,
-    VideoEncoderConfiguration2, VideoEncoderConfigurationOptions, VideoEncoding, VideoRateControl2,
+    NetworkInterfaceConfig, NetworkProtocol, NtpInfo, OnvifSession, OsdConfiguration, OsdOptions,
+    PtzPreset, RecordingInformation, RelayOutput, SnapshotUri, StreamUri, SystemDateTime, User,
+    VideoEncoderConfiguration, VideoEncoderConfiguration2, VideoEncoderConfigurationOptions,
+    VideoEncoding, VideoRateControl2,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,7 +44,10 @@ pub use encoder::{get_encoder_settings, save_encoder_settings, EncoderSettings};
 /// First call for an `(addr, creds)` pair pays one
 /// `GetCapabilities` round-trip; every subsequent call returns a
 /// cheap `Arc` clone of the already-built session.
-async fn session_for(addr: &str, creds: &Credentials) -> Result<Arc<OnvifSession>, ApiError> {
+pub(crate) async fn session_for(
+    addr: &str,
+    creds: &Credentials,
+) -> Result<Arc<OnvifSession>, ApiError> {
     let (u, p) = creds.as_options();
     sessions::get(addr, u, p).await.map_err(|e| e.to_string())
 }
@@ -1392,16 +1395,6 @@ pub async fn set_system_factory_default(
 
 // ── Events ──────────────────────────────────────────────────────────────────
 //
-// Pull-point subscriptions need two distinct URLs:
-//   * the **events service URL** (`events_url`) — where to POST
-//     `CreatePullPointSubscription`. The session reads this from
-//     `capabilities()`, so callers don't pass it.
-//   * the **subscription reference URL** — returned by the camera
-//     in `CreatePullPointSubscriptionResponse.SubscriptionReference`,
-//     used as the endpoint for subsequent `PullMessages` /
-//     `Renew` / `Unsubscribe`. This *must* be passed by the caller
-//     because it's per-subscription, not per-device.
-
 #[instrument(skip(creds), fields(addr))]
 pub async fn get_event_properties(
     addr: &str,
@@ -1409,65 +1402,6 @@ pub async fn get_event_properties(
 ) -> Result<EventProperties, ApiError> {
     let s = session_for(addr, creds).await?;
     trace_result("GetEventProperties", addr, s.get_event_properties().await)
-}
-
-#[instrument(skip(creds), fields(addr))]
-pub async fn create_pull_subscription(
-    addr: &str,
-    creds: &Credentials,
-    filter: Option<&str>,
-    initial_termination_time: Option<&str>,
-) -> Result<PullPointSubscription, ApiError> {
-    let s = session_for(addr, creds).await?;
-    trace_result(
-        "CreatePullPointSubscription",
-        addr,
-        s.create_pull_point_subscription(filter, initial_termination_time)
-            .await,
-    )
-}
-
-#[instrument(skip(creds), fields(addr, timeout))]
-pub async fn pull_event_messages(
-    addr: &str,
-    creds: &Credentials,
-    subscription_url: &str,
-    timeout: &str,
-    max_messages: u32,
-) -> Result<Vec<NotificationMessage>, ApiError> {
-    let s = session_for(addr, creds).await?;
-    trace_result(
-        "PullMessages",
-        addr,
-        s.pull_messages(subscription_url, timeout, max_messages)
-            .await,
-    )
-}
-
-#[instrument(skip(creds), fields(addr))]
-pub async fn renew_event_subscription(
-    addr: &str,
-    creds: &Credentials,
-    subscription_url: &str,
-    termination_time: &str,
-) -> Result<String, ApiError> {
-    let s = session_for(addr, creds).await?;
-    trace_result(
-        "RenewSubscription",
-        addr,
-        s.renew_subscription(subscription_url, termination_time)
-            .await,
-    )
-}
-
-#[instrument(skip(creds), fields(addr))]
-pub async fn unsubscribe_events(
-    addr: &str,
-    creds: &Credentials,
-    subscription_url: &str,
-) -> Result<(), ApiError> {
-    let s = session_for(addr, creds).await?;
-    trace_result("Unsubscribe", addr, s.unsubscribe(subscription_url).await)
 }
 
 // ── OSD ─────────────────────────────────────────────────────────────────────

@@ -2757,6 +2757,9 @@ iframe.live-video-frame {
   display: inline-block;
 }
 .events-op--init { background: rgba(116, 199, 236, 0.15); color: var(--sapphire); }
+.events-origin { margin-inline-start: .55rem; color: var(--sapphire); font-size: .85em; }
+.events-gap { color: var(--yellow); white-space: normal; }
+.events-gap-time { margin-inline-start: .55rem; overflow-wrap: anywhere; }
 .events-op--changed { background: rgba(166, 227, 161, 0.15); color: var(--green); }
 .events-op--deleted { background: rgba(243, 139, 168, 0.15); color: var(--red); }
 

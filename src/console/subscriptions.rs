@@ -1,8 +1,10 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, Weak},
+    time::Duration,
 };
 
+use oxvif::events::{ManagedEventOptions, ManagedEventSubscription};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::{api, state::Credentials};
@@ -35,9 +37,7 @@ impl EventSubscriptions {
 }
 
 pub(crate) struct ViewSubscription {
-    address: String,
-    credentials: Credentials,
-    pub(crate) url: String,
+    subscription: Option<ManagedEventSubscription>,
     permit: Option<OwnedSemaphorePermit>,
 }
 
@@ -46,41 +46,48 @@ impl ViewSubscription {
         address: String,
         credentials: Credentials,
         filter: Option<String>,
-        lifetime: &'static str,
         permit: OwnedSemaphorePermit,
     ) -> Result<Self, api::ApiError> {
         // A view can unmount after the camera grants a lease but before the
         // reply arrives. A detached Create still receives and cleans up the lease.
         tokio::spawn(async move {
-            let subscription = api::create_pull_subscription(
-                &address,
-                &credentials,
-                filter.as_deref(),
-                Some(lifetime),
-            )
-            .await?;
+            let session = api::session_for(&address, &credentials).await?;
+            let options = ManagedEventOptions {
+                pull_wait: Duration::from_secs(5),
+                request_timeout: Duration::from_secs(8),
+                page_messages: 20,
+                max_recoveries: 10,
+                recovery_timeout: Duration::from_secs(45),
+                ..ManagedEventOptions::default()
+            };
+            let subscription = session
+                .managed_events_recovering(options, filter.as_deref())
+                .await
+                .map_err(|error| error.to_string())?;
             Ok(Self {
-                address,
-                credentials,
-                url: subscription.reference_url,
+                subscription: Some(subscription),
                 permit: Some(permit),
             })
         })
         .await
         .map_err(|error| error.to_string())?
     }
+
+    pub(crate) fn subscription(&mut self) -> &mut ManagedEventSubscription {
+        self.subscription.as_mut().expect("owned subscription")
+    }
 }
 
 impl Drop for ViewSubscription {
     fn drop(&mut self) {
-        let address = std::mem::take(&mut self.address);
-        let credentials = std::mem::take(&mut self.credentials);
-        let url = std::mem::take(&mut self.url);
+        let mut subscription = self.subscription.take().expect("owned subscription");
         let permit = self.permit.take();
+        subscription.cancellation().cancel();
         tokio::spawn(async move {
             let _permit = permit;
-            if !url.is_empty() {
-                let _ = api::unsubscribe_events(&address, &credentials, &url).await;
+            let report = subscription.close().await;
+            if let Some(error) = &report.cleanup_error {
+                tracing::warn!(%error, "Events view could not release the pull point");
             }
         });
     }
