@@ -8,9 +8,23 @@ Changelog tracking starts at 0.1.5.
 
 ## [Unreleased]
 
+## [0.5.0]
+
+[0.5.0 release notes](docs/release-0.5.0.md) · [繁體中文](docs/release-0.5.0_zh.md)
+
+### Added
+
+- Add an oxvif command console with completion, syntax highlighting, a
+  parameter editor, English, Traditional Chinese and Russian help, and a
+  choice of a terminal view or collapsible results.
+- Add one-shot address queries with `inspect`, including profile-specific
+  RTSP URIs. The console uses a private credential form for these queries.
+- Add shareable diagnosis and single-camera event watch to the console.
+  Event watch shows live summaries and gaps and can be stopped from OxDM.
+
 ### Changed
-- Upgrade the registry dependency to oxvif 0.17.0, including the About version
-  and Quirks baseline stamp.
+- Use oxvif 0.18.0 and update the About version and Quirks baseline stamp.
+  The release checklist records the registry switch.
 - Thumbnails, snapshot saving, MJPEG and health checks share oxvif's bounded,
   image-signature-checked downloader. Digest failure never downgrades to Basic;
   Basic is used only when offered without Digest. Downloads require the device
@@ -26,8 +40,11 @@ Changelog tracking starts at 0.1.5.
   Unmodeled effects such as reboot return a refusal instead of a success receipt.
   Back up recordings before downgrading: older readers can collapse distinct
   recordings that share a canonical key.
+- The device Events page reconnects managed subscriptions after an
+  interruption. It can replay stored events when the device supports them,
+  or request a current-state snapshot and mark the gap.
 - Update rustls to 0.23.45 for RUSTSEC-2026-0285 and its required compatible
-  TLS dependencies. Five existing dependency warnings remain; see the upgrade
+  TLS dependencies. Five existing dependency warnings remain. See the upgrade
   plan and audit records for their scope.
 
 ### Fixed

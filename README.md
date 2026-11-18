@@ -7,17 +7,9 @@ on the [`oxvif`](https://github.com/smiti1642/oxvif) ONVIF client library.
 
 ![OxDM managing an ONVIF camera — device list, profile panel, and the device identification settings tab](https://raw.githubusercontent.com/smiti1642/oxdm/main/docs/screenshot.png)
 
-> **Development checkout (v0.4.2).** Built on oxvif 0.17.0. Core device management works
-> end-to-end against real cameras and the `oxvif` mock server. Release bundles
-> are not yet code-signed, so the operating system may warn about an
-> unidentified developer on first launch.
-
-Version 0.4.2 updates the TLS/QUIC security dependencies. See the
-[changelog](./CHANGELOG.md) for details.
-
-Quirks handles collisions in recording rows and baseline comparisons.
-See the [upgrade record](docs/oxvif-0.17-upgrade-plan.md) for verification.
-Published 0.4.1 bundles use oxvif 0.16.0.
+The 0.5.0 candidate adds the oxvif command console and reconnecting event
+monitoring. See the [release notes](docs/release-0.5.0.md) and
+[繁體中文](docs/release-0.5.0_zh.md).
 
 ## Contents
 
@@ -72,13 +64,14 @@ for producing installer bundles). Install from
 cargo install oxvif-device-manager --locked
 ```
 
-or build the latest commit directly from Git:
+To work on the candidate with local SDK changes, keep `oxdm` and `oxvif`
+as sibling checkouts and build from the OxDM directory:
 
 ```sh
-cargo install --git https://github.com/smiti1642/oxdm
+cargo build --locked
 ```
 
-Either way the installed command is **`oxdm`** (the crate is published as
+The executable is **`oxdm`** (the crate is published as
 `oxvif-device-manager` because the shorter name was already taken).
 
 oxvif 0.16 and 0.17 require Rust 1.88 or newer. The complete OxDM 0.4.1 build was

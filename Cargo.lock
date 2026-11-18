@@ -3656,7 +3656,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "oxvif"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3685,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "oxvif-device-manager"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "arboard",
  "async-trait",
