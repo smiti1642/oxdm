@@ -34,12 +34,21 @@ fn focus_parameter_control(id: &str) {
 fn ConsoleCredentialDialog(
     command: String,
     locale: Locale,
+    saves_credentials: bool,
     on_cancel: EventHandler<()>,
     on_submit: EventHandler<CredentialInput>,
 ) -> Element {
     let mut username = use_signal(|| zeroize::Zeroizing::new(String::new()));
     let mut password = use_signal(|| zeroize::Zeroizing::new(String::new()));
     let tr = |key| i18n::t(locale, key);
+    let (title, hint) = if saves_credentials {
+        ("console_credential_title", "console_credential_hint")
+    } else {
+        (
+            "console_query_credential_title",
+            "console_query_credential_hint",
+        )
+    };
     let valid = !username.read().trim().is_empty()
         && !username.read().chars().any(char::is_control)
         && !password.read().is_empty()
@@ -56,8 +65,8 @@ fn ConsoleCredentialDialog(
                         on_submit.call(CredentialInput { username: username.take(), password: password.take() });
                     }
                 },
-                h3 { id: "oxdm-cli-credential-title", {tr("console_credential_title")} }
-                p { {tr("console_credential_hint")} }
+                h3 { id: "oxdm-cli-credential-title", {tr(title)} }
+                p { {tr(hint)} }
                 pre { code { "{command}" } }
                 label { r#for: "oxdm-cli-credential-user", {tr("cred_username")} }
                 input {
@@ -655,6 +664,7 @@ pub fn ConsoleView() -> Element {
         if let Some((_, request)) = credential_request.read().as_ref() {
             ConsoleCredentialDialog {
                 command: shell_command(&request.argv), locale,
+                saves_credentials: request.workspace_change.is_some(),
                 on_cancel: move |_| {
                     credential_request.set(None);
                     let _ = document::eval("requestAnimationFrame(() => document.getElementById('oxdm-console-input')?.focus());");

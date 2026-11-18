@@ -17,6 +17,8 @@ pub fn get(key: &str) -> Option<&'static str> {
         "console_copy_script" => "Copy complete script",
         "console_credential_title" => "Save CLI credentials",
         "console_credential_hint" => "Enter the account for the command shown below. The CLI writes credentials to the system credential store.",
+        "console_query_credential_title" => "Credentials for this query",
+        "console_query_credential_hint" => "Enter the camera account for this query. The CLI uses the credentials once and does not save them.",
         "console_import_json_required" => "Import previews require JSON output.",
         "console_import_use_plan" => "Use this plan for import",
         "console_import_plan_required" => "Run device import with --plan to preview. Apply the reviewed plan with --apply and its --expect-plan fingerprint.",

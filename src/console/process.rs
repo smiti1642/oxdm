@@ -458,6 +458,7 @@ async fn supervise(
         output,
         share_report,
         import_plan,
+        workspace_change,
         credential,
         completion_script,
         ..
@@ -488,7 +489,7 @@ async fn supervise(
         None => (None, None),
     };
     let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
-    let mut stdout = if sensitive {
+    let mut stdout = if sensitive && workspace_change.is_some() {
         tokio::spawn(drain(stdout))
     } else if completion_script {
         tokio::spawn(read_completion_script(run.clone(), stdout))

@@ -145,6 +145,48 @@ async fn bundled_cli_round_trips_a_synthetic_native_credential() {
 }
 
 #[tokio::test]
+#[ignore = "requires the bundled CLI"]
+async fn inspect_displays_a_direct_read_after_using_the_private_credential_form() {
+    let executable = executable();
+    let grammar = load_grammar(&executable).await.unwrap();
+    let server = oxvif::mock::MockServer::builder()
+        .enforce_auth(true)
+        .start()
+        .await
+        .unwrap();
+    let input = format!("inspect {} --read profiles", server.device_url());
+    let stream = format!("inspect {} --read stream-uri", server.device_url());
+    assert_eq!(
+        grammar.prepare(executable.clone(), &stream, None).err(),
+        Some("console_required_argument")
+    );
+    let stream = format!("{stream} --profile Profile_1");
+    assert!(grammar.prepare(executable.clone(), &stream, None).is_ok());
+    for inline in ["--password synthetic-secret", "--password=synthetic-secret"] {
+        assert!(grammar
+            .prepare(executable.clone(), &format!("{input} {inline}"), None)
+            .is_err());
+    }
+    let mut request = grammar.prepare(executable, &input, None).unwrap();
+    assert!(request.credential_input);
+    assert!(request.workspace_change.is_none());
+    assert!(request.credentials.is_none());
+    request.credential = Some(super::grammar::CredentialInput {
+        username: zeroize::Zeroizing::new("admin".into()),
+        password: zeroize::Zeroizing::new("admin".into()),
+    });
+    let controller = Controller::default();
+    assert!(controller.start(request, input, None));
+    let snapshot = wait_for(&controller, |snapshot| snapshot.finished.is_some()).await;
+    assert_eq!(snapshot.finished.unwrap().exit_code, Some(0));
+    assert_eq!(snapshot.malformed, 0);
+    assert!(snapshot
+        .lines
+        .iter()
+        .any(|line| line.kind == OutputKind::Json));
+}
+
+#[tokio::test]
 #[ignore = "requires the bundled CLI and its matching console_mock fixture"]
 async fn credential_commands_use_a_private_pipe_and_keep_the_transcript_clean() {
     let cli = executable();

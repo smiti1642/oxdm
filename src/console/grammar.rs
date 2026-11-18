@@ -229,7 +229,7 @@ impl Argument {
         // Credentials and process control use dedicated channels.
         !matches!(
             self.id.as_str(),
-            "control_stdin" | "username" | "password_stdin" | "help" | "version"
+            "control_stdin" | "username" | "password" | "password_stdin" | "help" | "version"
         )
     }
 }
@@ -1288,11 +1288,12 @@ impl Grammar {
         if parsed.node.requires_saved_selector() && !(saved || fleet || parsed.has("id")) {
             return Err("console_workspace_selector_required");
         }
-        if matches!(
+        let needs_profile = matches!(
             parsed.node.command_id.as_deref(),
             Some("stream" | "snapshot")
-        ) && !parsed.has("profile")
-        {
+        ) || (parsed.node.command_id.as_deref() == Some("inspect")
+            && parsed.value("read") == Some("stream-uri"));
+        if needs_profile && !parsed.has("profile") {
             return Err("console_required_argument");
         }
         let target = match (spec.target_flag.as_ref(), explicit, saved || fleet) {

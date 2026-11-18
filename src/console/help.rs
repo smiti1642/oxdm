@@ -166,7 +166,7 @@ fn CommandGuide() -> Element {
                         p { {tr("console_workspace_write")} }
                     }
                     if help.credential_input {
-                        p { {tr("console_credential_hint")} }
+                        p { {tr(if help.workspace_change.is_some() { "console_credential_hint" } else { "console_query_credential_hint" })} }
                     }
                     if help.path == "device import" {
                         p { {tr("console_import_plan_required")} }
