@@ -46,6 +46,19 @@
 5. 保留錄影首張畫面、同一 session 跳播與事件歷史補讀的實機驗收缺口。
    0.18.0 發行說明只列出已驗證的範圍。
 
+## Registry 切換 2026-11-19
+
+- crates.io 已提供 oxvif 0.18.0（09:09 UTC）與 oxvif-cli 0.18.0
+  （09:10 UTC），兩者均未 yank。oxvif 的 `v0.18.0` tag 指向
+  `9cdc631dc2377a438bed163e06a47c386d59980c`。
+- OxDM 的一般與開發依賴已移除相鄰 checkout 的 `path`。`Cargo.lock`
+  只在 oxvif 條目加入 registry 來源與 checksum，checksum 與 crates.io
+  公布的值相同。其餘已審查的套件版本與相依關係沒有變動。
+- Windows 本機以 `--locked` 通過 fmt、Clippy、build 與測試，共 222 項
+  通過、23 項依環境變數略過。`cargo package --locked` 以 registry 的
+  oxvif 打包 108 個檔案並重建通過。
+- 發行順序第 3 步的遠端 CI 與第 4 步之後的項目尚未執行。
+
 相關檔案
 
 - [OxDM 發行工作流程](../.github/workflows/release.yml)

@@ -326,7 +326,7 @@ that obsolete field is ignored. WS-Discovery also has its own protocol.
 
 ## oxvif version
 
-Currently pinned to the published registry crate `oxvif = "0.17"` (0.17.0 is
+Currently pinned to the published registry crate `oxvif = "0.18.0"` (0.18.0 is
 on crates.io). When iterating on oxvif locally, temporarily switch to a path dep
 (`path = "../oxvif"`) and re-pin to the registry version before merging to a CI
 branch (CI has no `../oxvif`). Features: `health, metamorph-server` in
@@ -334,7 +334,7 @@ branch (CI has no `../oxvif`). Features: `health, metamorph-server` in
 `[dev-dependencies]`. The release binary also includes `mock-server` and axum
 through `metamorph-server`, which serves camera clones. Every file under
 `tests/` depends on the mock server, not just `healthtab_smoke.rs`.
-oxvif 0.17 requires Rust 1.88 or newer; local development and CI use stable.
+oxvif 0.18 requires Rust 1.88 or newer; local development and CI use stable.
 
 Quirks reports must come from one immutable analysis generation. Full reports
 align by fixture ordinal; `(action, key_canon)` is not unique in oxvif 0.17.
@@ -402,7 +402,7 @@ Notable surfaces oxdm relies on:
 When iterating on oxvif locally before a release, switch to a path dep:
 
 ```toml
-oxvif = { version = "0.17.0", path = "../oxvif", features = ["health", "metamorph-server"] }
+oxvif = { version = "0.18.0", path = "../oxvif", features = ["health", "metamorph-server"] }
 ```
 
 After publishing the new oxvif version to crates.io, drop the `path` to
