@@ -224,7 +224,7 @@ Quirks baselines record the oxvif version that measured them. Older baselines
 still load, with a version-mismatch warning when appropriate: the library's
 reference may have changed even when the camera has not. Review the current
 result and explicitly save a new baseline to compare future runs on the same
-version. The unreleased 0.17 integration keeps ambiguous observations separate
+version. Since 0.5.0, OxDM keeps ambiguous observations separate
 from newly appearing or resolved differences. New baselines preserve known key
 collisions even when only one of the recorded responses has structural drift.
 Older baselines lack that extra collision information; it cannot be reconstructed

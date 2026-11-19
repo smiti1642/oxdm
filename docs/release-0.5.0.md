@@ -1,6 +1,6 @@
 # OxDM 0.5.0
 
-2026-11-18 · [繁體中文](https://github.com/smiti1642/oxdm/blob/v0.5.0/docs/release-0.5.0_zh.md)
+2026-11-19 · [繁體中文](https://github.com/smiti1642/oxdm/blob/v0.5.0/docs/release-0.5.0_zh.md)
 
 - **Run oxvif commands inside OxDM.** The console supports syntax highlighting,
   command and parameter completion, and contextual help in English,
